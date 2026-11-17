@@ -1,0 +1,81 @@
+name: Repair TPEx 1295 November 2025 OHLC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-tpex-1295-2025-11
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Download official TPEx data and validate
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from src.tpex_market_data import fetch_month, save_rows
+
+          rows = fetch_month("1295", 2025, 11)
+          if len(rows) != 20:
+              raise SystemExit(f"Expected 20 November 2025 rows, received {len(rows)}")
+          if rows[0]["trade_date"] != "2025-11-03" or rows[-1]["trade_date"] != "2025-11-28":
+              raise SystemExit("Unexpected TPEx date range; refusing database repair")
+          save_rows("1295", rows)
+          print(f"Validated {len(rows)} official rows: {rows[0]['trade_date']} to {rows[-1]['trade_date']}")
+          PY
+
+      - name: Import corrected rows and verify Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          from src.db_storage import import_history
+
+          if not os.environ.get("DATABASE_URL"):
+              raise SystemExit("DATABASE_URL secret is missing")
+          imported = import_history(Path("data/history"))
+          if imported != 20:
+              raise SystemExit(f"Expected to import 20 rows, imported {imported}")
+
+          with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""
+                      SELECT
+                          COUNT(*),
+                          COUNT(*) FILTER (
+                              WHERE high < low
+                                 OR (open IS NOT NULL AND (open < low OR open > high))
+                                 OR (close IS NOT NULL AND (close < low OR close > high))
+                          )
+                      FROM daily_prices
+                      WHERE market = 'tpex'
+                        AND stock_id = '1295'
+                        AND trade_date >= DATE '2025-11-01'
+                        AND trade_date < DATE '2025-12-01'
+                  """)
+                  count, invalid = cur.fetchone()
+          print(f"Neon November 2025 rows: {count}; invalid OHLC rows: {invalid}")
+          if count != 20 or invalid != 0:
+              raise SystemExit("Neon verification failed")
+          print("TPEx 1295 OHLC repair verified successfully.")
+          PY
