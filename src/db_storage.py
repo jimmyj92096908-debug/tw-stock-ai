@@ -120,7 +120,7 @@ def upsert_csv(conn: psycopg.Connection, path: Path, market: str) -> int:
                     """,
                     (market, stock_id, len(rows)),
                 )
-                run_id = cur.fetchone()[0]
+                run_id = cur.fetchone()["run_id"]
                 cur.executemany(UPSERT_PRICE_SQL, rows)
                 cur.execute(
                     """
