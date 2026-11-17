@@ -1,6 +1,10 @@
 name: Taiwan Stock AI - Daily Data
 
 on:
+  # 更新 main 分支時自動執行，藉此啟動第一次雲端測試。
+  push:
+    branches:
+      - main
   # 每個台灣交易日約 21:00 執行（GitHub 排程使用 UTC）。
   schedule:
     - cron: "0 13 * * 1-5"
