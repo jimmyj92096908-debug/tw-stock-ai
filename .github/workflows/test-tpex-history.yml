@@ -77,4 +77,23 @@ jobs:
           print("Last row:", json.dumps(rows[-1], ensure_ascii=False))
           print("Date range:", parsed_dates[0], "to", parsed_dates[-1])
           print("TPEx historical monthly data test passed.")
+
+      - name: Diagnose TPEx stock 1295 November 2025 OHLC rows
+        run: |
+          python - <<'PY'
+          from src.tpex_market_data import fetch_month
+
+          try:
+              rows = fetch_month("1295", 2025, 11)
+          except ValueError as exc:
+              print("Detected malformed TPEx source row:")
+              print(exc)
+              print("Diagnostic completed. No malformed row was accepted.")
+          else:
+              raise SystemExit(
+                  f"Expected to inspect malformed source rows, but parsed {len(rows)} rows "
+                  "without triggering OHLC validation. Compare the current source response "
+                  "with the historical database records."
+              )
+          PY
           PY
