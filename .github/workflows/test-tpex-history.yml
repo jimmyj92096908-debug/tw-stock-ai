@@ -21,6 +21,11 @@ jobs:
           import re
           import requests
           from datetime import datetime
+          from src.tpex_market_data import parse_roc_date
+
+          assert parse_roc_date("113/09/26*") == "2024-09-26"
+          assert parse_roc_date("115/10/01") == "2026-10-01"
+          print("ROC date footnote parser test passed.")
 
           url = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock"
           params = {
@@ -50,7 +55,8 @@ jobs:
           parsed_dates = []
           for row in rows:
               raw_date = row[0]
-              match = re.fullmatch(r"(\d{2,3})/(\d{2})/(\d{2})", raw_date)
+              normalized = re.sub(r"[*＊]+$", "", raw_date.strip()).strip()
+              match = re.fullmatch(r"(\d{2,3})/(\d{2})/(\d{2})", normalized)
               if not match:
                   raise SystemExit(f"Unexpected date format: {raw_date}")
               year, month, day = map(int, match.groups())
