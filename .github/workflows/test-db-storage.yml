@@ -1,0 +1,85 @@
+name: Taiwan Stock AI - Test PostgreSQL Storage Layer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/db_storage.py"
+      - "sql/schema.sql"
+      - "requirements.txt"
+      - ".github/workflows/test-db-storage.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-storage-layer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install storage dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "psycopg[binary]>=3.2,<4"
+
+      - name: Compile Python module
+        run: python -m py_compile src/db_storage.py
+
+      - name: Test CSV parsing and numeric normalization
+        run: |
+          python - <<'PY'
+          import csv
+          import tempfile
+          from pathlib import Path
+          from src.db_storage import optional_number, read_history_csv
+
+          assert optional_number("1,234") == 1234
+          assert optional_number("12.50") == 12.5
+          assert optional_number("--") is None
+
+          with tempfile.TemporaryDirectory() as tmp:
+              path = Path(tmp) / "2330.csv"
+              fields = [
+                  "stock_id", "trade_date", "volume", "turnover",
+                  "open", "high", "low", "close", "change",
+                  "transactions", "source",
+              ]
+              with path.open("w", newline="", encoding="utf-8-sig") as file:
+                  writer = csv.DictWriter(file, fieldnames=fields)
+                  writer.writeheader()
+                  writer.writerow({
+                      "stock_id": "2330", "trade_date": "2026-10-01",
+                      "volume": "12,345", "turnover": "9,876,543",
+                      "open": "1000", "high": "1010", "low": "990",
+                      "close": "1005", "change": "5", "transactions": "123",
+                      "source": "TWSE_STOCK_DAY",
+                  })
+              rows = read_history_csv(path, "twse")
+              assert len(rows) == 1
+              assert rows[0]["market"] == "twse"
+              assert rows[0]["volume"] == 12345
+              assert rows[0]["turnover"] == 9876543
+              assert rows[0]["trade_date"] == "2026-10-01"
+          print("Storage module tests passed.")
+          PY
+
+      - name: Validate SQL schema presence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          sql = Path("sql/schema.sql").read_text(encoding="utf-8")
+          for token in ("stock_master", "daily_prices", "import_runs",
+                        "PRIMARY KEY (market, stock_id, trade_date)",
+                        "ON UPDATE CASCADE"):
+              if token not in sql:
+                  raise SystemExit(f"SQL schema missing: {token}")
+          print("SQL schema checks passed.")
+          PY
