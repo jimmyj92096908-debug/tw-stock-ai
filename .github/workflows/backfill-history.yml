@@ -157,23 +157,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
-          python - <<'PY'
-          import os
-          from datetime import date
-          sy, ey = int(os.environ["START_YEAR"]), int(os.environ["END_YEAR"])
-          sm, em = int(os.environ["START_MONTH"]), int(os.environ["END_MONTH"])
-          start_date = date(sy, sm, 1)
-          if em == 12:
-              end_date = date(ey + 1, 1, 1)
-          else:
-              from calendar import monthrange
-              end_date = date(ey, em, monthrange(ey, em)[1])
-          print(f"驗證資料範圍：{start_date} 至 {end_date}")
-          with open(os.environ["GITHUB_ENV"], "a") as env_file:
-              env_file.write(f"BACKFILL_START_DATE={start_date}\\n")
-              env_file.write(f"BACKFILL_END_DATE={end_date}\\n")
-          PY
-          python src/backfill_progress.py --start-date "$BACKFILL_START_DATE" --end-date "$BACKFILL_END_DATE"
+          START_DATE=$(python -c 'import os; from datetime import date; print(date(int(os.environ["START_YEAR"]), int(os.environ["START_MONTH"]), 1).isoformat())')
+          END_DATE=$(python -c 'import os, calendar; from datetime import date; y=int(os.environ["END_YEAR"]); m=int(os.environ["END_MONTH"]); print(date(y, m, calendar.monthrange(y, m)[1]).isoformat())')
+          echo "驗證資料範圍：$START_DATE 至 $END_DATE"
+          python src/backfill_progress.py --start-date "$START_DATE" --end-date "$END_DATE"
 
       - name: Upload batch summary
         uses: actions/upload-artifact@v4
