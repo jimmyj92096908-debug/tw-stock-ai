@@ -98,11 +98,11 @@ def build_stock_list() -> list[dict[str, str]]:
     logger.info("下載 TPEx 上櫃公司基本資料")
     otc = normalize_rows(fetch_json(TPEX_URL), "上櫃")
 
-    merged: dict[str, dict[str, str]] = {}
+    merged: dict[tuple[str, str], dict[str, str]] = {}
     for item in listed + otc:
         merged[(item["market"], item["stock_id"])] = item
 
-    result = sorted(merged.values(), key=lambda item: item["stock_id"])
+    result = sorted(merged.values(), key=lambda item: (item["market"], item["stock_id"]))
     if not result:
         raise RuntimeError("合併後股票清單為空，請檢查官方 API 欄位或連線狀態。")
 
