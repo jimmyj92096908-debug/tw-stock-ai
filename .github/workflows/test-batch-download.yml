@@ -1,0 +1,86 @@
+name: Taiwan Stock AI - Test Bounded Batch Downloader
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/batch_download.py"
+      - ".github/workflows/test-batch-download.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-bounded-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run bounded TWSE batch
+        run: |
+          python src/batch_download.py \
+            --market twse --twse-stock-ids 2330 --limit 1 \
+            --start-year 2026 --end-year 2026 --start-month 10 --end-month 10
+
+      - name: Run bounded TPEx batch
+        run: |
+          python src/batch_download.py \
+            --market tpex --tpex-stock-ids 6488 --limit 1 \
+            --start-year 2026 --end-year 2026 --start-month 10 --end-month 10
+
+      - name: Validate batch outputs
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          files = {
+              "TWSE": Path("data/history/twse/2330.csv"),
+              "TPEx": Path("data/history/tpex/6488.csv"),
+          }
+          for market, path in files.items():
+              if not path.exists():
+                  raise SystemExit(f"{market}: missing {path}")
+              with path.open(newline="", encoding="utf-8-sig") as file:
+                  rows = list(csv.DictReader(file))
+              if not rows:
+                  raise SystemExit(f"{market}: empty history")
+              dates = [row["trade_date"] for row in rows]
+              if dates != sorted(set(dates)):
+                  raise SystemExit(f"{market}: duplicate or unsorted dates")
+              if any(not day.startswith("2026-10-") for day in dates):
+                  raise SystemExit(f"{market}: unexpected date range")
+              print(f"{market}: {len(rows)} rows ({dates[0]} to {dates[-1]})")
+
+          summary = Path("data/history/batch_summary.csv")
+          if not summary.exists():
+              raise SystemExit("Missing batch summary")
+          with summary.open(newline="", encoding="utf-8-sig") as file:
+              results = list(csv.DictReader(file))
+          if len(results) != 1 or results[0]["status"] != "success":
+              raise SystemExit(f"Unexpected batch summary: {results}")
+          print("Bounded batch downloader test passed.")
+          PY
+
+      - name: Upload batch test outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-batch-download-test
+          path: |
+            data/history/twse/2330.csv
+            data/history/tpex/6488.csv
+            data/history/batch_summary.csv
+          if-no-files-found: error
+          retention-days: 7
