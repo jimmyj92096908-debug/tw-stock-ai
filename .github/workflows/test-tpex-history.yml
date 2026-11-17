@@ -22,6 +22,9 @@ jobs:
           python-version: '3.12'
       - name: Install test dependency
         run: python -m pip install requests
+      - name: Run TPEx parser unit tests
+        run: python -m unittest tests.test_tpex_market_data -v
+
       - name: Test official TPEx per-stock monthly history endpoint
         run: |
           python - <<'PY'
