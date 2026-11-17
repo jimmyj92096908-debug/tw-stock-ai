@@ -17,11 +17,25 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 API_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock"
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "history" / "tpex"
 TIMEOUT_SECONDS = 30
 REQUEST_INTERVAL_SECONDS = 2
+RETRY_POLICY = Retry(
+    total=4,
+    connect=4,
+    read=4,
+    status=4,
+    backoff_factor=2,
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset({"GET"}),
+    raise_on_status=False,
+)
+SESSION = requests.Session()
+SESSION.mount("https://", HTTPAdapter(max_retries=RETRY_POLICY))
 FIELDNAMES = [
     "stock_id",
     "trade_date",
@@ -71,7 +85,7 @@ def fetch_month(stock_id: str, year: int, month: int) -> list[dict[str, Any]]:
         raise ValueError("月份必須介於 1 至 12。")
 
     query_date = date(year, month, 1).strftime("%Y/%m/%d")
-    response = requests.get(
+    response = SESSION.get(
         API_URL,
         params={"response": "json", "date": query_date, "code": stock_id},
         headers={
