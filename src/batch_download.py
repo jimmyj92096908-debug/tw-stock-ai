@@ -41,7 +41,13 @@ def select_stocks(market: str, offset: int, limit: int, stock_ids: list[str] | N
     rows = stock_list.build_stock_list()
     selected = [row for row in rows if row["market"] == MARKET_MAP[market]]
     selected.sort(key=lambda row: row["stock_id"])
-    return selected[offset : offset + limit]
+    batch = selected[offset : offset + limit]
+    if not batch:
+        raise RuntimeError(
+            f"{MARKET_MAP[market]} 股票清單為空或 offset={offset} 已超出清單範圍；"
+            "停止批次，避免工作流程在沒有下載資料時仍顯示成功。"
+        )
+    return batch
 
 
 def download_one(market: str, stock_id: str, start_year: int, end_year: int, start_month: int, end_month: int) -> int:
