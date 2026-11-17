@@ -1,0 +1,202 @@
+name: Taiwan Stock AI - Historical Backfill to Neon
+
+on:
+  workflow_dispatch:
+    inputs:
+      market:
+        description: "市場"
+        required: true
+        type: choice
+        options:
+          - both
+          - twse
+          - tpex
+        default: both
+      offset:
+        description: "股票清單起始位置（續跑時依序增加）"
+        required: true
+        type: number
+        default: 0
+      limit:
+        description: "本次每個市場最多處理幾檔（建議先 1～2）"
+        required: true
+        type: number
+        default: 2
+      start_year:
+        description: "起始年份"
+        required: true
+        type: number
+        default: 2021
+      end_year:
+        description: "結束年份"
+        required: true
+        type: number
+        default: 2026
+      start_month:
+        description: "起始月份"
+        required: true
+        type: number
+        default: 1
+      end_month:
+        description: "結束月份（2026 年目前先填 10）"
+        required: true
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tw-stock-historical-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+          echo "DATABASE_URL is configured."
+
+      - name: Validate batch inputs
+        env:
+          MARKET: ${{ inputs.market }}
+          OFFSET: ${{ inputs.offset }}
+          LIMIT: ${{ inputs.limit }}
+          START_YEAR: ${{ inputs.start_year }}
+          END_YEAR: ${{ inputs.end_year }}
+          START_MONTH: ${{ inputs.start_month }}
+          END_MONTH: ${{ inputs.end_month }}
+        run: |
+          python - <<'PY'
+          import os
+          offset = int(os.environ["OFFSET"])
+          limit = int(os.environ["LIMIT"])
+          sy, ey = int(os.environ["START_YEAR"]), int(os.environ["END_YEAR"])
+          sm, em = int(os.environ["START_MONTH"]), int(os.environ["END_MONTH"])
+          if offset < 0 or not 1 <= limit <= 5:
+              raise SystemExit("offset must be >= 0 and limit must be between 1 and 5.")
+          if sy < 2010 or sy > ey or ey > 2100:
+              raise SystemExit("Invalid year range.")
+          if not (1 <= sm <= 12 and 1 <= em <= 12):
+              raise SystemExit("Months must be between 1 and 12.")
+          if (sy, sm) > (ey, em):
+              raise SystemExit("Start month must not be after end month.")
+          print("Input validation passed.")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download selected historical batches
+        run: |
+          python src/batch_download.py \
+            --market "${{ inputs.market }}" \
+            --offset "${{ inputs.offset }}" \
+            --limit "${{ inputs.limit }}" \
+            --start-year "${{ inputs.start_year }}" \
+            --end-year "${{ inputs.end_year }}" \
+            --start-month "${{ inputs.start_month }}" \
+            --end-month "${{ inputs.end_month }}"
+
+      - name: Validate downloaded CSV files
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          summary = Path("data/history/batch_summary.csv")
+          if not summary.exists():
+              raise SystemExit("Batch summary was not created.")
+          with summary.open(newline="", encoding="utf-8-sig") as f:
+              jobs = list(csv.DictReader(f))
+          if not jobs:
+              raise SystemExit("No stocks were selected. Check market/offset/limit.")
+          failed = [x for x in jobs if x["status"] != "success" or int(x["rows_downloaded"]) <= 0]
+          if failed:
+              raise SystemExit(f"Some downloads failed or returned no rows: {failed}")
+          for item in jobs:
+              market_dir = "twse" if item["market"] == "上市" else "tpex"
+              path = Path("data/history") / market_dir / f'{item["stock_id"]}.csv'
+              if not path.exists() or path.stat().st_size == 0:
+                  raise SystemExit(f"Missing/empty CSV: {path}")
+              with path.open(newline="", encoding="utf-8-sig") as f:
+                  rows = list(csv.DictReader(f))
+              dates = [r["trade_date"] for r in rows]
+              if len(dates) != len(set(dates)) or dates != sorted(dates):
+                  raise SystemExit(f"Duplicate or unsorted dates: {path}")
+              print(f'{item["market"]} {item["stock_id"]}: {len(rows)} rows')
+          print(f"Validated {len(jobs)} stock files.")
+          PY
+
+      - name: Import selected history into Neon
+        run: python src/db_storage.py
+
+      - name: Verify imported rows in Neon
+        env:
+          START_YEAR: ${{ inputs.start_year }}
+          END_YEAR: ${{ inputs.end_year }}
+          START_MONTH: ${{ inputs.start_month }}
+          END_MONTH: ${{ inputs.end_month }}
+          MARKET: ${{ inputs.market }}
+          OFFSET: ${{ inputs.offset }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          python - <<'PY'
+          import csv, os
+          from pathlib import Path
+          import psycopg
+          from psycopg.rows import dict_row
+          from datetime import date
+          jobs_path = Path("data/history/batch_summary.csv")
+          with jobs_path.open(newline="", encoding="utf-8-sig") as f:
+              jobs = list(csv.DictReader(f))
+          sy, ey = int(os.environ["START_YEAR"]), int(os.environ["END_YEAR"])
+          sm, em = int(os.environ["START_MONTH"]), int(os.environ["END_MONTH"])
+          start_date = date(sy, sm, 1)
+          if em == 12:
+              end_date = date(ey + 1, 1, 1)
+          else:
+              end_date = date(ey, em + 1, 1)
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row, connect_timeout=20) as conn:
+              with conn.cursor() as cur:
+                  for item in jobs:
+                      market = "twse" if item["market"] == "上市" else "tpex"
+                      cur.execute(
+                          """SELECT COUNT(*) AS n, MIN(trade_date) AS first_date,
+                                    MAX(trade_date) AS last_date
+                             FROM daily_prices
+                             WHERE market=%s AND stock_id=%s
+                               AND trade_date >= %s AND trade_date < %s""",
+                          (market, item["stock_id"], start_date, end_date),
+                      )
+                      result = cur.fetchone()
+                      if result["n"] <= 0:
+                          raise SystemExit(f'No rows verified for {market} {item["stock_id"]}.')
+                      print(f'{market} {item["stock_id"]}: {result["n"]} DB rows, {result["first_date"]} to {result["last_date"]}')
+          print("Neon verification passed.")
+          PY
+
+      - name: Upload batch summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-backfill-${{ github.run_id }}
+          path: data/history/batch_summary.csv
+          if-no-files-found: error
+          retention-days: 7
