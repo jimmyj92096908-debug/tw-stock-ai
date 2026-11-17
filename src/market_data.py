@@ -144,21 +144,32 @@ def save_rows(stock_id: str, rows: list[dict[str, Any]]) -> Path:
     return output_path
 
 
-def download_range(stock_id: str, start_year: int, end_year: int) -> int:
-    """依月份逐筆下載指定年份區間，並在請求間隔暫停。"""
-    if start_year > end_year:
-        raise ValueError("起始年份不可晚於結束年份。")
+def download_range(
+    stock_id: str,
+    start_year: int,
+    end_year: int,
+    start_month: int = 1,
+    end_month: int = 12,
+) -> int:
+    """依月份逐筆下載指定年月區間，並在請求間隔暫停。"""
+    if start_year > end_year or not 1 <= start_month <= 12 or not 1 <= end_month <= 12:
+        raise ValueError("年份或月份區間不正確。")
+    start = date(start_year, start_month, 1)
+    end = date(end_year, end_month, 1)
+    if start > end:
+        raise ValueError("起始年月不可晚於結束年月。")
 
-    total = 0
     today = date.today()
-    for year in range(start_year, end_year + 1):
-        for month in range(1, 13):
-            if (year, month) > (today.year, today.month):
-                continue
-            rows = fetch_month(stock_id, year, month)
-            save_rows(stock_id, rows)
-            total += len(rows)
-            time.sleep(REQUEST_INTERVAL_SECONDS)
+    total = 0
+    current = start
+    while current <= end and current <= date(today.year, today.month, 1):
+        rows = fetch_month(stock_id, current.year, current.month)
+        save_rows(stock_id, rows)
+        total += len(rows)
+        if current == end:
+            break
+        time.sleep(REQUEST_INTERVAL_SECONDS)
+        current = date(current.year + (current.month == 12), current.month % 12 + 1, 1)
 
     return total
 
