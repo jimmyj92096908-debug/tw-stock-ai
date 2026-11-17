@@ -103,6 +103,14 @@ def build_stock_list() -> list[dict[str, str]]:
         merged[(item["market"], item["stock_id"])] = item
 
     result = sorted(merged.values(), key=lambda item: (item["market"], item["stock_id"]))
+    listed_count = sum(item["market"] == "上市" for item in result)
+    otc_count = sum(item["market"] == "上櫃" for item in result)
+    logger.info("市場清單筆數：上市 %s 檔、上櫃 %s 檔", listed_count, otc_count)
+    if not listed_count or not otc_count:
+        raise RuntimeError(
+            f"市場清單不完整：上市 {listed_count} 檔、上櫃 {otc_count} 檔；"
+            "停止輸出，避免將不完整股票池當成成功結果。"
+        )
     if not result:
         raise RuntimeError("合併後股票清單為空，請檢查官方 API 欄位或連線狀態。")
 
