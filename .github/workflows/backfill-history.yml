@@ -105,6 +105,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check progress recorder syntax
+        run: python -m py_compile src/backfill_progress.py
+
       - name: Download selected historical batches
         run: |
           python src/batch_download.py \
