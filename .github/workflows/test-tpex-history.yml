@@ -78,22 +78,31 @@ jobs:
           print("Date range:", parsed_dates[0], "to", parsed_dates[-1])
           print("TPEx historical monthly data test passed.")
 
-      - name: Diagnose TPEx stock 1295 November 2025 OHLC rows
+      - name: Inspect TPEx stock 1295 November 2025 raw response
         run: |
           python - <<'PY'
-          from src.tpex_market_data import fetch_month
+          import json
+          import requests
 
-          try:
-              rows = fetch_month("1295", 2025, 11)
-          except ValueError as exc:
-              print("Detected malformed TPEx source row:")
-              print(exc)
-              print("Diagnostic completed. No malformed row was accepted.")
-          else:
-              raise SystemExit(
-                  f"Expected to inspect malformed source rows, but parsed {len(rows)} rows "
-                  "without triggering OHLC validation. Compare the current source response "
-                  "with the historical database records."
-              )
-          PY
+          response = requests.get(
+              "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock",
+              params={"code": "1295", "date": "2025/11/01", "response": "json"},
+              headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+              timeout=30,
+          )
+          print("HTTP:", response.status_code)
+          response.raise_for_status()
+          payload = response.json()
+          tables = payload.get("tables", [])
+          if not tables:
+              raise SystemExit("TPEx response has no tables")
+          table = tables[0]
+          rows = table.get("data", [])
+          print("Status:", payload.get("stat"))
+          print("Title:", table.get("title"))
+          print("Subtitle:", table.get("subtitle"))
+          print("Rows:", len(rows))
+          for row in rows:
+              if str(row[0]).startswith("114/11/"):
+                  print("RAW:", json.dumps(row, ensure_ascii=False))
           PY
