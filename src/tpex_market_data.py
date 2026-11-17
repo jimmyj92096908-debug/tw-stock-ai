@@ -116,6 +116,40 @@ def fetch_month(stock_id: str, year: int, month: int) -> list[dict[str, Any]]:
         if len(raw) < 9:
             logger.warning("略過欄位不足的資料列：%s", raw)
             continue
+
+        # TPEx 原始欄位順序：日期、成交股數、成交金額、開盤、最高、最低、收盤、漲跌、筆數。
+        # 保留原始欄位於錯誤訊息中，避免欄位異常時靜默寫入錯價。
+        prices = [to_number(raw[index]) for index in (3, 4, 5, 6)]
+        open_price, high_price, low_price, close_price = prices
+        valid_prices = [value for value in prices if value is not None]
+        if valid_prices and (
+            (high_price is not None and low_price is not None and high_price < low_price)
+            or (low_price is not None and any(value < low_price for value in valid_prices))
+            or (high_price is not None and any(value > high_price for value in valid_prices))
+        ):
+            raise ValueError(
+                f"TPEx OHLC 欄位不合理，stock_id={stock_id}, "
+                f"date={raw[0]!r}, raw_row={raw!r}"
+            )
+
+        rows.append(
+            {
+                "stock_id": stock_id,
+                "trade_date": parse_roc_date(str(raw[0])),
+                "volume": to_number(raw[1]),
+                "turnover": to_number(raw[2]),
+                "open": open_price,
+                "high": high_price,
+                "low": low_price,
+                "close": close_price,
+                "change": to_number(raw[7]),
+                "transactions": to_number(raw[8]),
+                "source": "TPEX_TRADING_STOCK",
+            }
+        )
+        if len(raw) < 9:
+            logger.warning("略過欄位不足的資料列：%s", raw)
+            continue
         rows.append(
             {
                 "stock_id": stock_id,
