@@ -3,3 +3,4 @@ numpy
 requests
 pyarrow
 python-dateutil
+psycopg[binary]>=3.2,<4
