@@ -238,10 +238,10 @@ CREATE TABLE IF NOT EXISTS paper_positions (
 CREATE INDEX IF NOT EXISTS idx_paper_positions_status
     ON paper_positions (status, opened_at DESC);
 
--- TDCC ownership distribution is weekly; it is not a daily market series.
+-- TDCC ownership distribution is weekly and is not a daily market series.
 COMMENT ON TABLE tdcc_share_distribution IS
-    'Weekly TDCC shareholder distribution snapshots; do not treat as daily data.';
+    'Weekly TDCC shareholder distribution snapshots. Do not treat as daily data.';
 COMMENT ON TABLE analysis_signals IS
     'Research signals only. This system does not submit or execute brokerage orders.';
 COMMENT ON TABLE paper_positions IS
-    'Paper-trading ledger only; no connection to broker order execution.';
+    'Paper-trading ledger only. No connection to broker order execution.';
