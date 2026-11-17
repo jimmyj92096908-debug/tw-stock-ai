@@ -147,24 +147,6 @@ def fetch_month(stock_id: str, year: int, month: int) -> list[dict[str, Any]]:
                 "source": "TPEX_TRADING_STOCK",
             }
         )
-        if len(raw) < 9:
-            logger.warning("略過欄位不足的資料列：%s", raw)
-            continue
-        rows.append(
-            {
-                "stock_id": stock_id,
-                "trade_date": parse_roc_date(str(raw[0])),
-                "volume": to_number(raw[1]),
-                "turnover": to_number(raw[2]),
-                "open": to_number(raw[3]),
-                "high": to_number(raw[4]),
-                "low": to_number(raw[5]),
-                "close": to_number(raw[6]),
-                "change": to_number(raw[7]),
-                "transactions": to_number(raw[8]),
-                "source": "TPEX_TRADING_STOCK",
-            }
-        )
     return rows
 
 
