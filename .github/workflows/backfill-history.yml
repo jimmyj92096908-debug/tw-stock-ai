@@ -18,10 +18,10 @@ on:
         type: number
         default: 0
       limit:
-        description: "本次每個市場最多處理幾檔（建議先 1～2）"
+        description: "本次每個市場最多處理幾檔（先以 5 檔測試）"
         required: true
         type: number
-        default: 2
+        default: 5
       start_year:
         description: "起始年份"
         required: true
