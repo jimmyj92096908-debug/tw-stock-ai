@@ -28,16 +28,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Run bounded TWSE batch
+      - name: Run bounded TWSE and TPEx batch
         run: |
           python src/batch_download.py \
-            --market twse --twse-stock-ids 2330 --limit 1 \
-            --start-year 2026 --end-year 2026 --start-month 10 --end-month 10
-
-      - name: Run bounded TPEx batch
-        run: |
-          python src/batch_download.py \
-            --market tpex --tpex-stock-ids 6488 --limit 1 \
+            --market both --twse-stock-ids 2330 --tpex-stock-ids 6488 --limit 1 \
             --start-year 2026 --end-year 2026 --start-month 10 --end-month 10
 
       - name: Validate batch outputs
@@ -69,8 +63,10 @@ jobs:
               raise SystemExit("Missing batch summary")
           with summary.open(newline="", encoding="utf-8-sig") as file:
               results = list(csv.DictReader(file))
-          if len(results) != 1 or results[0]["status"] != "success":
+          if len(results) != 2 or any(row["status"] != "success" for row in results):
               raise SystemExit(f"Unexpected batch summary: {results}")
+          if {row["market"] for row in results} != {"上市", "上櫃"}:
+              raise SystemExit(f"Summary does not contain both markets: {results}")
           print("Bounded batch downloader test passed.")
           PY
 
