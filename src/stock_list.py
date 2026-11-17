@@ -63,9 +63,14 @@ def normalize_rows(
     normalized: list[dict[str, str]] = []
 
     for row in rows:
-        code = first_value(row, ("公司代號", "證券代號", "股票代號", "代號"))
-        name = first_value(row, ("公司名稱", "公司簡稱", "證券名稱", "股票名稱", "名稱"))
-        industry = first_value(row, ("產業別", "產業類別"))
+        code = first_value(row, ("公司代號", "證券代號", "股票代號", "代號", "SecuritiesCompanyCode"))
+        # TPEx 上櫃基本資料使用英文欄名，TWSE 則使用中文欄名。
+        name = first_value(
+            row,
+            ("公司簡稱", "證券名稱", "股票名稱", "名稱", "CompanyAbbreviation",
+             "公司名稱", "CompanyName"),
+        )
+        industry = first_value(row, ("產業別", "產業類別", "SecuritiesIndustryCode"))
 
         # 公司基本資料中的股票代碼通常為四位數；先排除非此格式項目。
         if not re.fullmatch(r"\d{4}", code):
@@ -95,7 +100,7 @@ def build_stock_list() -> list[dict[str, str]]:
 
     merged: dict[str, dict[str, str]] = {}
     for item in listed + otc:
-        merged[item["stock_id"]] = item
+        merged[(item["market"], item["stock_id"])] = item
 
     result = sorted(merged.values(), key=lambda item: item["stock_id"])
     if not result:
