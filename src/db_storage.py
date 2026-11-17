@@ -73,7 +73,7 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
         for row in reader:
             if not row.get("trade_date") or not row.get("stock_id"):
                 continue
-            rows.append({
+            parsed = {
                 "market": market,
                 "stock_id": row["stock_id"].strip(),
                 "trade_date": row["trade_date"].strip(),
@@ -86,7 +86,19 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
                 "change": optional_number(row.get("change")),
                 "transactions": optional_number(row.get("transactions")),
                 "source": row.get("source") or market.upper(),
-            })
+            }
+            prices = [parsed[key] for key in ("open", "high", "low", "close") if parsed[key] is not None]
+            high, low = parsed["high"], parsed["low"]
+            if prices and (
+                (high is not None and low is not None and high < low)
+                or (low is not None and any(value < low for value in prices))
+                or (high is not None and any(value > high for value in prices))
+            ):
+                raise ValueError(
+                    f"Invalid OHLC in {path}: {parsed['stock_id']} "
+                    f"{parsed['trade_date']} {prices}"
+                )
+            rows.append(parsed)
     return rows
 
 
