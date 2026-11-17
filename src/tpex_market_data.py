@@ -70,7 +70,8 @@ def to_number(value: Any) -> float | int | None:
 
 def parse_roc_date(value: str) -> str:
     """將民國日期（例如 115/10/01）轉成 ISO 日期。"""
-    match = re.fullmatch(r"(\d{2,3})/(\d{1,2})/(\d{1,2})", value.strip())
+    normalized = re.sub(r"[*＊]+$", "", value.strip()).strip()
+    match = re.fullmatch(r"(\d{2,3})/(\d{1,2})/(\d{1,2})", normalized)
     if not match:
         raise ValueError(f"無法辨識交易日期：{value!r}")
     year, month, day = map(int, match.groups())
