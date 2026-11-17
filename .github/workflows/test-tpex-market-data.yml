@@ -1,0 +1,82 @@
+name: Taiwan Stock AI - Test TPEx Market Data Module
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/tpex_market_data.py"
+      - ".github/workflows/test-tpex-market-data.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-tpex-market-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Download two months of TPEx history
+        run: |
+          python src/tpex_market_data.py --stock-id 6488 --start-year 2026 --end-year 2026 --start-month 9 --end-month 10
+
+      - name: Validate normalized CSV
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          path = Path("data/history/tpex/6488.csv")
+          if not path.exists():
+              raise SystemExit("Missing TPEx CSV output")
+
+          with path.open(newline="", encoding="utf-8-sig") as file:
+              rows = list(csv.DictReader(file))
+
+          required = {
+              "stock_id", "trade_date", "volume", "turnover",
+              "open", "high", "low", "close", "change",
+              "transactions", "source",
+          }
+          if not rows:
+              raise SystemExit("No rows downloaded")
+          if not required.issubset(rows[0].keys()):
+              raise SystemExit(f"Missing fields: {required - set(rows[0].keys())}")
+
+          dates = [row["trade_date"] for row in rows]
+          if dates != sorted(set(dates)):
+              raise SystemExit("Dates are unsorted or duplicated")
+          if any(row["stock_id"] != "6488" for row in rows):
+              raise SystemExit("Unexpected stock ID")
+          if any(row["source"] != "TPEX_TRADING_STOCK" for row in rows):
+              raise SystemExit("Unexpected source label")
+
+          months = {value[:7] for value in dates}
+          if months != {"2026-09", "2026-10"}:
+              raise SystemExit(f"Expected Sep and Oct 2026, got {sorted(months)}")
+
+          print(f"Validation passed: {len(rows)} rows")
+          print(f"Date range: {dates[0]} to {dates[-1]}")
+          print(f"Months: {', '.join(sorted(months))}")
+          print(f"Fields: {', '.join(rows[0].keys())}")
+          PY
+
+      - name: Upload test CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-6488-two-month-test
+          path: data/history/tpex/6488.csv
+          if-no-files-found: error
+          retention-days: 7
