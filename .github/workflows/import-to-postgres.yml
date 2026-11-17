@@ -33,8 +33,67 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Download bounded test history
+        run: |
+          python - <<'PY'
+          from src.market_data import download_range as download_twse
+          from src.tpex_market_data import download_range as download_tpex
+
+          twse_rows = download_twse("2330", 2026, 2026, 10, 10)
+          tpex_rows = download_tpex("6488", 2026, 2026, 10, 10)
+          print(f"TWSE 2330 downloaded rows: {twse_rows}")
+          print(f"TPEx 6488 downloaded rows: {tpex_rows}")
+          if twse_rows <= 0 or tpex_rows <= 0:
+              raise SystemExit("Expected non-empty October 2026 history for both test stocks.")
+          PY
+
+      - name: Validate CSV files are non-empty
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          files = [
+              Path("data/history/twse/2330.csv"),
+              Path("data/history/tpex/6488.csv"),
+          ]
+          for path in files:
+              if not path.exists():
+                  raise SystemExit(f"Missing expected CSV: {path}")
+              with path.open(newline="", encoding="utf-8-sig") as handle:
+                  rows = list(csv.DictReader(handle))
+              if not rows:
+                  raise SystemExit(f"No history rows in {path}")
+              print(f"{path}: {len(rows)} rows")
+          PY
+
       - name: Import history CSV files into PostgreSQL
         run: python src/db_storage.py
 
+      - name: Verify rows were written to Neon
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+
+          sql = """
+          SELECT market, stock_id, COUNT(*) AS row_count
+          FROM daily_prices
+          WHERE (market = 'twse' AND stock_id = '2330')
+             OR (market = 'tpex' AND stock_id = '6488')
+          GROUP BY market, stock_id
+          ORDER BY market, stock_id
+          """
+          with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=20) as conn:
+              rows = conn.execute(sql).fetchall()
+          for row in rows:
+              print(f"{row[0]} {row[1]}: {row[2]} rows in Neon")
+          found = {(row[0], row[1]): row[2] for row in rows}
+          if found.get(("twse", "2330"), 0) <= 0:
+              raise SystemExit("Neon verification failed: no TWSE 2330 rows.")
+          if found.get(("tpex", "6488"), 0) <= 0:
+              raise SystemExit("Neon verification failed: no TPEx 6488 rows.")
+          PY
+
       - name: Report import completion
-        run: echo "PostgreSQL import job completed. Credentials are not printed."
+        run: echo "Verified test history rows in Neon. Credentials are not printed."
