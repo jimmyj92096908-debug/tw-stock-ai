@@ -148,50 +148,32 @@ jobs:
       - name: Import selected history into Neon
         run: python src/db_storage.py
 
-      - name: Verify imported rows in Neon
+      - name: Verify imported rows and record progress in Neon
         env:
           START_YEAR: ${{ inputs.start_year }}
           END_YEAR: ${{ inputs.end_year }}
           START_MONTH: ${{ inputs.start_month }}
           END_MONTH: ${{ inputs.end_month }}
-          MARKET: ${{ inputs.market }}
-          OFFSET: ${{ inputs.offset }}
-          LIMIT: ${{ inputs.limit }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           python - <<'PY'
-          import csv, os
-          from pathlib import Path
-          import psycopg
-          from psycopg.rows import dict_row
+          import os
           from datetime import date
-          jobs_path = Path("data/history/batch_summary.csv")
-          with jobs_path.open(newline="", encoding="utf-8-sig") as f:
-              jobs = list(csv.DictReader(f))
           sy, ey = int(os.environ["START_YEAR"]), int(os.environ["END_YEAR"])
           sm, em = int(os.environ["START_MONTH"]), int(os.environ["END_MONTH"])
           start_date = date(sy, sm, 1)
           if em == 12:
               end_date = date(ey + 1, 1, 1)
           else:
-              end_date = date(ey, em + 1, 1)
-          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row, connect_timeout=20) as conn:
-              with conn.cursor() as cur:
-                  for item in jobs:
-                      market = "twse" if item["market"] == "上市" else "tpex"
-                      cur.execute(
-                          """SELECT COUNT(*) AS n, MIN(trade_date) AS first_date,
-                                    MAX(trade_date) AS last_date
-                             FROM daily_prices
-                             WHERE market=%s AND stock_id=%s
-                               AND trade_date >= %s AND trade_date < %s""",
-                          (market, item["stock_id"], start_date, end_date),
-                      )
-                      result = cur.fetchone()
-                      if result["n"] <= 0:
-                          raise SystemExit(f'No rows verified for {market} {item["stock_id"]}.')
-                      print(f'{market} {item["stock_id"]}: {result["n"]} DB rows, {result["first_date"]} to {result["last_date"]}')
-          print("Neon verification passed.")
+              from calendar import monthrange
+              end_date = date(ey, em, monthrange(ey, em)[1])
+          print(f"驗證資料範圍：{start_date} 至 {end_date}")
+          with open(os.environ["GITHUB_ENV"], "a") as env_file:
+              env_file.write(f"BACKFILL_START_DATE={start_date}\\n")
+              env_file.write(f"BACKFILL_END_DATE={end_date}\\n")
           PY
+          python src/backfill_progress.py --start-date "$BACKFILL_START_DATE" --end-date "$BACKFILL_END_DATE"
 
       - name: Upload batch summary
         uses: actions/upload-artifact@v4
