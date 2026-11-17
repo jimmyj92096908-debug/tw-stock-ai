@@ -1,0 +1,35 @@
+name: Taiwan Stock AI - TPEx API Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/test-tpex-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-tpex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Test official TPEx daily quotes API
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+          url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes"
+          response = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+          response.raise_for_status()
+          payload = response.json()
+          if not isinstance(payload, list) or not payload:
+              raise SystemExit("TPEx API returned no rows or unexpected JSON shape")
+          print("HTTP:", response.status_code)
+          print("Rows:", len(payload))
+          print("First row keys:", list(payload[0].keys()))
+          print("First row sample:", json.dumps(payload[0], ensure_ascii=False))
+          print("Distinct date fields:", sorted({str(row.get("Date", "")) for row in payload})[:5])
+          PY
