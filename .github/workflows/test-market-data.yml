@@ -1,0 +1,73 @@
+name: Taiwan Stock AI - Test Historical Market Data
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/market_data.py"
+      - ".github/workflows/test-market-data.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-tsmc-five-year-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 取得專案程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安裝必要套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 下載台積電五年歷史日 K
+        run: python src/market_data.py --stock-id 2330 --start-year 2021 --end-year 2026
+
+      - name: 驗證下載結果
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          path = Path("data/history/twse/2330.csv")
+          if not path.exists():
+              raise SystemExit("測試失敗：找不到台積電 CSV 檔案")
+
+          with path.open(newline="", encoding="utf-8-sig") as f:
+              rows = list(csv.DictReader(f))
+
+          if len(rows) < 1000:
+              raise SystemExit(f"測試失敗：日 K 筆數不足，只有 {len(rows)} 筆")
+
+          required = {"stock_id", "trade_date", "open", "high", "low", "close", "volume"}
+          if not required.issubset(rows[0].keys()):
+              raise SystemExit("測試失敗：缺少必要欄位")
+
+          dates = [row["trade_date"] for row in rows]
+          if dates != sorted(set(dates)):
+              raise SystemExit("測試失敗：交易日期未排序或有重複")
+
+          if any(row["stock_id"] != "2330" for row in rows):
+              raise SystemExit("測試失敗：股票代號不一致")
+
+          print(f"驗證成功：{len(rows)} 筆日 K")
+          print(f"資料期間：{dates[0]} 至 {dates[-1]}")
+          print(f"欄位：{', '.join(rows[0].keys())}")
+          PY
+
+      - name: 保存測試資料
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsmc-five-year-daily-data
+          path: data/history/twse/2330.csv
+          if-no-files-found: error
+          retention-days: 7
