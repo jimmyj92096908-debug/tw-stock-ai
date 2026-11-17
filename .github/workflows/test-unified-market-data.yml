@@ -1,0 +1,79 @@
+name: Taiwan Stock AI - Test Unified Market Data Entry
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/main.py"
+      - "src/market_data.py"
+      - "src/tpex_market_data.py"
+      - ".github/workflows/test-unified-market-data.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-unified-market-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run unified TWSE and TPEx download entry
+        run: |
+          python src/main.py \
+            --market both \
+            --twse-stock-id 2330 \
+            --tpex-stock-id 6488 \
+            --start-year 2026 --end-year 2026 \
+            --start-month 10 --end-month 10
+
+      - name: Validate both market outputs
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          checks = {
+              "TWSE": Path("data/history/twse/2330.csv"),
+              "TPEx": Path("data/history/tpex/6488.csv"),
+          }
+          for market, path in checks.items():
+              if not path.exists():
+                  raise SystemExit(f"{market}: output file missing: {path}")
+              with path.open(newline="", encoding="utf-8-sig") as file:
+                  rows = list(csv.DictReader(file))
+              if not rows:
+                  raise SystemExit(f"{market}: no daily rows")
+              required = {"stock_id", "trade_date", "volume", "turnover", "open", "high", "low", "close", "change", "transactions", "source"}
+              if not required.issubset(rows[0]):
+                  raise SystemExit(f"{market}: missing normalized columns")
+              dates = [row["trade_date"] for row in rows]
+              if dates != sorted(set(dates)):
+                  raise SystemExit(f"{market}: dates unsorted or duplicated")
+              if any(not value.startswith("2026-10-") for value in dates):
+                  raise SystemExit(f"{market}: rows outside October 2026")
+              print(f"{market}: {len(rows)} rows, {dates[0]} to {dates[-1]}")
+          print("Unified TWSE + TPEx entry test passed.")
+          PY
+
+      - name: Upload validation data
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-market-data-test
+          path: |
+            data/history/twse/2330.csv
+            data/history/tpex/6488.csv
+          if-no-files-found: error
+          retention-days: 7
