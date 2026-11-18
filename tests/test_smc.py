@@ -52,6 +52,25 @@ class SMCTests(unittest.TestCase):
         self.assertEqual(event["order_block"]["source_date"], "2026-01-04")
         self.assertEqual(event["order_block"]["identified_date"], "2026-01-07")
 
+    def test_choch_marks_first_break_against_existing_trend(self):
+        rows = [
+            bar(1, 10, 6, 8), bar(2, 12, 7, 11), bar(3, 11, 8, 10),
+            bar(4, 14, 9, 13), bar(5, 13, 8, 10), bar(6, 12, 5, 9),
+            bar(7, 11, 7, 8), bar(8, 9, 4, 4),
+        ]
+        result = compute_smc(rows, pivot_left=1, pivot_right=1)
+        bullish_bos = [
+            e for day in result for e in day["events"]
+            if e["type"] == "bos" and e["direction"] == "bullish"
+        ]
+        bearish_choch = [
+            e for day in result for e in day["events"]
+            if e["type"] == "choch" and e["direction"] == "bearish"
+        ]
+        self.assertTrue(bullish_bos)
+        self.assertTrue(bearish_choch)
+        self.assertEqual(bearish_choch[0]["event_date"], "2026-01-08")
+
     def test_liquidity_sweep_closes_back_below_prior_swing_high(self):
         rows = [
             bar(1, 10, 6, 8), bar(2, 12, 7, 9), bar(3, 15, 8, 12),
