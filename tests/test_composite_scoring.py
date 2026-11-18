@@ -21,8 +21,33 @@ class CompositeScoringTests(unittest.TestCase):
             self.assertGreaterEqual(result[key], 0)
             self.assertLessEqual(result[key], 100)
         self.assertIsNone(result["chip_score"])
-        self.assertEqual(result["component_status"]["chip"], "not_integrated")
+        self.assertEqual(result["component_status"]["chip"], "not_available")
         self.assertAlmostEqual(result["coverage_weight"], 0.8)
+
+    def test_chip_factor_is_integrated_when_source_coverage_is_sufficient(self):
+        row = {
+            "close": 100, "ma5": 99, "ma20": 95, "ma60": 90,
+            "ma120": 85, "ma240": 80, "rsi14": 58,
+            "volume": 1500, "volume_ma20": 1000,
+            "trend_direction": 1, "bos_bullish": True,
+            "bos_bearish": False, "choch_bullish": False,
+            "choch_bearish": False, "liquidity_sweep_low": True,
+            "liquidity_sweep_high": False, "fvg_type": "bullish",
+            "order_block_type": "bullish", "chip_score": 90,
+            "chip_coverage_weight": 0.75,
+        }
+        result = compute_composite_score(row)
+        self.assertEqual(result["chip_score"], 90)
+        self.assertEqual(result["component_status"]["chip"], "available")
+        self.assertAlmostEqual(result["coverage_weight"], 0.95)
+        self.assertAlmostEqual(result["short_coverage"], 0.95)
+
+    def test_chip_factor_below_minimum_coverage_is_not_used(self):
+        row = {"trend_direction": 1, "chip_score": 99, "chip_coverage_weight": 0.25}
+        result = compute_composite_score(row)
+        self.assertIsNone(result["chip_score"])
+        self.assertEqual(result["component_status"]["chip"], "insufficient_coverage")
+        self.assertAlmostEqual(result["coverage_weight"], 0.3)
 
     def test_missing_technical_data_is_not_fabricated(self):
         result = compute_composite_score({"trend_direction": 0})
