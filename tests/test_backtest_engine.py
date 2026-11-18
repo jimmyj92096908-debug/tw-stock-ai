@@ -18,6 +18,19 @@ class BacktestTests(unittest.TestCase):
         summary,trades=simulate_stock([],"short")
         self.assertEqual(summary["trades"],0)
         self.assertEqual(trades,[])
+
+    def test_evaluation_window_does_not_trade_before_start_or_after_end(self):
+        start=date(2025,1,2)
+        rows=[{"trade_date":start+timedelta(days=i),"open":100+i,"low":99+i,
+               "high":102+i,"close":101+i,"atr14":1.0} for i in range(6)]
+        with patch("src.backtest_engine.signal_score",return_value=(80,0.8,{})):
+            summary,trades=simulate_stock(rows,"short",start_date=start+timedelta(days=2),
+                                          end_date=start+timedelta(days=4))
+        self.assertEqual(summary["data_start"],str(start+timedelta(days=2)))
+        self.assertEqual(summary["data_end"],str(start+timedelta(days=4)))
+        self.assertTrue(all(t["entry_date"]>=start+timedelta(days=2) for t in trades))
+        self.assertTrue(all(t["exit_date"]<=start+timedelta(days=4) for t in trades))
+
     def test_entry_and_score_exit_execute_next_session_open(self):
         start=date(2025,1,2)
         rows=[]
