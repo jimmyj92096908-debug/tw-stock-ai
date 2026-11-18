@@ -1,4 +1,4 @@
-"""Fetch official daily margin/short data for the four pilot stocks.
+"""Fetch official daily margin/short data for stocks in the stock master universe.
 
 Amounts are stored in the reporting unit used by the exchange endpoint.
 TPEx is a latest-day snapshot and its Date must match the requested date.
