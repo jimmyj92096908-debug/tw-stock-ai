@@ -20,7 +20,7 @@ TPEX_REDUCTION_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/revivt"
 TARGETS={"twse":{"6213","4919","7827"},"tpex":{"8937"}}
 
 def _norm(s: Any)->str:
- return re.sub(r"[\\s\\ufeff（）()％%]", "", str(s or "")).lower()
+ return re.sub(r"[\s\ufeff（）()％%]", "", str(s or "")).lower()
 
 def _pick(row:dict, aliases:list[str])->Any:
  mapped={_norm(k):v for k,v in row.items()}
@@ -33,7 +33,7 @@ def _pick(row:dict, aliases:list[str])->Any:
 
 def parse_date(value:Any)->str:
  s=str(value or "").strip()
- m=re.search(r"(\\d{2,4})年?[/.-]?(\\d{1,2})月?[/.-]?(\\d{1,2})日?",s)
+ m=re.search(r"(\d{2,4})年?[/.-]?(\d{1,2})月?[/.-]?(\d{1,2})日?",s)
  if not m: raise ValueError(f"無法辨識公司行動日期：{value!r}")
  y,mo,d=map(int,m.groups())
  if y<1911: y+=1911
@@ -41,7 +41,7 @@ def parse_date(value:Any)->str:
 
 def _number(value:Any)->float|None:
  if value is None: return None
- s=re.sub(r"[,，元\\s]", "", str(value)).strip()
+ s=re.sub(r"[,，元\s]", "", str(value)).strip()
  if not s or s in {"-","--","N/A","NA"}: return None
  try: return float(s)
  except ValueError: return None
