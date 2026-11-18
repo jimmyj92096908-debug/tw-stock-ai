@@ -18,7 +18,7 @@ TWSE_REDUCTION_URL="https://www.twse.com.tw/exchangeReport/TWTAUU"
 TPEX_EX_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/exDailyQ"
 TPEX_REDUCTION_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/revivt"
 TPEX_EX_LEGACY_URL="https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php"
-TPEX_EX_COLUMNS=["除權息日期","代號","名稱","除權息前收盤價","除權息參考價","權值","息值","權值+息值","權/息","漲停價","跌停價","開始交易基準價","減除股利參考價","現金股利","每仟股無償配股","現金增資股數","現金增資認購價","公開承銷股數","員工認購股數","原股東認購股數","按持股比例仟股認購"]
+TPEX_EX_COLUMNS=["除權息日期","代號","名稱","除權息前收盤價","除權息參考價","權值","息值","權值加息值","權或息","漲停價","跌停價","開始交易基準價","減除股利參考價","現金股利","每仟股無償配股","現金增資股數","現金增資認購價","公開承銷股數","員工認購股數","原股東認購股數","按持股比例仟股認購"]
 TARGETS={"twse":{"6213","4919","7827"},"tpex":{"8937"}}
 
 def _norm(s: Any)->str:
