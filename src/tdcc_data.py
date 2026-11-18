@@ -160,11 +160,11 @@ def normalize_database_url(value: str) -> str:
     without logging or exposing credentials.
     """
     raw = value.strip()
-    if raw.startswith("\\\\"):
+    if raw.startswith("\\"):
         raise ValueError("DATABASE_URL 開頭多了反斜線；應以 postgresql:// 開始")
     parts = urlsplit(raw)
     if parts.scheme not in ("postgresql", "postgres") or not parts.hostname:
-        raise ValueError("DATABASE_URL 格式錯誤；請確認以 postgresql:// 開始且包含主機")
+        raise ValueError("DATABASE_URL 開頭不是 postgresql://；請移除開頭多餘字元，並確認完整連線字串以 postgresql:// 開始")
     if parts.username is None or parts.password is None:
         raise ValueError("DATABASE_URL 缺少資料庫使用者名稱或密碼")
     username = quote(unquote(parts.username), safe="")
