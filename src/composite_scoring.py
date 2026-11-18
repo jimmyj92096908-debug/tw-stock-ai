@@ -116,7 +116,9 @@ def _technical_scores(row: dict[str, Any]) -> dict[str, float | None]:
 
 
 def _smc_scores(row: dict[str, Any]) -> dict[str, float | None]:
-    trend = _direction_score(int(row["trend_direction"]) if row.get("trend_direction") is not None else None)
+    if row.get("trend_direction") is None:
+        return {"smc_score": None, "short_smc": None, "swing_smc": None, "long_smc": None}
+    trend = _direction_score(int(row["trend_direction"]))
     bos = _event_score(row, "bos_bullish", "bos_bearish")
     choch = _event_score(row, "choch_bullish", "choch_bearish", 85.0, 15.0)
     sweep = _event_score(row, "liquidity_sweep_low", "liquidity_sweep_high", 70.0, 30.0)
