@@ -46,6 +46,14 @@ class MarginParserTests(unittest.TestCase):
         self.assertEqual(records[0]["margin_balance"], 1000)
         self.assertEqual(records[0]["short_sell"], 20)
 
+    def test_parsers_filter_against_full_stock_master_universe(self):
+        tpex_rows = [
+            {"Date":"1151117","SecuritiesCompanyCode":"8937","MarginPurchase":"100","MarginSales":"50","CashRedemption":"2","MarginPurchaseBalance":"1000","ShortConvering":"10","ShortSale":"20","StockRedemption":"1","ShortSaleBalance":"200"},
+            {"Date":"1151117","SecuritiesCompanyCode":"9999","MarginPurchase":"100","MarginSales":"50","CashRedemption":"2","MarginPurchaseBalance":"1000","ShortConvering":"10","ShortSale":"20","StockRedemption":"1","ShortSaleBalance":"200"},
+        ]
+        rows = parse_tpex(tpex_rows, "2026-11-17", {"8937"})
+        self.assertEqual([row["stock_id"] for row in rows], ["8937"])
+
     def test_tpex_rejects_wrong_snapshot_date(self):
         with self.assertRaises(RuntimeError):
             parse_tpex([{"Date":"1151116","SecuritiesCompanyCode":"8937"}], "2026-11-17")
