@@ -1,0 +1,100 @@
+name: Add Requested Stocks to Neon
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tw-stock-requested-stocks
+  cancel-in-progress: false
+
+jobs:
+  add-stocks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download requested stocks (2021-01 to 2026-10)
+        run: |
+          python src/batch_download.py --market twse --twse-stock-ids "6213,4919,7827" --start-year 2021 --end-year 2026 --start-month 1 --end-month 10
+          python src/batch_download.py --market tpex --tpex-stock-ids "8937" --start-year 2021 --end-year 2026 --start-month 1 --end-month 10
+
+      - name: Validate requested CSV files
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          expected = {
+              "twse": {"6213", "4919", "7827"},
+              "tpex": {"8937"},
+          }
+          for market, codes in expected.items():
+              for code in sorted(codes):
+                  path = Path("data/history") / market / f"{code}.csv"
+                  if not path.exists() or path.stat().st_size == 0:
+                      raise SystemExit(f"Missing or empty file: {path}")
+                  with path.open(newline="", encoding="utf-8-sig") as f:
+                      rows = list(csv.DictReader(f))
+                  if not rows:
+                      raise SystemExit(f"No history rows: {path}")
+                  dates = [r["trade_date"] for r in rows]
+                  if dates != sorted(dates) or len(dates) != len(set(dates)):
+                      raise SystemExit(f"Unsorted or duplicate dates: {path}")
+                  print(f"{market} {code}: {len(rows)} rows, {dates[0]} to {dates[-1]}")
+          PY
+
+      - name: Import history into Neon
+        run: python src/db_storage.py
+
+      - name: Calculate technical indicators
+        run: |
+          python src/calculate_technicals.py --market twse --stock-id 6213
+          python src/calculate_technicals.py --market twse --stock-id 4919
+          python src/calculate_technicals.py --market twse --stock-id 7827
+          python src/calculate_technicals.py --market tpex --stock-id 8937
+
+      - name: Verify Neon rows
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          from psycopg.rows import dict_row
+          expected = [("twse", "6213"), ("twse", "4919"), ("twse", "7827"), ("tpex", "8937")]
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+              with conn.cursor() as cur:
+                  for market, code in expected:
+                      cur.execute("""
+                          SELECT
+                            (SELECT count(*) FROM daily_prices WHERE market=%s AND stock_id=%s) AS price_rows,
+                            (SELECT min(trade_date) FROM daily_prices WHERE market=%s AND stock_id=%s) AS first_date,
+                            (SELECT max(trade_date) FROM daily_prices WHERE market=%s AND stock_id=%s) AS last_date,
+                            (SELECT count(*) FROM daily_technicals WHERE market=%s AND stock_id=%s) AS technical_rows
+                      """, (market, code, market, code, market, code))
+                      row = cur.fetchone()
+                      print(market, code, row)
+                      if row["price_rows"] <= 0 or row["technical_rows"] <= 0:
+                          raise SystemExit(f"Verification failed for {market} {code}")
+          PY
