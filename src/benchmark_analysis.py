@@ -3,31 +3,10 @@ from __future__ import annotations
 import os, psycopg
 try:
     from tdcc_data import normalize_database_url
+    from regime_classifier import regime_map
 except ModuleNotFoundError:
     from src.tdcc_data import normalize_database_url
-
-def regime_map(index_rows):
-    """Map each session to the regime known at the PREVIOUS session close."""
-    closes=[(r[0],float(r[1])) for r in index_rows]
-    out={}
-    ma=[]
-    for i,(d,c) in enumerate(closes):
-        ma.append(sum(x[1] for x in closes[max(0,i-199):i+1])/min(i+1,200))
-        if i==0:
-            continue
-        target_date=closes[i][0]
-        prior_close=closes[i-1][1]
-        prior_ma=ma[i-1]
-        prior_slope=(ma[i-1]-ma[i-21]) if i>=21 else None
-        if i-1<219 or prior_slope is None:
-            out[target_date]="UNKNOWN"
-        elif prior_close>prior_ma and prior_slope>0:
-            out[target_date]="BULL"
-        elif prior_close<prior_ma and prior_slope<0:
-            out[target_date]="BEAR"
-        else:
-            out[target_date]="SIDEWAYS"
-    return out
+    from src.regime_classifier import regime_map
 
 def pf(trades):
     gp=sum(float(t[1]) for t in trades if float(t[1])>0)
