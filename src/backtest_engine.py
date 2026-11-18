@@ -33,7 +33,12 @@ def position_size(equity, entry, atr):
     stop_distance=ATR_MULTIPLE*atr
     if stop_distance<=0 or entry<=0: return 0
     risk_budget=equity*RISK_FRACTION
-    shares=int(risk_budget/stop_distance/LOT_SIZE)*LOT_SIZE
+    stop_price=max(0.0,entry-stop_distance)
+    # Include estimated entry/exit slippage, commissions and ordinary-share sell tax
+    # in the 1% risk budget, not just the raw ATR stop distance.
+    cost_adjusted_risk=(stop_distance + entry*SLIPPAGE_RATE + stop_price*SLIPPAGE_RATE
+        + entry*COMMISSION_RATE + stop_price*(COMMISSION_RATE+SELL_TAX_RATE))
+    shares=int(risk_budget/cost_adjusted_risk/LOT_SIZE)*LOT_SIZE
     affordable=int(equity/(entry*(1+SLIPPAGE_RATE)*(1+COMMISSION_RATE))/LOT_SIZE)*LOT_SIZE
     return max(0,min(shares,affordable))
 
