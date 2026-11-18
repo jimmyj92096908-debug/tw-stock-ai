@@ -14,7 +14,6 @@ import stock_list
 import tpex_market_data
 from calculate_smc import calculate_stock as calculate_smc_stock
 from calculate_technicals import calculate_stock as calculate_technical_stock
-from db_storage import import_history
 
 ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
 MARKET_MAP = {"上市": "twse", "上櫃": "tpex"}
@@ -188,6 +187,7 @@ def main() -> None:
     logger.info("官方股票清單共 %s 檔；每市場本次處理最多 %s 檔", len(universe), batch_size)
 
     failures: list[str] = []
+    refreshed_this_run: list[dict[str, str]] = []
     with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=20) as conn:
         upsert_universe(conn, universe)
         for market in ("twse", "tpex"):
@@ -197,24 +197,14 @@ def main() -> None:
             for index, stock in enumerate(batch):
                 try:
                     refresh_one(conn, stock, today)
+                    refreshed_this_run.append({"market": market, "stock_id": stock["stock_id"]})
                 except Exception as exc:
                     failures.append(f"{market} {stock['stock_id']}: {exc}")
                 if index < len(batch) - 1:
                     time.sleep(REQUEST_INTERVAL[market])
 
-        # Recalculate all selected stocks whose market-data refresh succeeded.
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT market, stock_id FROM market_data_refresh_state
-                WHERE last_attempt_at >= NOW() - INTERVAL '3 hours'
-                  AND last_status='success'
-                ORDER BY market, stock_id
-                """
-            )
-            refreshed = cur.fetchall()
-
-        for stock in refreshed:
+        # Recalculate only stocks refreshed successfully in this workflow run.
+        for stock in refreshed_this_run:
             try:
                 calculate_technical_stock(conn, stock["market"], stock["stock_id"])
                 calculate_smc_stock(conn, stock["market"], stock["stock_id"])
@@ -222,7 +212,7 @@ def main() -> None:
                 failures.append(f"indicator {stock['market']} {stock['stock_id']}: {exc}")
                 logger.exception("指標重算失敗：%s %s", stock["market"], stock["stock_id"])
 
-    logger.info("本次更新完成：成功 %s 檔，失敗 %s 檔", len(refreshed) - len(failures), len(failures))
+    logger.info("本次行情更新成功 %s 檔；失敗 %s 檔", len(refreshed_this_run), len(failures))
     if failures:
         raise RuntimeError("部分股票更新失敗：\n" + "\n".join(failures[:30]))
 
