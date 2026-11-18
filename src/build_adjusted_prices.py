@@ -23,7 +23,7 @@ def build(conn, market, stock_id):
  with conn.cursor() as cur:
   cur.execute("SELECT market,stock_id,trade_date,open,high,low,close,volume,turnover,price_change,transactions FROM daily_prices WHERE market=%s AND stock_id=%s ORDER BY trade_date",(market,stock_id))
   bars=cur.fetchall()
-  cur.execute("SELECT ex_date,price_factor,share_factor FROM corporate_actions WHERE market=%s AND stock_id=%s AND verified=TRUE ORDER BY ex_date",(market,stock_id))
+  cur.execute("SELECT ex_date,action_type,price_factor,share_factor,cash_amount,stock_amount FROM corporate_actions WHERE market=%s AND stock_id=%s AND verified=TRUE ORDER BY ex_date",(market,stock_id))
   actions=cur.fetchall()
  if not bars: return 0
  adjusted=adjust_bars(bars,actions)
