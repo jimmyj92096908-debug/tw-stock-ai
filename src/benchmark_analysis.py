@@ -1,7 +1,10 @@
 """Compare each tested strategy with stock buy-and-hold and TAIEX; attribute trades by TAIEX regime."""
 from __future__ import annotations
 import os, psycopg
-from tdcc_data import normalize_database_url
+try:
+    from tdcc_data import normalize_database_url
+except ModuleNotFoundError:
+    from src.tdcc_data import normalize_database_url
 
 def regime_map(index_rows):
     """Map each session to the regime known at the PREVIOUS session close."""
