@@ -62,8 +62,12 @@ def calculate_stock(conn: psycopg.Connection, market: str, stock_id: str) -> int
 def main() -> None:
     parser = argparse.ArgumentParser(description="計算九均線、RSI14、量均線及 ATR14")
     parser.add_argument("--market", choices=("twse", "tpex", "both"), default="both")
-    parser.add_argument("--stock-id", help="只計算指定股票；不填則計算所選市場全部有行情股票")
+    parser.add_argument("--stock-id", help="只計算指定股票")
+    parser.add_argument("--offset", type=int, default=0, help="股票清單起始位移")
+    parser.add_argument("--limit", type=int, default=5, help="本次最多計算幾檔；預設 5 檔")
     args = parser.parse_args()
+    if args.offset < 0 or not 1 <= args.limit <= 20:
+        parser.error("offset 必須 >= 0，limit 必須介於 1 到 20。")
 
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -79,10 +83,18 @@ def main() -> None:
                 )
             else:
                 cur.execute(
-                    "SELECT DISTINCT market, stock_id FROM daily_prices WHERE market = ANY(%s) ORDER BY market, stock_id",
-                    (list(markets),),
+                    """
+                    SELECT DISTINCT market, stock_id
+                    FROM daily_prices
+                    WHERE market = ANY(%s)
+                    ORDER BY market, stock_id
+                    OFFSET %s LIMIT %s
+                    """,
+                    (list(markets), args.offset, args.limit),
                 )
             stocks = cur.fetchall()
+        if not stocks:
+            raise RuntimeError("本批沒有找到符合條件的股票；請檢查市場、offset 與資料庫行情資料。")
 
         total = 0
         for stock in stocks:
