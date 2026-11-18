@@ -13,6 +13,7 @@ import json
 import os
 import re
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import psycopg
 import requests
@@ -150,6 +151,29 @@ def fetch_records() -> list[dict]:
     return records
 
 
+
+def normalize_database_url(value: str) -> str:
+    """Validate a PostgreSQL URI and percent-encode its username/password.
+
+    Reserved characters in credentials (notably @, /, ?, #, %) must be
+    percent-encoded in a URI. This normalizes already-valid URI components
+    without logging or exposing credentials.
+    """
+    raw = value.strip()
+    if raw.startswith("\\\\"):
+        raise ValueError("DATABASE_URL 開頭多了反斜線；應以 postgresql:// 開始")
+    parts = urlsplit(raw)
+    if parts.scheme not in ("postgresql", "postgres") or not parts.hostname:
+        raise ValueError("DATABASE_URL 格式錯誤；請確認以 postgresql:// 開始且包含主機")
+    if parts.username is None or parts.password is None:
+        raise ValueError("DATABASE_URL 缺少資料庫使用者名稱或密碼")
+    username = quote(unquote(parts.username), safe="")
+    password = quote(unquote(parts.password), safe="")
+    host = parts.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parts.scheme, f"{username}:{password}@{host}",
+                       parts.path, parts.query, ""))
+
+
 def save_records(records: list[dict]) -> int:
     sql = """
         INSERT INTO tdcc_share_distribution (
@@ -165,7 +189,7 @@ def save_records(records: list[dict]) -> int:
             share_percent=EXCLUDED.share_percent, source=EXCLUDED.source,
             retrieved_at=now()
     """
-    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    with psycopg.connect(normalize_database_url(os.environ["DATABASE_URL"])) as conn:
         with conn.cursor() as cur:
             cur.executemany(sql, records)
     return len(records)
