@@ -64,6 +64,28 @@ class InstitutionalFlowTests(unittest.TestCase):
         self.assertEqual(row["dealer_net"], 100)
         self.assertEqual(row["total_net"], 900)
 
+    def test_tpex_official_openapi_fields_and_roc_date(self):
+        payload = [{
+            "Date": "1151118",
+            "SecuritiesCompanyCode": "6488",
+            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Total Buy": "1000",
+            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Total Sell": "400",
+            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference": "600",
+            "SecuritiesInvestmentTrustCompanies-TotalBuy": "300",
+            "SecuritiesInvestmentTrustCompanies-TotalSell": "100",
+            "SecuritiesInvestmentTrustCompanies-Difference": "200",
+            "Dealers-TotalBuy": "250",
+            "Dealers-TotalSell": "150",
+            "Dealers-Difference": "100",
+            "TotalDifference": "900",
+        }]
+        row = parse_tpex(payload, date(2026, 11, 18))[0]
+        self.assertEqual(row["foreign_net"], 600)
+        self.assertEqual(row["trust_net"], 200)
+        self.assertEqual(row["dealer_net"], 100)
+        self.assertEqual(row["total_net"], 900)
+        self.assertEqual(parse_tpex(payload, date(2026, 11, 19)), [])
+
     def test_missing_fields_stay_null_and_nonstock_codes_are_ignored(self):
         payload = [{"證券代號": "6488", "投信買進股數": "1,000"}]
         row = parse_tpex(payload, date(2026, 11, 18))[0]
