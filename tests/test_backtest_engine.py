@@ -51,6 +51,21 @@ class BacktestTests(unittest.TestCase):
         self.assertAlmostEqual(summary["cagr_pct"],expected,places=8)
         self.assertEqual(len(trades),1)
 
+    def test_regime_specific_entry_thresholds(self):
+        start=date(2025,1,2)
+        rows=[
+            {"trade_date":start,"open":100,"low":99,"high":102,"close":101,"atr14":1.0,"market_regime":"BULL"},
+            {"trade_date":start+timedelta(days=1),"open":101,"low":100,"high":103,"close":102,"atr14":1.0,"market_regime":"BULL"},
+        ]
+        with patch("src.backtest_engine.signal_score",return_value=(65,0.8,{})):
+            bull_summary,bull_trades=simulate_stock(rows,"short",regime_entry_scores={"BULL":70})
+            bear_rows=[dict(r,market_regime="BEAR") for r in rows]
+            bear_summary,bear_trades=simulate_stock(bear_rows,"short",regime_entry_scores={"BEAR":60})
+        self.assertEqual(bull_summary["trades"],0)
+        self.assertEqual(len(bull_trades),0)
+        self.assertEqual(bear_summary["trades"],1)
+        self.assertEqual(len(bear_trades),1)
+
     def test_entry_and_score_exit_execute_next_session_open(self):
         start=date(2025,1,2)
         rows=[]
