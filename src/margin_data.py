@@ -24,7 +24,6 @@ def _session():
                   respect_retry_after_header=True)
     session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
-STOCKS = {"twse": {"6213", "4919", "7827"}, "tpex": {"8937"}}
 
 def to_int(value):
     text = str(value if value is not None else "").replace(",", "").strip()
@@ -53,7 +52,7 @@ def _required(row, key, source):
         raise RuntimeError(f"{source} 欄位 {key!r} 缺漏或格式改變")
     return value
 
-def parse_twse(payload, trade_date):
+def parse_twse(payload, trade_date, allowed_codes=None):
     if payload.get("stat") != "OK":
         raise RuntimeError(f"TWSE MI_MARGN 無資料：{payload.get('stat')}")
     _check_date(payload.get("date"), trade_date, "TWSE MI_MARGN")
@@ -93,7 +92,7 @@ def parse_twse(payload, trade_date):
         if not isinstance(raw, list) or len(raw) < 14:
             continue
         code = str(raw[code_idx]).strip()
-        if code not in STOCKS["twse"]:
+        if not code or (allowed_codes is not None and code not in allowed_codes):
             continue
         # MI_MARGN individual-stock table uses repeated buy/sell labels:
         # 2-7 financing, 8-13 short selling.
@@ -112,15 +111,11 @@ def parse_twse(payload, trade_date):
                 raise RuntimeError(f"TWSE {code} 欄位 index={idx} 缺漏或格式改變")
             values[name] = parsed
         output.append({"market": "twse", "stock_id": code, "trade_date": trade_date, **values})
-    found = {r["stock_id"] for r in output}
-    missing = sorted(STOCKS["twse"] - found)
-    if missing:
-        print(f"TWSE 當日無個股融資融券明細（可能未列入信用交易標的）：{missing}")
     if not output:
         raise RuntimeError("TWSE 個股融資融券明細為空，拒絕匯入")
     return output
 
-def parse_tpex(rows, trade_date):
+def parse_tpex(rows, trade_date, allowed_codes=None):
     if not isinstance(rows, list) or not rows:
         raise RuntimeError("TPEx margin balance API 回傳空資料")
     dates = {roc_date(row.get("Date")) for row in rows if isinstance(row, dict)}
@@ -140,17 +135,83 @@ def parse_tpex(rows, trade_date):
         if not isinstance(row, dict):
             continue
         code = str(row.get("SecuritiesCompanyCode", "")).strip()
-        if code not in STOCKS["tpex"]:
+        if not code or (allowed_codes is not None and code not in allowed_codes):
             continue
         values = {name: _required(row, key, f"TPEx {code}") for name, key in fields.items()}
         for name, candidates in quota_fields.items():
             values[name] = next((to_int(row.get(key)) for key in candidates if row.get(key) not in (None, "")), None)
         output.append({"market": "tpex", "stock_id": code, "trade_date": trade_date, **values})
-    if {r["stock_id"] for r in output} != STOCKS["tpex"]:
-        raise RuntimeError("TPEx 目標股票資料不完整")
+    if not output:
+        raise RuntimeError("TPEx 股票融資融券資料為空，拒絕匯入")
     return output
 
-def fetch_records(trade_date):
+def load_stock_universe():
+    """Use stock_master as the authoritative ordinary-stock universe."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL 未設定")
+    with psycopg.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT market, stock_id FROM stock_master WHERE market IN ('twse', 'tpex') AND stock_id ~ '^[0-9]{4,6}
+    session = _session()
+    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=(15, 60))
+    twse.raise_for_status()
+    tpex = session.get(TPEX_URL, headers=HEADERS, timeout=(15, 60))
+    tpex.raise_for_status()
+    return parse_twse(twse.json(), trade_date, stock_universe["twse"]) + parse_tpex(tpex.json(), trade_date, stock_universe["tpex"])
+
+def save_records(records):
+    sql = """
+        INSERT INTO margin_short (
+            market, stock_id, trade_date, margin_buy, margin_sell, margin_repayment,
+            margin_balance, short_sell, short_buyback, short_repayment, short_balance,
+            margin_quota, short_quota, source, retrieved_at
+        ) VALUES (
+            %(market)s, %(stock_id)s, %(trade_date)s, %(margin_buy)s, %(margin_sell)s,
+            %(margin_repayment)s, %(margin_balance)s, %(short_sell)s, %(short_buyback)s,
+            %(short_repayment)s, %(short_balance)s, %(margin_quota)s, %(short_quota)s,
+            %(source)s, now()
+        )
+        ON CONFLICT (market, stock_id, trade_date) DO UPDATE SET
+            margin_buy=EXCLUDED.margin_buy, margin_sell=EXCLUDED.margin_sell,
+            margin_repayment=EXCLUDED.margin_repayment, margin_balance=EXCLUDED.margin_balance,
+            short_sell=EXCLUDED.short_sell, short_buyback=EXCLUDED.short_buyback,
+            short_repayment=EXCLUDED.short_repayment, short_balance=EXCLUDED.short_balance,
+            margin_quota=EXCLUDED.margin_quota, short_quota=EXCLUDED.short_quota,
+            source=EXCLUDED.source, retrieved_at=now()
+    """
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        with conn.cursor() as cur:
+            for record in records:
+                record["source"] = "TWSE_MI_MARGN" if record["market"] == "twse" else "TPEX_tpex_mainboard_margin_balance"
+                cur.execute(sql, record)
+    return len(records)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date", required=True, help="交易日期 YYYY-MM-DD")
+    trade_date = date.fromisoformat(parser.parse_args().date).isoformat()
+    stock_universe = load_stock_universe()
+    records = fetch_records(trade_date, stock_universe)
+    counts = {market: sum(row["market"] == market for row in records) for market in ("twse", "tpex")}
+    print(f"取得 {len(records)} 筆融資融券資料，交易日 {trade_date}；TWSE {counts['twse']} 檔、TPEx {counts['tpex']} 檔")
+    print(f"寫入 Neon：{save_records(records)} 筆")
+    for row in records:
+        print(row["market"], row["stock_id"], "融資餘額", row["margin_balance"], "融券餘額", row["short_balance"])
+
+if __name__ == "__main__":
+    main()
+")
+            rows = cur.fetchall()
+    universe = {"twse": set(), "tpex": set()}
+    for market, stock_id in rows:
+        universe[market].add(str(stock_id).strip())
+    if not universe["twse"] or not universe["tpex"]:
+        raise RuntimeError("stock_master 上市／上櫃股票清單不完整")
+    print(f"股票主檔範圍：TWSE {len(universe['twse'])} 檔，TPEx {len(universe['tpex'])} 檔")
+    return universe
+
+def fetch_records(trade_date, stock_universe):
     session = _session()
     twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=(15, 60))
     twse.raise_for_status()
