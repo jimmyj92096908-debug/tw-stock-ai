@@ -18,15 +18,15 @@ def main():
         with conn.cursor() as cur:
             stocks=[]
             for market,stock in engine.STOCKS:
-                stocks.append((market,stock,engine.load_rows(cur,market,stock)))
+                stocks.append((market,stock,engine.load_rows(cur,market,stock,end_date=date.fromisoformat(DEVELOPMENT_END))))
             for threshold in CANDIDATE_THRESHOLDS:
                 engine.ENTRY_SCORE=threshold
                 summaries=[]; trades=[]
                 for market,stock,rows in stocks:
                     for horizon in engine.HOLD_DAYS:
                         summary,stock_trades=engine.simulate_stock(
-                            rows,horizon,start_date=__import__("datetime").date.fromisoformat(DEVELOPMENT_START),
-                            end_date=__import__("datetime").date.fromisoformat(DEVELOPMENT_END))
+                            rows,horizon,start_date=date.fromisoformat(DEVELOPMENT_START),
+                            end_date=date.fromisoformat(DEVELOPMENT_END))
                         summaries.append(summary)
                         trades.extend(stock_trades)
                 net=sum(float(s["net_profit"]) for s in summaries)
