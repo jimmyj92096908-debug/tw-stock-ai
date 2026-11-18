@@ -55,6 +55,22 @@ class TechnicalIndicatorsTests(unittest.TestCase):
     def test_empty_input(self):
         self.assertEqual(compute_indicators([]), [])
 
+    def test_missing_ohlc_rows_do_not_invalidate_later_price_indicators(self):
+        rows = sample_rows(260)
+        rows[100]["high"] = None
+        rows[100]["low"] = None
+        rows[100]["close"] = None
+        result = compute_indicators(rows)
+
+        # Missing-price date stays blank; later valid observations resume normally.
+        for field in ("ma5", "ma240", "rsi14", "atr14"):
+            self.assertIsNone(result[100][field])
+            self.assertIsNotNone(result[101][field] if field != "ma240" else result[-1][field])
+
+        self.assertIsNotNone(result[-1]["ma240"])
+        self.assertIsNotNone(result[-1]["rsi14"])
+        self.assertIsNotNone(result[-1]["atr14"])
+
 
 if __name__ == "__main__":
     unittest.main()
