@@ -13,10 +13,22 @@ from typing import Any
 
 import psycopg
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 TWSE_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
 TPEX_URL = "https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockResearch/1.0)"}
+
+
+def _session() -> requests.Session:
+    session = _session()
+    retry = Retry(total=4, connect=4, read=4, backoff_factor=2,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=frozenset({"GET"}),
+                  respect_retry_after_header=True)
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
 STOCKS = {"twse": {"6213", "4919", "7827"}, "tpex": {"8937"}}
 
 TWSE_FIELDS = {
@@ -136,7 +148,7 @@ def fetch_records(trade_date: str) -> list[dict]:
     twse = session.get(
         TWSE_URL,
         params={"date": trade_date.replace("-", ""), "selectType": "ALL", "response": "json"},
-        headers=HEADERS, timeout=30,
+        headers=HEADERS, timeout=(15, 60),
     )
     twse.raise_for_status()
     twse_rows = parse_twse(twse.json(), trade_date)
