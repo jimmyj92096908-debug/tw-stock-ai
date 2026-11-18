@@ -154,15 +154,20 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=Non
         "evaluation_days":days}
     return summary,trades
 
-def load_rows(cur,market,stock_id):
-    cur.execute("""SELECT a.trade_date,a.open,a.high,a.low,a.close,a.volume,t.ma5,t.ma10,t.ma13,t.ma20,
+def load_rows(cur,market,stock_id,end_date=None):
+    sql="""SELECT a.trade_date,a.open,a.high,a.low,a.close,a.volume,t.ma5,t.ma10,t.ma13,t.ma20,
         t.ma34,t.ma55,t.ma60,t.ma120,t.ma240,t.rsi14,t.volume_ma5,t.volume_ma20,t.atr14,
         s.trend_direction,s.bos_bullish,s.bos_bearish,s.choch_bullish,s.choch_bearish,
         s.liquidity_sweep_high,s.liquidity_sweep_low,s.order_block_type,s.fvg_type
         FROM daily_adjusted_prices a
         LEFT JOIN daily_technicals t USING(market,stock_id,trade_date)
         LEFT JOIN daily_smc s USING(market,stock_id,trade_date)
-        WHERE a.market=%s AND a.stock_id=%s ORDER BY a.trade_date""",(market,stock_id))
+        WHERE a.market=%s AND a.stock_id=%s"""
+    params=[market,stock_id]
+    if end_date is not None:
+        sql+=" AND a.trade_date<=%s"
+        params.append(end_date)
+    cur.execute(sql+" ORDER BY a.trade_date",params)
     cols=[d.name for d in cur.description]
     return [dict(zip(cols,row)) for row in cur.fetchall()]
 
