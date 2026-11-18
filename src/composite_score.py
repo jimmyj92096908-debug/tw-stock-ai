@@ -1,12 +1,17 @@
-"""Combine technical, SMC and chip subscores into an auditable daily score."""
+"""Combine technical, SMC and chip subscores into auditable daily scores."""
 from __future__ import annotations
 import json
 import os
-from datetime import date
 import psycopg
 
 WEIGHTS = {"technical": 0.35, "smc": 0.25, "chip": 0.40}
+HORIZON_WEIGHTS = {"technical": 0.50, "smc": 0.30, "chip": 0.20}
 MIN_COVERAGE = 0.50
+HORIZONS = {
+    "short": ("ma5", "ma10", "ma13", "ma20"),
+    "swing": ("ma20", "ma34", "ma55", "ma60"),
+    "long": ("ma60", "ma120", "ma240"),
+}
 
 def clamp(value, low=0.0, high=100.0):
     return max(low, min(high, float(value)))
@@ -35,6 +40,38 @@ def technical_score(row):
         "price_above_ma":above,"price_below_ma":below,"rsi14":float(rsi) if rsi is not None else None,
         "volume_ratio_5d_20d":round(ratio,3) if ratio is not None else None}
 
+def horizon_technical_score(row, horizon):
+    if not row or row.get("close") is None:
+        return None, {"status":"MISSING_PRICE"}
+    keys = HORIZONS[horizon]
+    available = [float(row[k]) for k in keys if row.get(k) is not None]
+    required = 2 if horizon == "long" else 2
+    if len(available) < required:
+        return None, {"status":"INSUFFICIENT_MA_HISTORY","ma_count":len(available),"required":required}
+    close = float(row["close"])
+    above = sum(close > value for value in available)
+    below = sum(close < value for value in available)
+    alignment = 50 + 50 * (above - below) / len(available)
+    rsi = row.get("rsi14")
+    rsi_score = 50.0
+    if rsi is not None:
+        rsi_value = float(rsi)
+        rsi_score = (65 if rsi_value < 30 else 55 if rsi_value < 45 else
+                     45 if rsi_value > 70 else 55 if rsi_value <= 60 else 50)
+    v5, v20 = row.get("volume_ma5"), row.get("volume_ma20")
+    ratio = float(v5) / float(v20) if v5 is not None and v20 is not None and float(v20)>0 else None
+    volume_score = 50 if ratio is None else (60 if ratio >= 1.2 else 40 if ratio <= 0.8 else 50)
+    if horizon == "short":
+        score = alignment*0.55 + rsi_score*0.30 + volume_score*0.15
+    elif horizon == "swing":
+        score = alignment*0.70 + rsi_score*0.20 + volume_score*0.10
+    else:
+        score = alignment*0.90 + rsi_score*0.10
+    return round(clamp(score),2), {"status":"AVAILABLE","ma_count":len(available),
+        "ma_keys":list(keys),"price_above_ma":above,"price_below_ma":below,
+        "rsi14":float(rsi) if rsi is not None else None,
+        "volume_ratio_5d_20d":round(ratio,3) if ratio is not None else None}
+
 def smc_score(row):
     if not row:
         return None, {"status":"MISSING"}
@@ -44,10 +81,8 @@ def smc_score(row):
     score = 50.0 + (15.0 if int(trend)>0 else -15.0 if int(trend)<0 else 0.0)
     for key, delta in (("bos_bullish",8),("choch_bullish",10),("liquidity_sweep_low",6),
                        ("bos_bearish",-8),("choch_bearish",-10),("liquidity_sweep_high",-6)):
-        if row.get(key):
-            score += delta
-    ob = row.get("order_block_type")
-    fvg = row.get("fvg_type")
+        if row.get(key): score += delta
+    ob, fvg = row.get("order_block_type"), row.get("fvg_type")
     if ob == "bullish": score += 3
     elif ob == "bearish": score -= 3
     if fvg == "bullish": score += 3
@@ -55,22 +90,52 @@ def smc_score(row):
     return round(clamp(score),2), {"status":"AVAILABLE","trend_direction":int(trend),
         "order_block_type":ob,"fvg_type":fvg}
 
-def combine_scores(components, minimum_coverage=MIN_COVERAGE):
-    available = {k: float(v) for k,v in components.items() if k in WEIGHTS and v is not None}
-    coverage = round(sum(WEIGHTS[k] for k in available),2)
-    if not available:
-        return None, coverage
-    score = round(sum(WEIGHTS[k]*v for k,v in available.items())/coverage,2)
+def horizon_smc_score(row, horizon):
+    if not row or row.get("trend_direction") is None:
+        return None, {"status":"MISSING_TREND"}
+    trend = int(row["trend_direction"])
+    score = 50 + (20 if trend > 0 else -20 if trend < 0 else 0)
+    used = ["trend_direction"]
+    if horizon in ("short","swing"):
+        for key, delta in (("bos_bullish",8),("bos_bearish",-8),
+                           ("choch_bullish",10),("choch_bearish",-10)):
+            if row.get(key): score += delta
+        used += ["bos","choch"]
+    if horizon == "short":
+        if row.get("liquidity_sweep_low"): score += 7
+        if row.get("liquidity_sweep_high"): score -= 7
+        ob, fvg = row.get("order_block_type"), row.get("fvg_type")
+        if ob == "bullish": score += 3
+        elif ob == "bearish": score -= 3
+        if fvg == "bullish": score += 3
+        elif fvg == "bearish": score -= 3
+        used += ["liquidity_sweep","order_block","fvg"]
+    elif horizon == "swing":
+        ob = row.get("order_block_type")
+        if ob == "bullish": score += 5
+        elif ob == "bearish": score -= 5
+        used += ["order_block"]
+    return round(clamp(score),2), {"status":"AVAILABLE","trend_direction":trend,"signals_used":used}
+
+def combine_scores(components, minimum_coverage=MIN_COVERAGE, weights=WEIGHTS):
+    available = {k: float(v) for k,v in components.items() if k in weights and v is not None}
+    coverage = round(sum(weights[k] for k in available),2)
+    if not available: return None, coverage
+    score = round(sum(weights[k]*v for k,v in available.items())/coverage,2)
     return (score if coverage >= minimum_coverage else None), coverage
 
 def calculate_all(database_url):
     upsert = """INSERT INTO daily_composite_scores
-    (market,stock_id,as_of_date,total_score,coverage_weight,technical_score,smc_score,chip_score,component_status,calculated_at)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,now())
+    (market,stock_id,as_of_date,total_score,coverage_weight,technical_score,smc_score,chip_score,
+     short_term_score,swing_score,long_term_score,short_coverage,swing_coverage,long_coverage,
+     component_status,calculated_at)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,now())
     ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET
     total_score=EXCLUDED.total_score,coverage_weight=EXCLUDED.coverage_weight,
-    technical_score=EXCLUDED.technical_score,smc_score=EXCLUDED.smc_score,
-    chip_score=EXCLUDED.chip_score,component_status=EXCLUDED.component_status,calculated_at=now()"""
+    technical_score=EXCLUDED.technical_score,smc_score=EXCLUDED.smc_score,chip_score=EXCLUDED.chip_score,
+    short_term_score=EXCLUDED.short_term_score,swing_score=EXCLUDED.swing_score,long_term_score=EXCLUDED.long_term_score,
+    short_coverage=EXCLUDED.short_coverage,swing_coverage=EXCLUDED.swing_coverage,long_coverage=EXCLUDED.long_coverage,
+    component_status=EXCLUDED.component_status,calculated_at=now()"""
     count=0
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
@@ -93,7 +158,8 @@ def calculate_all(database_url):
                 sr=cur.fetchone()
                 smc_keys=("trend_direction","bos_bullish","bos_bearish","choch_bullish","choch_bearish",
                     "liquidity_sweep_high","liquidity_sweep_low","order_block_type","fvg_type")
-                smc,s_status=smc_score(dict(zip(smc_keys,sr)) if sr else None)
+                smc_row=dict(zip(smc_keys,sr)) if sr else None
+                smc,s_status=smc_score(smc_row)
                 cur.execute("""SELECT total_score,coverage_weight,as_of_date FROM daily_chip_scores
                     WHERE market=%s AND stock_id=%s ORDER BY as_of_date DESC LIMIT 1""",(market,stock_id))
                 cr=cur.fetchone()
@@ -104,8 +170,18 @@ def calculate_all(database_url):
                 elif cr:
                     chip_status={"status":"INSUFFICIENT_SOURCE_COVERAGE","as_of_date":str(cr[2]),"source_coverage":float(cr[1])}
                 total,coverage=combine_scores({"technical":tech,"smc":smc,"chip":chip})
-                status={"technical":tech_status,"smc":s_status,"chip":chip_status}
-                cur.execute(upsert,(market,stock_id,tr[0],total,coverage,tech,smc,chip,json.dumps(status,ensure_ascii=False)))
+                horizon_results={}
+                for horizon in HORIZONS:
+                    ht,ht_status=horizon_technical_score(tech_row,horizon)
+                    hs,hs_status=horizon_smc_score(smc_row,horizon)
+                    hscore,hcov=combine_scores({"technical":ht,"smc":hs,"chip":chip},weights=HORIZON_WEIGHTS)
+                    horizon_results[horizon]={"score":hscore,"coverage":hcov,
+                        "technical":ht_status,"smc":hs_status}
+                status={"technical":tech_status,"smc":s_status,"chip":chip_status,"horizons":horizon_results}
+                cur.execute(upsert,(market,stock_id,tr[0],total,coverage,tech,smc,chip,
+                    horizon_results["short"]["score"],horizon_results["swing"]["score"],horizon_results["long"]["score"],
+                    horizon_results["short"]["coverage"],horizon_results["swing"]["coverage"],horizon_results["long"]["coverage"],
+                    json.dumps(status,ensure_ascii=False)))
                 count+=1
     return count
 
@@ -113,10 +189,12 @@ def main():
     from tdcc_data import normalize_database_url
     url=normalize_database_url(os.environ["DATABASE_URL"])
     count=calculate_all(url)
-    print(f"多因子綜合評分完成：{count} 檔")
+    print(f"多週期多因子評分完成：{count} 檔")
     with psycopg.connect(url) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT market,stock_id,as_of_date,total_score,coverage_weight,component_status FROM daily_composite_scores ORDER BY market,stock_id")
+            cur.execute("""SELECT market,stock_id,as_of_date,total_score,short_term_score,swing_score,
+                long_term_score,short_coverage,swing_coverage,long_coverage FROM daily_composite_scores
+                ORDER BY market,stock_id""")
             for row in cur.fetchall(): print(*row)
 
 if __name__=="__main__": main()
