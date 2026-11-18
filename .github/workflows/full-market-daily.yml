@@ -65,6 +65,8 @@ jobs:
             src/market_data.py \
             src/tpex_market_data.py \
             src/db_storage.py \
+            src/adjusted_prices.py \
+            src/build_adjusted_prices.py \
             src/calculate_technicals.py \
             src/calculate_smc.py
 
