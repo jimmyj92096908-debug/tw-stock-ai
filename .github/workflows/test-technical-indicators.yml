@@ -1,0 +1,36 @@
+name: Test Technical Indicators
+
+on:
+  push:
+    paths:
+      - "src/technical_indicators.py"
+      - "src/calculate_technicals.py"
+      - "tests/test_technical_indicators.py"
+      - ".github/workflows/test-technical-indicators.yml"
+  pull_request:
+    paths:
+      - "src/technical_indicators.py"
+      - "src/calculate_technicals.py"
+      - "tests/test_technical_indicators.py"
+      - ".github/workflows/test-technical-indicators.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip psycopg[binary]>=3.2,<4
+      - name: Compile Python files
+        run: python -m py_compile src/technical_indicators.py src/calculate_technicals.py
+      - name: Run unit tests
+        run: python -m unittest tests.test_technical_indicators -v
