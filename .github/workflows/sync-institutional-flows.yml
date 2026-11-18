@@ -1,0 +1,37 @@
+name: Sync Institutional Flows
+
+on:
+  schedule:
+    - cron: "30 13 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      trade_date:
+        description: "Optional trading date YYYY-MM-DD (blank = today)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install requests "psycopg[binary]>=3.2,<4"
+      - name: Fetch and sync institutional flows
+        run: |
+          if [ -n "${{ inputs.trade_date }}" ]; then
+            python src/institutional_flows.py --date "${{ inputs.trade_date }}"
+          else
+            python src/institutional_flows.py
+          fi
