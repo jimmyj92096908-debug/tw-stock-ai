@@ -25,6 +25,12 @@ def weighted_score(components: dict[str, float | None]) -> tuple[float | None, f
     return round(clamp(score), 2), round(weight_sum, 2)
 
 
+def publishable_score(components: dict[str, float | None],
+                      minimum_coverage: float = 0.50) -> tuple[float | None, float]:
+    score, coverage = weighted_score(components)
+    return (score if coverage >= minimum_coverage else None), coverage
+
+
 def _reference_date(cur, market: str, stock_id: str):
     # Anchor the score to the newest available source date, not stale price history.
     cur.execute("""
@@ -200,10 +206,7 @@ def calculate_all(database_url: str) -> int:
                 insider, insider_status = _insider(cur, market, stock_id, ref_date)
                 components = {"institutional": inst, "margin": margin,
                               "tdcc": tdcc, "insider": insider}
-                total, coverage = weighted_score(components)
-                # Do not publish an overall ranking from a single weakly covered component.
-                if coverage < 0.50:
-                    total = None
+                total, coverage = publishable_score(components)
                 status = {"institutional": inst_status, "margin": margin_status,
                           "tdcc": tdcc_status, "insider": insider_status}
                 cur.execute(insert, (market, stock_id, ref_date, total, coverage,
