@@ -8,9 +8,11 @@ on:
       - "src/technical_indicators.py"
       - "src/technical_signals.py"
       - "src/smc.py"
+      - "src/sync_smc.py"
       - "tests/test_technical_indicators.py"
       - "tests/test_technical_signals.py"
       - "tests/test_smc.py"
+      - "tests/test_sync_smc.py"
       - ".github/workflows/technical-indicators-test.yml"
   workflow_dispatch:
 
@@ -34,3 +36,5 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_technical_signals.py' -v
       - name: Run SMC tests
         run: python -m unittest discover -s tests -p 'test_smc.py' -v
+      - name: Run SMC sync mapping tests
+        run: python -m unittest discover -s tests -p 'test_sync_smc.py' -v
