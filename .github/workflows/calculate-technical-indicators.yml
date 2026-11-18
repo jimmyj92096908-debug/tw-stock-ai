@@ -1,0 +1,26 @@
+name: Calculate technical indicators from Neon
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install database dependency
+        run: python -m pip install "psycopg[binary]>=3.2,<4"
+      - name: Calculate and upsert technical indicators
+        working-directory: src
+        run: python sync_technical_indicators.py
