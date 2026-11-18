@@ -152,60 +152,13 @@ def load_stock_universe():
         raise RuntimeError("DATABASE_URL 未設定")
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT market, stock_id FROM stock_master WHERE market IN ('twse', 'tpex') AND stock_id ~ '^[0-9]{4,6}
-    session = _session()
-    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=(15, 60))
-    twse.raise_for_status()
-    tpex = session.get(TPEX_URL, headers=HEADERS, timeout=(15, 60))
-    tpex.raise_for_status()
-    return parse_twse(twse.json(), trade_date, stock_universe["twse"]) + parse_tpex(tpex.json(), trade_date, stock_universe["tpex"])
-
-def save_records(records):
-    sql = """
-        INSERT INTO margin_short (
-            market, stock_id, trade_date, margin_buy, margin_sell, margin_repayment,
-            margin_balance, short_sell, short_buyback, short_repayment, short_balance,
-            margin_quota, short_quota, source, retrieved_at
-        ) VALUES (
-            %(market)s, %(stock_id)s, %(trade_date)s, %(margin_buy)s, %(margin_sell)s,
-            %(margin_repayment)s, %(margin_balance)s, %(short_sell)s, %(short_buyback)s,
-            %(short_repayment)s, %(short_balance)s, %(margin_quota)s, %(short_quota)s,
-            %(source)s, now()
-        )
-        ON CONFLICT (market, stock_id, trade_date) DO UPDATE SET
-            margin_buy=EXCLUDED.margin_buy, margin_sell=EXCLUDED.margin_sell,
-            margin_repayment=EXCLUDED.margin_repayment, margin_balance=EXCLUDED.margin_balance,
-            short_sell=EXCLUDED.short_sell, short_buyback=EXCLUDED.short_buyback,
-            short_repayment=EXCLUDED.short_repayment, short_balance=EXCLUDED.short_balance,
-            margin_quota=EXCLUDED.margin_quota, short_quota=EXCLUDED.short_quota,
-            source=EXCLUDED.source, retrieved_at=now()
-    """
-    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
-        with conn.cursor() as cur:
-            for record in records:
-                record["source"] = "TWSE_MI_MARGN" if record["market"] == "twse" else "TPEX_tpex_mainboard_margin_balance"
-                cur.execute(sql, record)
-    return len(records)
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--date", required=True, help="交易日期 YYYY-MM-DD")
-    trade_date = date.fromisoformat(parser.parse_args().date).isoformat()
-    stock_universe = load_stock_universe()
-    records = fetch_records(trade_date, stock_universe)
-    counts = {market: sum(row["market"] == market for row in records) for market in ("twse", "tpex")}
-    print(f"取得 {len(records)} 筆融資融券資料，交易日 {trade_date}；TWSE {counts['twse']} 檔、TPEx {counts['tpex']} 檔")
-    print(f"寫入 Neon：{save_records(records)} 筆")
-    for row in records:
-        print(row["market"], row["stock_id"], "融資餘額", row["margin_balance"], "融券餘額", row["short_balance"])
-
-if __name__ == "__main__":
-    main()
-")
+            cur.execute("SELECT market, stock_id FROM stock_master WHERE market IN ('twse', 'tpex')")
             rows = cur.fetchall()
     universe = {"twse": set(), "tpex": set()}
     for market, stock_id in rows:
-        universe[market].add(str(stock_id).strip())
+        code = str(stock_id).strip()
+        if code.isdigit() and 4 <= len(code) <= 6:
+            universe[market].add(code)
     if not universe["twse"] or not universe["tpex"]:
         raise RuntimeError("stock_master 上市／上櫃股票清單不完整")
     print(f"股票主檔範圍：TWSE {len(universe['twse'])} 檔，TPEx {len(universe['tpex'])} 檔")
