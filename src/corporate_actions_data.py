@@ -165,6 +165,25 @@ def fetch_market(market:str,start_date:str,end_date:str)->list[dict]:
   if item: output.append(item)
  return output
 
+def supplemental_official_events(start_date:str,end_date:str)->list[dict]:
+ # TPEx/company announcement confirms the 8937 par-value change and 1-for-4
+ # share exchange; this event is not exposed by the historical exDailyQ feed.
+ event_date="2026-04-13"
+ if not (start_date <= event_date <= end_date):
+  return []
+ raw={"stock_id":"8937","company":"合騏工業","old_par_value":10,
+      "new_par_value":2.5,"old_last_trading_date":"2026-03-31",
+      "new_trading_date":event_date,"share_exchange_ratio":"1 old share -> 4 new shares",
+      "official_source":"https://www.tpex.org.tw/storage/about_otc_news/2026/03/1773998202916_1279086_news.pdf"}
+ return [{"market":"tpex","stock_id":"8937","ex_date":event_date,
+          "action_type":"STOCK_SPLIT","price_factor":0.25,"share_factor":4.0,
+          "source":"TPEx_OFFICIAL_FACE_VALUE_CHANGE",
+          "source_event_id":"8937_FACE_VALUE_2026-04-13_10_TO_2_5",
+          "verified":True,
+          "notes":"官方公告：面額10元變更為2.5元，每1股換發4股；歷史價格乘0.25、成交股數乘4。",
+          "raw_data":json.dumps(raw,ensure_ascii=False,sort_keys=True)}]
+
+
 def main():
  p=argparse.ArgumentParser()
  p.add_argument("--start-date",default="2021-01-01")
@@ -181,6 +200,7 @@ def main():
    rows.extend(batch); log.info("%s 官方來源取得 %d 筆目標公司行動",market,len(batch))
   except Exception as exc:
    errors.append(f"{market}: {exc}"); log.exception("%s 公司行動來源失敗",market)
+ rows.extend(supplemental_official_events(a.start_date,a.end_date))
  if not rows: raise RuntimeError("兩市場均未取得目標事件；"+ "; ".join(errors))
  sql="""INSERT INTO corporate_actions
  (market,stock_id,ex_date,action_type,price_factor,share_factor,source,source_event_id,verified,notes,raw_data)
