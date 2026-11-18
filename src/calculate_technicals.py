@@ -82,17 +82,19 @@ def main() -> None:
                     (list(markets), args.stock_id),
                 )
             else:
-                cur.execute(
-                    """
-                    SELECT DISTINCT market, stock_id
-                    FROM daily_prices
-                    WHERE market = ANY(%s)
-                    ORDER BY market, stock_id
-                    OFFSET %s LIMIT %s
-                    """,
-                    (list(markets), args.offset, args.limit),
-                )
-            stocks = cur.fetchall()
+                stocks = []
+                for market in markets:
+                    cur.execute(
+                        """
+                        SELECT DISTINCT market, stock_id
+                        FROM daily_prices
+                        WHERE market = %s
+                        ORDER BY stock_id
+                        OFFSET %s LIMIT %s
+                        """,
+                        (market, args.offset, args.limit),
+                    )
+                    stocks.extend(cur.fetchall())
         if not stocks:
             raise RuntimeError("本批沒有找到符合條件的股票；請檢查市場、offset 與資料庫行情資料。")
 
