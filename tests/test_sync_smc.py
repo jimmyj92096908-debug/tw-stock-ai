@@ -1,3 +1,5 @@
+"""Regression tests for the SMC-to-daily_smc persistence mapping."""
+
 import unittest
 
 from src.sync_smc import build_daily_smc_records
