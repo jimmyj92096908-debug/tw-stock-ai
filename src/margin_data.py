@@ -17,7 +17,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockResearch/1.0)"}
 
 
 def _session():
-    session = _session()
+    session = requests.Session()
     retry = Retry(total=4, connect=4, read=4, backoff_factor=2,
                   status_forcelist=(429, 500, 502, 503, 504),
                   allowed_methods=frozenset({"GET"}),
@@ -151,10 +151,10 @@ def parse_tpex(rows, trade_date):
     return output
 
 def fetch_records(trade_date):
-    session = requests.Session()
+    session = _session()
     twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=(15, 60))
     twse.raise_for_status()
-    tpex = session.get(TPEX_URL, headers=HEADERS, timeout=30)
+    tpex = session.get(TPEX_URL, headers=HEADERS, timeout=(15, 60))
     tpex.raise_for_status()
     return parse_twse(twse.json(), trade_date) + parse_tpex(tpex.json(), trade_date)
 
