@@ -1,0 +1,114 @@
+name: Test Technical Indicators - TWSE 2330
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/technical_indicators.py"
+      - "src/calculate_technicals.py"
+      - ".github/workflows/test-technical-2330.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: technical-2330-neon-test
+  cancel-in-progress: false
+
+jobs:
+  test-2330:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+          echo "DATABASE_URL is configured."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download five-year TWSE history for 2330
+        run: |
+          python src/batch_download.py \
+            --market twse \
+            --twse-stock-ids 2330 \
+            --start-year 2021 \
+            --end-year 2026 \
+            --start-month 1 \
+            --end-month 10
+
+      - name: Validate downloaded history
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          p = Path("data/history/twse/2330.csv")
+          if not p.exists():
+              raise SystemExit("2330 history CSV is missing")
+          with p.open(newline="", encoding="utf-8-sig") as f:
+              rows = list(csv.DictReader(f))
+          dates = [r["trade_date"] for r in rows]
+          if len(rows) < 240 or dates != sorted(set(dates)):
+              raise SystemExit(f"Insufficient, duplicate, or unsorted data: {len(rows)} rows")
+          print(f"TWSE 2330 downloaded: {len(rows)} daily rows")
+          PY
+
+      - name: Import 2330 history into Neon
+        run: python src/db_storage.py
+
+      - name: Calculate technical indicators for 2330
+        run: python src/calculate_technicals.py --market twse --stock-id 2330
+
+      - name: Verify MA240, RSI14 and ATR14 in Neon
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          from psycopg.rows import dict_row
+
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row, connect_timeout=20) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""
+                      SELECT
+                          COUNT(*) AS technical_rows,
+                          COUNT(ma240) AS ma240_rows,
+                          COUNT(rsi14) AS rsi14_rows,
+                          COUNT(atr14) AS atr14_rows,
+                          MAX(trade_date) AS latest_date
+                      FROM daily_technicals
+                      WHERE market='twse' AND stock_id='2330'
+                  """)
+                  summary = cur.fetchone()
+                  cur.execute("""
+                      SELECT trade_date, ma5, ma10, ma13, ma20, ma34,
+                             ma55, ma60, ma120, ma240, rsi14, atr14
+                      FROM daily_technicals
+                      WHERE market='twse' AND stock_id='2330'
+                      ORDER BY trade_date DESC
+                      LIMIT 1
+                  """)
+                  latest = cur.fetchone()
+          print("Neon technical summary:", summary)
+          print("Latest indicator row:", latest)
+          if summary["technical_rows"] < 240 or summary["ma240_rows"] < 1:
+              raise SystemExit("MA240 has not been populated; technical calculation test failed")
+          if summary["rsi14_rows"] < 1 or summary["atr14_rows"] < 1:
+              raise SystemExit("RSI14 or ATR14 has not been populated")
+          print("2330 Neon technical indicator verification passed.")
+          PY
