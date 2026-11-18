@@ -7,8 +7,8 @@ def test_previous_month_crosses_year_boundary():
     assert previous_month(date(2026, 1, 15)) == date(2025, 12, 1)
 
 
-def test_new_stock_starts_from_previous_month():
-    assert choose_start_month(None, date(2026, 11, 18)) == date(2026, 10, 1)
+def test_new_stock_starts_five_years_back_in_same_month():
+    assert choose_start_month(None, date(2026, 11, 18)) == date(2021, 11, 1)
 
 
 def test_latest_month_is_refetched():
