@@ -1,0 +1,37 @@
+name: Daily Chip Data Accumulation
+on:
+  schedule:
+    - cron: "35 13 * * 1-5"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tw-stock-daily-chip-ingest
+  cancel-in-progress: false
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: pip install requests "psycopg[binary]>=3.2,<4"
+      - name: Run parser tests
+        run: |
+          python -m unittest tests.test_institutional_data -v
+          python -m unittest tests.test_margin_data -v
+      - name: Import latest official daily chip snapshots
+        run: python src/daily_chip_ingest.py
+      - name: Recalculate composite chip scores
+        run: python src/chip_score.py
