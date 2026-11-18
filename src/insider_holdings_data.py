@@ -156,7 +156,7 @@ def save_records(records: list[dict]) -> int:
             """)
             cur.execute("ALTER TABLE insider_holdings ALTER COLUMN record_key SET NOT NULL")
             cur.execute("""
-              DO $
+              DO $$
               DECLARE old_pk TEXT;
               BEGIN
                 SELECT conname INTO old_pk
@@ -175,7 +175,7 @@ def save_records(records: list[dict]) -> int:
                     ADD CONSTRAINT insider_holdings_pkey
                     PRIMARY KEY (market, stock_id, as_of_date, record_key);
                 END IF;
-              END $;
+              END $$;
             """)
             # Replace only the dates being refreshed; transaction rollback protects prior data.
             for market, code, as_of in sorted({
