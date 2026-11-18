@@ -13,17 +13,23 @@ class InstitutionalDataTests(unittest.TestCase):
     def test_tpex_requires_matching_snapshot_date(self):
         row = {
             "Date": "1151117", "SecuritiesCompanyCode": "8937",
-            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-TotalBuy": "100",
-            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-TotalSell": "40",
+            " Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Total Buy": "100",
+            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Total Sell": "40",
             "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference": "60",
-            "SecuritiesInvestmentTrustCompanies-TotalBuy": "20",
+            "SecuritiesInvestmentTrustCompanies-Total Buy": "20",
             "SecuritiesInvestmentTrustCompanies-TotalSell": "5",
             "SecuritiesInvestmentTrustCompanies-Difference": "15",
-            "Dealers-TotalBuy": "10", "Dealers-TotalSell": "15", "Dealers-Difference": "-5",
+            "Dealers-TotalBuy": "10", "Dealers-Total Sell": "15", "Dealers-Difference": "-5",
             "TotalDifference": "70",
         }
         result = parse_tpex([row], "2026-11-17")
         self.assertEqual(result[0]["foreign_net"], 60)
+        self.assertEqual(result[0]["foreign_buy"], 100)
+        self.assertEqual(result[0]["foreign_sell"], 40)
+        self.assertEqual(result[0]["trust_buy"], 20)
+        self.assertEqual(result[0]["trust_sell"], 5)
+        self.assertEqual(result[0]["dealer_buy"], 10)
+        self.assertEqual(result[0]["dealer_sell"], 15)
         self.assertEqual(result[0]["dealer_net"], -5)
         with self.assertRaises(RuntimeError):
             parse_tpex([row], "2026-11-16")
