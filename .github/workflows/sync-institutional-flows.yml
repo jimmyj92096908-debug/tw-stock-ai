@@ -35,3 +35,5 @@ jobs:
           else
             python src/institutional_flows.py
           fi
+
+# Uses official daily TWSE T86 and dated TPEx dailyTrade endpoints.
