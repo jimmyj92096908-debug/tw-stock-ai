@@ -1,0 +1,79 @@
+name: Taiwan Stock AI - Batch Technical Indicators
+
+on:
+  workflow_dispatch:
+    inputs:
+      market:
+        description: "市場"
+        required: true
+        type: choice
+        options:
+          - both
+          - twse
+          - tpex
+        default: both
+      offset:
+        description: "股票清單起始位置（每個市場分別計算）"
+        required: true
+        type: number
+        default: 0
+      limit:
+        description: "本批每個市場最多計算幾檔（上限 20）"
+        required: true
+        type: number
+        default: 2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tw-stock-batch-technicals
+  cancel-in-progress: false
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+          echo "DATABASE_URL is configured."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate inputs and Python syntax
+        env:
+          OFFSET: ${{ inputs.offset }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          python - <<'PY'
+          import os
+          offset, limit = int(os.environ["OFFSET"]), int(os.environ["LIMIT"])
+          if offset < 0 or not 1 <= limit <= 20:
+              raise SystemExit("offset must be >= 0 and limit must be between 1 and 20.")
+          PY
+          python -m py_compile src/calculate_technicals.py src/technical_indicators.py
+
+      - name: Calculate and upsert selected stocks
+        run: |
+          python src/calculate_technicals.py \
+            --market "${{ inputs.market }}" \
+            --offset "${{ inputs.offset }}" \
+            --limit "${{ inputs.limit }}"
