@@ -84,18 +84,18 @@ def parse_csv(content: bytes | str, stock_map: dict[str, str] | None = None) -> 
         raise RuntimeError("TDCC CSV 缺少標題列")
     columns = {_key(name): name for name in reader.fieldnames}
     aliases = {
-        "date": ("資料日期", "日期"),
-        "stock": ("證券代號", "股票代號", "代號"),
-        "level": ("持股分級", "持股級距"),
-        "holders": ("人數", "股東人數"),
-        "shares": ("股數", "持有股數"),
-        "percent": ("占集保庫存數比例", "占集保庫存數比例%", "持股比例"),
+        "date": ("資料日期", "日期", "dataDate", "data_date", "date", "asOfDate", "as_of_date"),
+        "stock": ("證券代號", "股票代號", "代號", "stockCode", "stock_code", "securityCode", "security_code", "symbol"),
+        "level": ("持股分級", "持股級距", "holdingLevel", "holding_level", "level", "range"),
+        "holders": ("人數", "股東人數", "holders", "holderCount", "holder_count"),
+        "shares": ("股數", "持有股數", "shares", "shareCount", "share_count"),
+        "percent": ("占集保庫存數比例", "占集保庫存數比例%", "持股比例", "proportion", "percentage", "sharePercent", "share_percent"),
     }
     selected = {}
     for field, names in aliases.items():
         selected[field] = next((columns[_key(n)] for n in names if _key(n) in columns), None)
         if selected[field] is None:
-            raise RuntimeError(f"TDCC CSV 缺少必要欄位：{names}")
+            raise RuntimeError(f"TDCC 回應缺少必要欄位：{names}；實際欄位={reader.fieldnames}")
 
     output = []
     for row in reader:
