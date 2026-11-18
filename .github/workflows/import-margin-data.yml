@@ -40,7 +40,9 @@ jobs:
           import os
           import psycopg
           from psycopg.rows import dict_row
+
           expected = [("twse", "6213"), ("twse", "4919"), ("tpex", "8937")]
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
               with conn.cursor() as cur:
                   for market, code in expected:
                       cur.execute("""
@@ -53,4 +55,5 @@ jobs:
                       print(market, code, row)
                       if row["rows"] != 1:
                           raise SystemExit(f"Missing margin row for {market} {code}")
+          print("注意：TWSE 7827 若未列入信用交易標的，當日不會有 margin_short 資料列。")
           PY
