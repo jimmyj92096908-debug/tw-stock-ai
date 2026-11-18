@@ -36,6 +36,7 @@ def load_report(database_url: str) -> dict[str, Any]:
             cur.execute("""
                 SELECT COUNT(*) AS rows,
                        COUNT(*) FILTER (WHERE total_score IS NOT NULL) AS scored,
+                       COUNT(*) FILTER (WHERE chip_score IS NOT NULL) AS chip_integrated,
                        AVG(coverage_weight) AS avg_coverage
                 FROM public.daily_composite_scores WHERE as_of_date=%s
             """, (latest,))
@@ -105,6 +106,7 @@ def format_report(data: dict[str, Any]) -> str:
         f"  上市：{prices.get('twse', 0):,}/{universe.get('twse', 0):,}",
         f"  上櫃：{prices.get('tpex', 0):,}/{universe.get('tpex', 0):,}",
         f"已評分：{int(scores['scored'] or 0):,} 檔；平均因子覆蓋率：{avg_cov:.0f}%",
+        (f"籌碼因子已納入：{int(scores['chip_integrated'] or 0)} 檔" if int(scores['chip_integrated'] or 0) > 0 else "籌碼因子尚未達可用門檻，暫不納入總分"),
         f"三大法人：{inst['latest_date'] or '無資料'}，{int(inst['rows'] or 0):,} 筆",
         f"融資融券：{margin['latest_date'] or '無資料'}，{int(margin['rows'] or 0):,} 筆",
         "",
