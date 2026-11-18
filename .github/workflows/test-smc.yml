@@ -1,0 +1,28 @@
+name: Test SMC Indicators
+on:
+  push:
+    paths:
+      - "src/smc_indicators.py"
+      - "src/calculate_smc.py"
+      - "tests/test_smc_indicators.py"
+      - ".github/workflows/test-smc.yml"
+  pull_request:
+    paths:
+      - "src/smc_indicators.py"
+      - "src/calculate_smc.py"
+      - "tests/test_smc_indicators.py"
+      - ".github/workflows/test-smc.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip "psycopg[binary]>=3.2,<4"
+      - run: python -m py_compile src/smc_indicators.py src/calculate_smc.py
+      - run: python -m unittest tests.test_smc_indicators -v
