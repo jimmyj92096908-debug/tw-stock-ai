@@ -100,8 +100,12 @@ def parse_twse(payload, trade_date):
                 raise RuntimeError(f"TWSE {code} 欄位 index={idx} 缺漏或格式改變")
             values[name] = parsed
         output.append({"market": "twse", "stock_id": code, "trade_date": trade_date, **values})
-    if {r["stock_id"] for r in output} != STOCKS["twse"]:
-        raise RuntimeError("TWSE 目標股票資料不完整")
+    found = {r["stock_id"] for r in output}
+    missing = sorted(STOCKS["twse"] - found)
+    if missing:
+        print(f"TWSE 當日無個股融資融券明細（可能未列入信用交易標的）：{missing}")
+    if not output:
+        raise RuntimeError("TWSE 個股融資融券明細為空，拒絕匯入")
     return output
 
 def parse_tpex(rows, trade_date):
