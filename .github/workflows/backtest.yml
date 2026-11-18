@@ -53,6 +53,7 @@ jobs:
           PY
           echo "Importing official TAIEX history (2021-current)"
           python src/market_benchmark.py
+          echo "Revalidation after corporate-action adjustment rebuild"
           echo "Running development period (2021-2024)"
           BACKTEST_LABEL=development BACKTEST_ENTRY_SCORE=60 BACKTEST_START_DATE=2021-01-01 BACKTEST_END_DATE=2024-12-31 python src/backtest_engine.py
           BACKTEST_LABEL=development python src/benchmark_analysis.py
