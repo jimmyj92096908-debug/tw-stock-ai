@@ -43,6 +43,7 @@ def test_supplemental_8937_face_value_change():
  rows=supplemental_official_events("2021-01-01","2026-11-18")
  event=next(x for x in rows if x["stock_id"]=="8937")
  assert event["ex_date"]=="2026-04-13"
+ assert event["action_type"]=="FACE_VALUE_CHANGE"
  assert event["price_factor"]==pytest.approx(0.25)
  assert event["share_factor"]==pytest.approx(4.0)
  assert event["verified"] is True
