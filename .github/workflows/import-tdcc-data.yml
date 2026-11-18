@@ -1,0 +1,52 @@
+name: Import TDCC Weekly Share Distribution
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tw-stock-tdcc-import
+  cancel-in-progress: false
+jobs:
+  import-tdcc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: \${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+      - run: pip install requests "psycopg[binary]>=3.2,<4"
+      - name: Test TDCC parser
+        run: python -m unittest tests.test_tdcc_data -v
+      - name: Fetch and import official TDCC data
+        run: python src/tdcc_data.py
+      - name: Verify Neon rows
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          from psycopg.rows import dict_row
+
+          expected = [("twse", "6213"), ("twse", "4919"), ("twse", "7827"), ("tpex", "8937")]
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+              with conn.cursor() as cur:
+                  for market, code in expected:
+                      cur.execute("""
+                          SELECT count(*) AS rows, max(as_of_date) AS latest_date,
+                                 sum(share_percent) FILTER (WHERE holder_range <> '合計') AS tier_percent
+                          FROM tdcc_share_distribution
+                          WHERE market=%s AND stock_id=%s
+                      """, (market, code))
+                      row = cur.fetchone()
+                      print(market, code, row)
+                      if row["rows"] < 15 or row["latest_date"] is None:
+                          raise SystemExit(f"Missing TDCC distribution rows for {market} {code}")
+          PY
