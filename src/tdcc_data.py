@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import os
 import re
 from datetime import date
@@ -51,7 +52,7 @@ def _date(value: Any) -> str | None:
         return f"{text[:4]}-{text[4:6]}-{text[6:]}"
     if len(text) == 7 and text.isdigit():
         return f"{int(text[:3]) + 1911}-{text[3:5]}-{text[5:]}"
-    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", text):
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         return text
     return None
 
@@ -59,10 +60,23 @@ def _date(value: Any) -> str | None:
 def parse_csv(content: bytes | str, stock_map: dict[str, str] | None = None) -> list[dict]:
     stock_map = stock_map or STOCKS
     if isinstance(content, bytes):
-        try:
-            text = content.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            text = content.decode("cp950")
+        stripped = content.lstrip()
+        if stripped.startswith((b"{", b"[")):
+            payload = json.loads(content.decode("utf-8-sig"))
+            rows = payload if isinstance(payload, list) else payload.get("data", payload.get("result", []))
+            if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+                raise RuntimeError("TDCC OpenAPI JSON 回應格式非預期")
+            fields = list(dict.fromkeys(k for row in rows for k in row))
+            buffer = io.StringIO()
+            writer = csv.DictWriter(buffer, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+            text = buffer.getvalue()
+        else:
+            try:
+                text = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = content.decode("cp950")
     else:
         text = content.lstrip("\ufeff")
     reader = csv.DictReader(io.StringIO(text))
