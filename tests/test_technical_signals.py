@@ -53,7 +53,7 @@ class TechnicalSignalsTests(unittest.TestCase):
         self.assertAlmostEqual(result[0]["volume_ratio"], 1.5)
 
     def test_missing_data_is_not_fabricated(self):
-        result = compute_signals([row(rsi14=None, volume_ma20=None)])
+        result = compute_signals([row(rsi14=None, volume_ma20=None, ma240=None)])
         self.assertEqual(result[0]["rsi_state"], "insufficient_data")
         self.assertEqual(result[0]["volume_state"], "insufficient_data")
         self.assertEqual(result[0]["ma_alignment"], "mixed_or_insufficient_data")
