@@ -10,7 +10,7 @@ class LineReportTests(unittest.TestCase):
             "trade_date": date(2026, 11, 18),
             "universe": {"twse": 1093, "tpex": 898},
             "prices": {"twse": 16, "tpex": 14},
-            "scores": {"scored": 30, "avg_coverage": 0.8},
+            "scores": {"scored": 30, "chip_integrated": 0, "avg_coverage": 0.8},
             "institutional": {"latest_date": date(2026, 11, 18), "rows": 1864},
             "margin": {"latest_date": date(2026, 11, 18), "rows": 1870},
             "top": [{
@@ -32,7 +32,7 @@ class LineReportTests(unittest.TestCase):
             "trade_date": date(2026, 11, 18),
             "universe": {"twse": 1000, "tpex": 900},
             "prices": {"twse": 0, "tpex": 0},
-            "scores": {"scored": 0, "avg_coverage": None},
+            "scores": {"scored": 0, "chip_integrated": 0, "avg_coverage": None},
             "institutional": {"latest_date": None, "rows": 0},
             "margin": {"latest_date": None, "rows": 0},
             "top": [], "recipients": [],
