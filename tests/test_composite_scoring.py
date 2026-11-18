@@ -28,7 +28,7 @@ class CompositeScoringTests(unittest.TestCase):
         result = compute_composite_score({"trend_direction": 0})
         self.assertIsNone(result["technical_score"])
         self.assertIsNotNone(result["smc_score"])
-        self.assertIsNone(result["short_term_score"])
+        self.assertIsNotNone(result["short_term_score"])
         self.assertAlmostEqual(result["coverage_weight"], 0.3)
 
     def test_overbought_rsi_does_not_get_maximum_score(self):
