@@ -52,73 +52,80 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL):
         score,cov,detail=signal_score(r,horizon)
         scored.append({**r,"score":score,"coverage":cov,"score_detail":detail})
     equity=float(starting_capital); peak=equity; max_dd=0.0
-    trades=[]; position=None; equity_points=[]
+    trades=[]; position=None; pending_entry=None
     for i,row in enumerate(scored):
-        # Manage an existing position using today's intraday range and close signal.
+        op,lo,close=row.get("open"),row.get("low"),row.get("close")
+        # Orders generated at the previous close execute at today's open.
         if position:
-            exit_price=None; exit_reason=None
-            op,lo=row.get("open"),row.get("low")
-            stop=position["stop_price"]
-            if op is not None and float(op)<=stop:
-                exit_price=float(op); exit_reason="GAP_STOP"
-            elif lo is not None and float(lo)<=stop:
-                exit_price=stop; exit_reason="ATR_STOP"
-            elif position["holding_days"]>=HOLD_DAYS[horizon]:
-                exit_price=float(op) if op is not None else None; exit_reason="MAX_HOLD"
-            elif row["score"] is not None and row["score"]<=EXIT_SCORE:
-                exit_price=float(op) if op is not None else None; exit_reason="SCORE_EXIT"
+            exit_price=None; reason=None
+            if op is not None and float(op)<=position["stop_price"]:
+                exit_price=float(op); reason="GAP_STOP"
+            elif position.get("exit_pending"):
+                exit_price=float(op) if op is not None else None
+                reason=position["exit_pending"]
+            elif lo is not None and float(lo)<=position["stop_price"]:
+                exit_price=position["stop_price"]; reason="ATR_STOP"
             if exit_price is not None:
                 sell_fill=exit_price*(1-SLIPPAGE_RATE)
-                net_sell= sell_fill*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
-                pnl=net_sell-position["entry_cost"]
-                equity+=pnl
+                net_sell=sell_fill*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
+                pnl=net_sell-position["entry_cost"]; equity+=pnl
                 trades.append({"entry_date":position["entry_date"],"exit_date":row["trade_date"],
                     "entry_price":position["entry_price"],"exit_price":sell_fill,"shares":position["shares"],
                     "pnl":pnl,"return_pct":pnl/position["entry_cost"]*100,
                     "holding_days":position["holding_days"],"entry_score":position["entry_score"],
-                    "exit_reason":exit_reason,"planned_risk":position["risk_budget"]})
+                    "exit_reason":reason,"planned_risk":position["risk_budget"]})
                 position=None
-        # If flat, enter on next session open based only on this session's closing signal.
-        if position is None and i+1<len(scored) and row["score"] is not None and row["score"]>=ENTRY_SCORE:
-            nxt=scored[i+1]
-            atr=row.get("atr14")
-            entry_open=nxt.get("open")
-            if atr is not None and entry_open is not None and float(atr)>0 and float(entry_open)>0:
-                buy_fill=float(entry_open)*(1+SLIPPAGE_RATE)
-                shares=position_size(equity,buy_fill,float(atr))
-                if shares>0:
-                    gross=buy_fill*shares
-                    fee=gross*COMMISSION_RATE
-                    entry_cost=gross+fee
-                    stop=buy_fill-ATR_MULTIPLE*float(atr)
-                    position={"entry_date":nxt["trade_date"],"entry_price":buy_fill,
-                        "shares":shares,"entry_cost":entry_cost,"stop_price":stop,
-                        "entry_score":row["score"],"holding_days":0,
-                        "risk_budget":equity*RISK_FRACTION}
+        if position is None and pending_entry and op is not None:
+            atr=pending_entry["atr"]
+            buy_fill=float(op)*(1+SLIPPAGE_RATE)
+            shares=position_size(equity,buy_fill,atr)
+            if shares>0:
+                gross=buy_fill*shares
+                position={"entry_date":row["trade_date"],"entry_price":buy_fill,"shares":shares,
+                    "entry_cost":gross*(1+COMMISSION_RATE),
+                    "stop_price":buy_fill-ATR_MULTIPLE*atr,
+                    "entry_score":pending_entry["score"],"holding_days":0,
+                    "risk_budget":equity*RISK_FRACTION}
+            pending_entry=None
+            # A newly opened position is exposed to the entry session's low.
+            if position and lo is not None and float(lo)<=position["stop_price"]:
+                sell_fill=position["stop_price"]*(1-SLIPPAGE_RATE)
+                net_sell=sell_fill*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
+                pnl=net_sell-position["entry_cost"]; equity+=pnl
+                trades.append({"entry_date":position["entry_date"],"exit_date":row["trade_date"],
+                    "entry_price":position["entry_price"],"exit_price":sell_fill,"shares":position["shares"],
+                    "pnl":pnl,"return_pct":pnl/position["entry_cost"]*100,
+                    "holding_days":1,"entry_score":position["entry_score"],
+                    "exit_reason":"ATR_STOP_ENTRY_DAY","planned_risk":position["risk_budget"]})
+                position=None
         if position:
-            # Count actual trading sessions from entry day.
-            if row["trade_date"]>=position["entry_date"]:
-                position["holding_days"]+=1
-        marked_equity=equity
-        if position and row.get("close") is not None:
-            mark_sell=float(row["close"])*(1-SLIPPAGE_RATE)
-            mark_net=mark_sell*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
-            marked_equity += mark_net-position["entry_cost"]
+            position["holding_days"]+=1
+            # Signals at today's close are only actionable at the next session open.
+            if row["score"] is not None and row["score"]<=EXIT_SCORE:
+                position["exit_pending"]="SCORE_EXIT"
+            elif position["holding_days"]>=HOLD_DAYS[horizon]:
+                position["exit_pending"]="MAX_HOLD"
+        if position and close is not None:
+            mark_sell=float(close)*(1-SLIPPAGE_RATE)
+            marked_equity=equity+mark_sell*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)-position["entry_cost"]
+        else:
+            marked_equity=equity
         peak=max(peak,marked_equity)
         max_dd=max(max_dd,(peak-marked_equity)/peak if peak else 0)
-        equity_points.append(marked_equity)
-    # Liquidate any remaining position at the final available close.
-    if position and scored:
-        last=scored[-1]; close=last.get("close")
-        if close is not None:
-            sell_fill=float(close)*(1-SLIPPAGE_RATE)
-            net_sell=sell_fill*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
-            pnl=net_sell-position["entry_cost"]; equity+=pnl
-            trades.append({"entry_date":position["entry_date"],"exit_date":last["trade_date"],
-                "entry_price":position["entry_price"],"exit_price":sell_fill,"shares":position["shares"],
-                "pnl":pnl,"return_pct":pnl/position["entry_cost"]*100,
-                "holding_days":position["holding_days"],"entry_score":position["entry_score"],
-                "exit_reason":"END_OF_DATA","planned_risk":position["risk_budget"]})
+        # A close-time entry signal is stored and filled on the next session only.
+        if position is None and pending_entry is None and i+1<len(scored):
+            atr=row.get("atr14")
+            if row["score"] is not None and row["score"]>=ENTRY_SCORE and atr is not None and float(atr)>0:
+                pending_entry={"score":row["score"],"atr":float(atr)}
+    if position and scored and scored[-1].get("close") is not None:
+        last=scored[-1]; sell_fill=float(last["close"])*(1-SLIPPAGE_RATE)
+        net_sell=sell_fill*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
+        pnl=net_sell-position["entry_cost"]; equity+=pnl
+        trades.append({"entry_date":position["entry_date"],"exit_date":last["trade_date"],
+            "entry_price":position["entry_price"],"exit_price":sell_fill,"shares":position["shares"],
+            "pnl":pnl,"return_pct":pnl/position["entry_cost"]*100,
+            "holding_days":position["holding_days"],"entry_score":position["entry_score"],
+            "exit_reason":"END_OF_DATA","planned_risk":position["risk_budget"]})
     wins=sum(t["pnl"]>0 for t in trades)
     gross_profit=sum(t["pnl"] for t in trades if t["pnl"]>0)
     gross_loss=-sum(t["pnl"] for t in trades if t["pnl"]<0)
