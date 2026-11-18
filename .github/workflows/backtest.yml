@@ -43,4 +43,7 @@ jobs:
               with conn.cursor() as cur:
                   cur.execute(open("sql/backtest_schema.sql",encoding="utf-8").read())
           PY
-          python src/backtest_engine.py
+          echo "Running development period (2021-2024)"
+          BACKTEST_LABEL=development BACKTEST_START_DATE=2021-01-01 BACKTEST_END_DATE=2024-12-31 python src/backtest_engine.py
+          echo "Running out-of-sample period (2025-current)"
+          BACKTEST_LABEL=out_of_sample BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
