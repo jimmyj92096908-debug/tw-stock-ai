@@ -1,0 +1,51 @@
+name: Build Composite Chip Scores
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/chip_score.py"
+      - "sql/chip_score_schema.sql"
+      - "tests/test_chip_score.py"
+      - ".github/workflows/build-chip-scores.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "psycopg[binary]>=3.2,<4"
+      - run: python -m unittest tests.test_chip_score -v
+      - run: python -m py_compile src/chip_score.py
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "psycopg[binary]>=3.2,<4"
+      - name: Validate database secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+      - name: Apply score schema and calculate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "src")
+          from tdcc_data import normalize_database_url
+          import psycopg
+          with psycopg.connect(normalize_database_url(os.environ["DATABASE_URL"])) as conn:
+              with conn.cursor() as cur:
+                  cur.execute(open("sql/chip_score_schema.sql", encoding="utf-8").read())
+          PY
+          python src/chip_score.py
