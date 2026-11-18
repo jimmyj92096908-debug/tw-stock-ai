@@ -1,0 +1,21 @@
+name: Test TDCC Data Importer
+on:
+  push:
+    paths:
+      - "src/tdcc_data.py"
+      - "tests/test_tdcc_data.py"
+      - ".github/workflows/test-tdcc-data.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "psycopg[binary]>=3.2,<4" requests
+      - run: python -m py_compile src/tdcc_data.py
+      - run: python -m unittest tests.test_tdcc_data -v
