@@ -1,5 +1,12 @@
 name: Daily Chip Data Accumulation
 on:
+  push:
+    paths:
+      - "src/daily_chip_ingest.py"
+      - "src/institutional_data.py"
+      - "src/margin_data.py"
+      - "src/chip_score.py"
+      - ".github/workflows/daily-chip-ingest.yml"
   schedule:
     - cron: "35 13 * * 1-5"
   workflow_dispatch:
