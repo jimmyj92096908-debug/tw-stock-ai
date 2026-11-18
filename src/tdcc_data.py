@@ -17,7 +17,7 @@ from typing import Any
 import psycopg
 import requests
 
-TDCC_URL = "https://smart.tdcc.com.tw/opendata/getOD.ashx?id=1-5"
+TDCC_URL = "https://openapi.tdcc.com.tw/v1/opendata/1-5"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockResearch/1.0)"}
 STOCKS = {"6213": "twse", "4919": "twse", "7827": "twse", "8937": "tpex"}
 RANGES = {
