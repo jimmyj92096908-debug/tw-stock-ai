@@ -18,7 +18,7 @@ from calculate_technicals import calculate_stock as calculate_technical_stock
 ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
 MARKET_MAP = {"上市": "twse", "上櫃": "tpex"}
 REQUEST_INTERVAL = {"twse": 3, "tpex": 2}
-DEFAULT_BATCH_SIZE = 150
+DEFAULT_BATCH_SIZE = 5
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -158,8 +158,9 @@ def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> None:
             raise RuntimeError("下載器未產生預期 CSV 檔案")
         # Import this stock only; never re-import every CSV in a rotating batch.
         from db_storage import upsert_csv
-        with conn:
-            upsert_csv(conn, csv_path, market)
+        # upsert_csv manages its own transaction. Do not use "with conn" here:
+        # psycopg closes the connection when that context exits.
+        upsert_csv(conn, csv_path, market)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT MAX(trade_date) AS latest FROM daily_prices WHERE market=%s AND stock_id=%s",
