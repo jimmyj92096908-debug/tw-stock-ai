@@ -81,6 +81,25 @@ jobs:
           print("Date range:", parsed_dates[0], "to", parsed_dates[-1])
           print("TPEx historical monthly data test passed.")
 
+      - name: Regression test previously failed TPEx stock 1259 October 2022
+        run: |
+          python src/tpex_market_data.py --stock-id 1259 --start-year 2022 --end-year 2022 --start-month 10 --end-month 10
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          path = Path("data/history/tpex/1259.csv")
+          if not path.exists():
+              raise SystemExit("Stock 1259 CSV was not created")
+          with path.open(newline="", encoding="utf-8-sig") as file:
+              rows = list(csv.DictReader(file))
+          target = [row for row in rows if row["trade_date"].startswith("2022-10-")]
+          if not target:
+              raise SystemExit("No October 2022 rows downloaded for stock 1259")
+          print(f"Stock 1259 October 2022 regression test passed: {len(target)} rows")
+          print(f"Date range: {target[0]['trade_date']} to {target[-1]['trade_date']}")
+          PY
+
       - name: Inspect TPEx stock 1295 November 2025 raw response
         run: |
           python - <<'PY'
