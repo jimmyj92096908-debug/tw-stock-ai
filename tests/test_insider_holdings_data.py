@@ -48,6 +48,22 @@ class InsiderHoldingsTests(unittest.TestCase):
         parsed = parse_rows(rows, "twse")
         self.assertEqual(parsed[0]["share_count"], 100)
 
+    def test_duplicate_person_role_rows_keep_distinct_source_keys(self):
+        rows = [
+            {"公司代號": "6213", "資料年月": "11510", "姓名": "同名", "職稱": "董事",
+             "持有股數": "100", "設質股數": "0"},
+            {"公司代號": "6213", "資料年月": "11510", "姓名": "同名", "職稱": "董事",
+             "持有股數": "200", "設質股數": "0"},
+        ]
+        parsed = parse_rows(rows, "twse")
+        self.assertEqual(len({row["record_key"] for row in parsed}), 2)
+
+    def test_identical_source_rows_share_same_key(self):
+        row = {"公司代號": "6213", "資料年月": "11510", "姓名": "同名", "職稱": "董事",
+               "持有股數": "100", "設質股數": "0"}
+        parsed = parse_rows([row, dict(row)], "twse")
+        self.assertEqual(parsed[0]["record_key"], parsed[1]["record_key"])
+
     def test_date_parser(self):
         self.assertEqual(as_date("115/10/31"), "2026-10-31")
         self.assertEqual(as_date("2026-10"), "2026-10-01")
