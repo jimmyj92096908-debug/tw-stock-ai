@@ -6,6 +6,10 @@ on:
       - "src/backtest_engine.py"
       - "sql/backtest_schema.sql"
       - "tests/test_backtest_engine.py"
+      - "src/market_benchmark.py"
+      - "src/benchmark_analysis.py"
+      - "sql/benchmark_schema.sql"
+      - "tests/test_market_benchmark.py"
       - ".github/workflows/backtest.yml"
 jobs:
   test:
@@ -16,8 +20,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install requests "psycopg[binary]>=3.2,<4"
-      - run: python -m unittest tests.test_backtest_engine -v
-      - run: python -m py_compile src/backtest_engine.py
+      - run: python -m unittest tests.test_backtest_engine tests.test_market_benchmark -v
+      - run: python -m py_compile src/backtest_engine.py src/market_benchmark.py src/benchmark_analysis.py
   backtest:
     needs: test
     runs-on: ubuntu-latest
@@ -42,8 +46,13 @@ jobs:
           with psycopg.connect(normalize_database_url(os.environ["DATABASE_URL"])) as conn:
               with conn.cursor() as cur:
                   cur.execute(open("sql/backtest_schema.sql",encoding="utf-8").read())
+                  cur.execute(open("sql/benchmark_schema.sql",encoding="utf-8").read())
           PY
+          echo "Importing official TAIEX history (2021-current)"
+          python src/market_benchmark.py
           echo "Running development period (2021-2024)"
           BACKTEST_LABEL=development BACKTEST_START_DATE=2021-01-01 BACKTEST_END_DATE=2024-12-31 python src/backtest_engine.py
+          BACKTEST_LABEL=development python src/benchmark_analysis.py
           echo "Running out-of-sample period (2025-current)"
           BACKTEST_LABEL=out_of_sample BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
+          BACKTEST_LABEL=out_of_sample python src/benchmark_analysis.py
