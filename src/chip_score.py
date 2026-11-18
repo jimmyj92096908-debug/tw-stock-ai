@@ -25,11 +25,22 @@ def weighted_score(components: dict[str, float | None]) -> tuple[float | None, f
     return round(clamp(score), 2), round(weight_sum, 2)
 
 
-def _latest_price_date(cur, market: str, stock_id: str):
-    cur.execute(
-        "SELECT MAX(trade_date) FROM daily_prices WHERE market=%s AND stock_id=%s",
-        (market, stock_id),
-    )
+def _reference_date(cur, market: str, stock_id: str):
+    # Anchor the score to the newest available source date, not stale price history.
+    cur.execute("""
+      SELECT MAX(d) FROM (
+        SELECT MAX(trade_date) AS d FROM daily_prices WHERE market=%s AND stock_id=%s
+        UNION ALL
+        SELECT MAX(trade_date) FROM institutional_flows WHERE market=%s AND stock_id=%s
+        UNION ALL
+        SELECT MAX(trade_date) FROM margin_short WHERE market=%s AND stock_id=%s
+        UNION ALL
+        SELECT MAX(as_of_date) FROM tdcc_share_distribution WHERE market=%s AND stock_id=%s
+        UNION ALL
+        SELECT MAX(as_of_date) FROM insider_holdings WHERE market=%s AND stock_id=%s
+      ) source_dates
+    """, (market, stock_id, market, stock_id, market, stock_id,
+          market, stock_id, market, stock_id))
     row = cur.fetchone()
     return row[0] if row else None
 
@@ -54,8 +65,13 @@ def _institutional(cur, market: str, stock_id: str, ref_date: date):
              (SELECT MAX(trade_date) FROM f)
     """, (market, stock_id, ref_date, market, stock_id, ref_date))
     count, net5, net20, vol5, vol20, latest = cur.fetchone()
-    if not count or not vol5 or not vol20 or latest is None:
+    if not count or latest is None:
         return None, {"status": "MISSING", "latest_date": str(latest) if latest else None}
+    if count < 20:
+        return None, {"status": "INSUFFICIENT_HISTORY", "latest_date": str(latest),
+                      "observations": int(count), "required_observations": 20}
+    if not vol5 or not vol20:
+        return None, {"status": "INSUFFICIENT_PRICE_HISTORY", "latest_date": str(latest)}
     age = (ref_date - latest).days
     if age > 7:
         return None, {"status": "STALE", "latest_date": str(latest), "age_days": age}
@@ -175,7 +191,7 @@ def calculate_all(database_url: str) -> int:
             cur.execute("SELECT market, stock_id FROM stock_master ORDER BY market, stock_id")
             stocks = cur.fetchall()
             for market, stock_id in stocks:
-                ref_date = _latest_price_date(cur, market, stock_id)
+                ref_date = _reference_date(cur, market, stock_id)
                 if ref_date is None:
                     continue
                 inst, inst_status = _institutional(cur, market, stock_id, ref_date)
@@ -185,6 +201,9 @@ def calculate_all(database_url: str) -> int:
                 components = {"institutional": inst, "margin": margin,
                               "tdcc": tdcc, "insider": insider}
                 total, coverage = weighted_score(components)
+                # Do not publish an overall ranking from a single weakly covered component.
+                if coverage < 0.50:
+                    total = None
                 status = {"institutional": inst_status, "margin": margin_status,
                           "tdcc": tdcc_status, "insider": insider_status}
                 cur.execute(insert, (market, stock_id, ref_date, total, coverage,
