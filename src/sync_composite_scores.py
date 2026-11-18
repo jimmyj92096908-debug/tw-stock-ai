@@ -63,12 +63,22 @@ def main():
            t.ma120, t.ma240, t.rsi14, t.volume_ma20, t.atr14,
            s.bos_bullish, s.bos_bearish, s.choch_bullish, s.choch_bearish,
            s.trend_direction, s.liquidity_sweep_high, s.liquidity_sweep_low,
-           s.order_block_type, s.fvg_type
+           s.order_block_type, s.fvg_type,
+           chip.total_score AS chip_score,
+           chip.coverage_weight AS chip_coverage_weight
     FROM public.daily_prices p
     LEFT JOIN public.daily_technicals t
       USING (market, stock_id, trade_date)
     LEFT JOIN public.daily_smc s
       USING (market, stock_id, trade_date)
+    LEFT JOIN LATERAL (
+      SELECT total_score, coverage_weight
+      FROM public.daily_chip_scores c
+      WHERE c.market=p.market AND c.stock_id=p.stock_id
+        AND c.as_of_date<=p.trade_date
+      ORDER BY c.as_of_date DESC
+      LIMIT 1
+    ) chip ON TRUE
     ORDER BY p.market, p.stock_id, p.trade_date
     """
     with psycopg.connect(database_url, connect_timeout=20, row_factory=dict_row) as conn:
