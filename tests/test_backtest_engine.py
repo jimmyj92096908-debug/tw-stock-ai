@@ -31,6 +31,26 @@ class BacktestTests(unittest.TestCase):
         self.assertTrue(all(t["entry_date"]>=start+timedelta(days=2) for t in trades))
         self.assertTrue(all(t["exit_date"]<=start+timedelta(days=4) for t in trades))
 
+
+    def test_cagr_uses_evaluation_window_not_indicator_warmup(self):
+        rows=[
+            {"trade_date":date(2021,1,4),"open":80,"low":79,"high":82,"close":81,"atr14":1.0},
+            {"trade_date":date(2025,1,2),"open":100,"low":99,"high":102,"close":101,"atr14":1.0},
+            {"trade_date":date(2026,1,2),"open":105,"low":104,"high":107,"close":106,"atr14":1.0},
+            {"trade_date":date(2026,1,5),"open":110,"low":109,"high":112,"close":111,"atr14":1.0},
+        ]
+        scores={date(2021,1,4):30,date(2025,1,2):80,
+                date(2026,1,2):30,date(2026,1,5):30}
+        with patch("src.backtest_engine.signal_score",
+                   side_effect=lambda row,horizon:(scores[row["trade_date"]],0.8,{})):
+            summary,trades=simulate_stock(rows,"short",start_date=date(2025,1,2),
+                                          end_date=date(2026,1,5))
+        self.assertEqual(summary["evaluation_days"],368)
+        years=368/365.25
+        expected=((summary["ending_equity"]/1_000_000)**(1/years)-1)*100
+        self.assertAlmostEqual(summary["cagr_pct"],expected,places=8)
+        self.assertEqual(len(trades),1)
+
     def test_entry_and_score_exit_execute_next_session_open(self):
         start=date(2025,1,2)
         rows=[]
