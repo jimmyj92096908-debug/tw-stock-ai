@@ -39,3 +39,9 @@ jobs:
           print("Corporate-action schema applied.")
           PY
           python src/build_adjusted_prices.py --market both --stock-ids 6213 4919 7827 8937
+          for market in twse tpex; do
+            for stock in 6213 4919 7827 8937; do
+              python src/calculate_technicals.py --market "$market" --stock-id "$stock" || true
+              python src/calculate_smc.py --market "$market" --stock-id "$stock" || true
+            done
+          done
