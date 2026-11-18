@@ -184,13 +184,13 @@ def sync_rows(rows: list[dict[str, Any]], database_url: str) -> int:
         trust_buy, trust_sell, trust_net, dealer_buy, dealer_sell, dealer_net,
         total_net, source, retrieved_at
     )
-    SELECT %(market)s, %(stock_id)s, %(trade_date)s, %(foreign_buy)s, %(foreign_sell)s,
+    SELECT %(market)s::text, %(stock_id)s::varchar, %(trade_date)s::date, %(foreign_buy)s, %(foreign_sell)s,
            %(foreign_net)s, %(trust_buy)s, %(trust_sell)s, %(trust_net)s,
            %(dealer_buy)s, %(dealer_sell)s, %(dealer_net)s, %(total_net)s,
            %(source)s, NOW()
     WHERE EXISTS (
         SELECT 1 FROM public.stock_master
-        WHERE market = %(market)s AND stock_id = %(stock_id)s
+        WHERE market = %(market)s::text AND stock_id = %(stock_id)s::varchar
     )
     ON CONFLICT (market, stock_id, trade_date) DO UPDATE SET
         foreign_buy = EXCLUDED.foreign_buy, foreign_sell = EXCLUDED.foreign_sell,
