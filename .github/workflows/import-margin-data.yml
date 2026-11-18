@@ -1,11 +1,16 @@
 name: Import Margin and Short Data for Requested Stocks
 on:
+  push:
+    paths:
+      - "src/margin_data.py"
+      - "tests/test_margin_data.py"
+      - ".github/workflows/import-margin-data.yml"
   workflow_dispatch:
     inputs:
       trade_date:
         description: "交易日期 YYYY-MM-DD（TPEx 僅提供最新快照，日期不符會停止）"
         required: true
-        default: "2026-11-17"
+        default: "2026-11-18"
 permissions:
   contents: read
 concurrency:
@@ -17,7 +22,7 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      TRADE_DATE: ${{ inputs.trade_date }}
+      TRADE_DATE: ${{ inputs.trade_date || '2026-11-18' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
