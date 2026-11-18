@@ -53,13 +53,10 @@ def previous_month(value: date) -> date:
 
 
 def choose_start_month(latest_trade_date: date | None, today: date) -> date:
-    """Re-fetch the latest stored month, but never go earlier than last month.
-
-    Historical gaps are handled by the separate five-year backfill workflow.
-    """
+    """Newly listed stocks get up to five years; existing stocks refresh recent months."""
     floor = previous_month(today)
     if latest_trade_date is None:
-        return floor
+        return date(today.year - 5, today.month, 1)
     return max(month_start(latest_trade_date), floor)
 
 
