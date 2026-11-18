@@ -7,7 +7,7 @@ on:
       - "sql/backtest_schema.sql"
       - "tests/test_backtest_engine.py"
       - "src/market_benchmark.py"
-      - "src/benchmark_analysis.py"
+      - "src/benchmark_analysis.py"\n      - "src/entry_threshold_research.py"
       - "sql/benchmark_schema.sql"
       - "tests/test_market_benchmark.py"
       - ".github/workflows/backtest.yml"
@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
       - run: pip install requests "psycopg[binary]>=3.2,<4"
       - run: python -m unittest tests.test_backtest_engine tests.test_market_benchmark -v
-      - run: python -m py_compile src/backtest_engine.py src/market_benchmark.py src/benchmark_analysis.py
+      - run: python -m py_compile src/backtest_engine.py src/market_benchmark.py src/benchmark_analysis.py src/entry_threshold_research.py
   backtest:
     needs: test
     runs-on: ubuntu-latest
