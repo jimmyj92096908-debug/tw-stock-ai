@@ -116,8 +116,26 @@ def parse_csv(content: bytes | str, stock_map: dict[str, str] | None = None) -> 
 
 
 def fetch_records() -> list[dict]:
-    response = requests.get(TDCC_URL, headers=HEADERS, timeout=60)
-    response.raise_for_status()
+    session = requests.Session()
+    retry = requests.adapters.Retry(
+        total=3, connect=3, read=2, backoff_factor=2,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET"]),
+    )
+    session.mount("https://", requests.adapters.HTTPAdapter(max_retries=retry))
+    try:
+        response = session.get(
+            TDCC_URL, headers={**HEADERS, "Accept": "application/json"},
+            timeout=(15, 60),
+        )
+        response.raise_for_status()
+    except requests.RequestException as primary_error:
+        print(f"TDCC OpenAPI 連線失敗，改用舊版官方 CSV：{primary_error}")
+        response = session.get(
+            "https://smart.tdcc.com.tw/opendata/getOD.ashx?id=1-5",
+            headers=HEADERS, timeout=(15, 60),
+        )
+        response.raise_for_status()
     records = parse_csv(response.content)
     dates = {r["as_of_date"] for r in records}
     if len(dates) != 1:
