@@ -1,6 +1,13 @@
 name: Calculate SMC from Neon
 
 on:
+  push:
+    branches:
+      - "feature/technical-indicators"
+    paths:
+      - "src/smc.py"
+      - "src/sync_smc.py"
+      - ".github/workflows/calculate-smc.yml"
   workflow_dispatch:
 
 permissions:
