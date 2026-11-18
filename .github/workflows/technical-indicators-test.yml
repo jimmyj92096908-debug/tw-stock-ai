@@ -16,6 +16,8 @@ on:
       - "tests/test_smc.py"
       - "tests/test_sync_smc.py"
       - "tests/test_composite_scoring.py"
+      - "src/institutional_flows.py"
+      - "tests/test_institutional_flows.py"
       - ".github/workflows/technical-indicators-test.yml"
   workflow_dispatch:
 
@@ -43,3 +45,5 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_sync_smc.py' -v
       - name: Run composite scoring tests
         run: python -m unittest discover -s tests -p 'test_composite_scoring.py' -v
+      - name: Run institutional flow tests
+        run: python -m unittest discover -s tests -p 'test_institutional_flows.py' -v
