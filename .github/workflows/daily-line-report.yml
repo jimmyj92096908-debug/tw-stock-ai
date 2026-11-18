@@ -43,7 +43,13 @@ jobs:
         run: pip install "psycopg[binary]>=3.2,<4" requests
       - name: Validate report formatter
         run: python -m unittest tests.test_send_line_report -v
+      - name: Check official TWSE trading calendar
+        id: calendar
+        if: github.event_name == 'schedule'
+        run: python -m src.trading_calendar
+
       - name: Generate and send LINE report
+        if: steps.calendar.outputs.should_run != 'false'
         run: |
           if [ "$DRY_RUN" = "true" ]; then
             python src/send_line_report.py --dry-run
