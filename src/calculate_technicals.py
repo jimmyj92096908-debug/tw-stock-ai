@@ -81,6 +81,7 @@ def main() -> None:
                     "SELECT DISTINCT market, stock_id FROM daily_prices WHERE market = ANY(%s) AND stock_id=%s ORDER BY market, stock_id",
                     (list(markets), args.stock_id),
                 )
+                stocks = cur.fetchall()
             else:
                 stocks = []
                 for market in markets:
