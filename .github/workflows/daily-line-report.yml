@@ -1,0 +1,56 @@
+name: Daily LINE Stock Data Report
+
+on:
+  schedule:
+    # 23:30 Taiwan time, weekdays; after the regular daily data jobs.
+    - cron: "30 15 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只產生報告、不發送 LINE（第一次請保持 true）"
+        required: true
+        type: boolean
+        default: true
+  push:
+    branches:
+      - "main"
+    paths:
+      - "src/send_line_report.py"
+      - "tests/test_send_line_report.py"
+      - ".github/workflows/daily-line-report.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-line-stock-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      DRY_RUN: ${{ github.event_name == 'push' || inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install "psycopg[binary]>=3.2,<4" requests
+      - name: Validate report formatter
+        run: python -m unittest tests.test_send_line_report -v
+      - name: Generate and send LINE report
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            python src/send_line_report.py --dry-run
+          else
+            if [ -z "$LINE_CHANNEL_ACCESS_TOKEN" ]; then
+              echo "::error::Add LINE_CHANNEL_ACCESS_TOKEN to GitHub Actions Secrets before enabling live notifications."
+              exit 1
+            fi
+            python src/send_line_report.py
+          fi
