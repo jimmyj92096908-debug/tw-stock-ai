@@ -14,6 +14,8 @@ jobs:
   download-stock-list:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: 取得專案程式碼
@@ -32,6 +34,9 @@ jobs:
 
       - name: 下載上市與上櫃股票清單
         run: python src/stock_list.py
+
+      - name: 同步上市與上櫃股票至 Neon stock_master
+        run: python src/sync_stock_master.py
 
       - name: 暫存股票清單成果
         uses: actions/upload-artifact@v4
