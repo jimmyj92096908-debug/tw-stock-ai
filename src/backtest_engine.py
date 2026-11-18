@@ -158,14 +158,14 @@ def run(database_url):
                     summary,trades=simulate_stock(rows,horizon)
                     results.append((market,stock_id,horizon,summary))
                     all_trades.extend((market,stock_id,horizon,t) for t in trades)
-            cur.execute("INSERT INTO backtest_runs(config) VALUES (%s::jsonb) RETURNING run_id",
+            cur.execute("INSERT INTO strategy_backtest_runs(config) VALUES (%s::jsonb) RETURNING run_id",
                 (json.dumps({"entry_score":ENTRY_SCORE,"exit_score":EXIT_SCORE,"risk_fraction":RISK_FRACTION,
                  "atr_multiple":ATR_MULTIPLE,"holding_days":HOLD_DAYS,"starting_capital_per_stock":STARTING_CAPITAL,
                  "lot_size":LOT_SIZE,"commission_rate":COMMISSION_RATE,"sell_tax_rate":SELL_TAX_RATE,
                  "slippage_rate_each_side":SLIPPAGE_RATE,"execution":"next_session_open"},ensure_ascii=False),))
             run_id=cur.fetchone()[0]
             for market,stock_id,horizon,s in results:
-                cur.execute("""INSERT INTO backtest_summary
+                cur.execute("""INSERT INTO strategy_backtest_summary
                     (run_id,market,stock_id,horizon,trades,wins,losses,win_rate,net_profit,total_return_pct,
                      cagr_pct,profit_factor,max_drawdown_pct,ending_equity,avg_trade_pct,data_start,data_end,metrics)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
@@ -173,7 +173,7 @@ def run(database_url):
                      s["total_return_pct"],s["cagr_pct"],s["profit_factor"],s["max_drawdown_pct"],s["ending_equity"],
                      s["avg_trade_pct"],s["data_start"],s["data_end"],json.dumps(s,ensure_ascii=False)))
             for market,stock_id,horizon,t in all_trades:
-                cur.execute("""INSERT INTO backtest_trades
+                cur.execute("""INSERT INTO strategy_backtest_trades
                     (run_id,market,stock_id,horizon,entry_date,exit_date,entry_price,exit_price,shares,pnl,
                      return_pct,holding_days,entry_score,exit_reason,planned_risk)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
