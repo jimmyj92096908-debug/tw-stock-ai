@@ -10,6 +10,10 @@ try:
     from composite_score import horizon_technical_score, horizon_smc_score, combine_scores, HORIZON_WEIGHTS, HORIZONS
 except ModuleNotFoundError:
     from src.composite_score import horizon_technical_score, horizon_smc_score, combine_scores, HORIZON_WEIGHTS, HORIZONS
+try:
+    from regime_classifier import regime_map
+except ModuleNotFoundError:
+    from src.regime_classifier import regime_map
 
 STOCKS=(("twse","6213"),("tpex","8937"),("twse","4919"),("twse","7827"))
 HOLD_DAYS={"short":5,"swing":20,"long":60}
@@ -50,7 +54,7 @@ def trade_costs(buy_price,sell_price,shares):
     tax=sell_value*SELL_TAX_RATE
     return buy_value+buy_fee, sell_value-sell_fee-tax
 
-def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=None,end_date=None):
+def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=None,end_date=None,regime_entry_scores=None):
     rows=sorted(rows,key=lambda r:r["trade_date"])
     scored=[]
     for r in rows:
@@ -124,7 +128,8 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=Non
         if position is None and pending_entry is None and i+1<len(scored):
             if end_date is not None and scored[i+1]["trade_date"]>end_date: continue
             atr=row.get("atr14")
-            if row["score"] is not None and row["score"]>=ENTRY_SCORE and atr is not None and float(atr)>0:
+            required_score=(regime_entry_scores or {}).get(row.get("market_regime","UNKNOWN"),ENTRY_SCORE)
+            if row["score"] is not None and row["score"]>=required_score and atr is not None and float(atr)>0:
                 pending_entry={"score":row["score"],"atr":float(atr)}
     if position and period_rows and period_rows[-1].get("close") is not None:
         last=period_rows[-1]; sell_fill=float(last["close"])*(1-SLIPPAGE_RATE)
@@ -177,17 +182,28 @@ def run(database_url):
     end_text=os.getenv("BACKTEST_END_DATE","2026-12-31")
     start_date=date.fromisoformat(start_text); end_date=date.fromisoformat(end_text)
     if start_date>end_date: raise ValueError("BACKTEST_START_DATE must be <= BACKTEST_END_DATE")
+    regime_text=os.getenv("BACKTEST_REGIME_ENTRY_SCORES")
+    regime_entry_scores=json.loads(regime_text) if regime_text else None
+    if regime_entry_scores is not None:
+        if not isinstance(regime_entry_scores,dict) or any(not isinstance(v,(int,float)) for v in regime_entry_scores.values()):
+            raise ValueError("BACKTEST_REGIME_ENTRY_SCORES must be a JSON object of numeric thresholds")
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT trade_date,close FROM market_index_prices WHERE index_code='TAIEX' ORDER BY trade_date")
+            regimes=regime_map(cur.fetchall())
             for market,stock_id in STOCKS:
                 rows=load_rows(cur,market,stock_id)
+                for row in rows:
+                    row["market_regime"]=regimes.get(row["trade_date"],"UNKNOWN")
                 for horizon in HOLD_DAYS:
-                    summary,trades=simulate_stock(rows,horizon,start_date=start_date,end_date=end_date)
+                    summary,trades=simulate_stock(rows,horizon,start_date=start_date,end_date=end_date,
+                                                  regime_entry_scores=regime_entry_scores)
                     results.append((market,stock_id,horizon,summary))
                     all_trades.extend((market,stock_id,horizon,t) for t in trades)
             cur.execute("INSERT INTO strategy_backtest_runs(config) VALUES (%s::jsonb) RETURNING run_id",
                 (json.dumps({"entry_score":ENTRY_SCORE,"exit_score":EXIT_SCORE,"risk_fraction":RISK_FRACTION,
-                 "atr_multiple":ATR_MULTIPLE,"holding_days":HOLD_DAYS,"starting_capital_per_stock":STARTING_CAPITAL,
+                 "atr_multiple":ATR_MULTIPLE,"regime_entry_scores":regime_entry_scores,
+                 "holding_days":HOLD_DAYS,"starting_capital_per_stock":STARTING_CAPITAL,
                  "lot_size":LOT_SIZE,"commission_rate":COMMISSION_RATE,"sell_tax_rate":SELL_TAX_RATE,
                  "slippage_rate_each_side":SLIPPAGE_RATE,"execution":"next_session_open",
                  "evaluation_start":start_text,"evaluation_end":end_text,
