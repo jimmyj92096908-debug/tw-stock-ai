@@ -51,6 +51,8 @@ def _date(value: Any) -> str | None:
         return f"{text[:4]}-{text[4:6]}-{text[6:]}"
     if len(text) == 7 and text.isdigit():
         return f"{int(text[:3]) + 1911}-{text[3:5]}-{text[5:]}"
+    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", text):
+        return text
     return None
 
 
