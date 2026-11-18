@@ -1,0 +1,41 @@
+name: Build Corporate-Action Adjusted Prices
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sql/corporate_actions_schema.sql"
+      - "src/adjusted_prices.py"
+      - "src/build_adjusted_prices.py"
+      - "tests/test_adjusted_prices.py"
+      - ".github/workflows/build-adjusted-prices.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: corporate-action-adjustments
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - name: Test adjustment math
+        run: pytest -q tests/test_adjusted_prices.py
+      - name: Apply schema and build four-stock adjusted bars
+        run: |
+          python - <<'PY'
+          import os, psycopg
+          sql=open("sql/corporate_actions_schema.sql",encoding="utf-8").read()
+          with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+              conn.execute(sql)
+          print("Corporate-action schema applied.")
+          PY
+          python src/build_adjusted_prices.py --market both --stock-ids 6213 4919 7827 8937
