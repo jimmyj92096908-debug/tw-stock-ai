@@ -54,6 +54,14 @@ jobs:
             exit 1
           fi
 
+      - name: Install test runner
+        run: pip install pytest
+
+      - name: Run refresh helper tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q tests/test_full_market_refresh.py
+
       - name: Compile modules
         run: |
           python -m py_compile \
