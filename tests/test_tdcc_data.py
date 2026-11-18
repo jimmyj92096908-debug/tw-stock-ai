@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from src.tdcc_data import parse_csv
@@ -19,6 +20,18 @@ class TDCCTests(unittest.TestCase):
         self.assertEqual(rows[0]["holder_range"], "1-999")
         self.assertEqual(rows[1]["holder_range"], "1,000,001以上")
         self.assertEqual(rows[2]["holder_range"], "合計")
+
+
+    def test_parses_openapi_json_rows(self):
+        payload = {
+            "data": [
+                {"資料日期": "2026-11-13", "證券代號": "6213", "持股分級": "1",
+                 "人數": 100, "股數": 20000, "占集保庫存數比例%": 0.25}
+            ]
+        }
+        rows = parse_csv(json.dumps(payload, ensure_ascii=False).encode("utf-8"), {"6213": "twse"})
+        self.assertEqual(rows[0]["as_of_date"], "2026-11-13")
+        self.assertEqual(rows[0]["holder_range"], "1-999")
 
     def test_rejects_missing_required_column(self):
         with self.assertRaises(RuntimeError):
