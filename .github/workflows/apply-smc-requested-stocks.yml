@@ -1,0 +1,79 @@
+name: Apply SMC to Requested Stocks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: smc-requested-stocks
+  cancel-in-progress: false
+jobs:
+  apply-and-calculate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check database secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Missing GitHub Actions secret DATABASE_URL"
+            exit 1
+          fi
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip "psycopg[binary]>=3.2,<4"
+      - name: Apply additive SMC schema migration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          sql = Path("sql/smc_schema.sql").read_text(encoding="utf-8")
+          with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=20) as conn:
+              conn.execute(sql, prepare=False)
+          print("daily_smc schema ready")
+          PY
+      - name: Calculate SMC for the four requested stocks
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m py_compile src/smc_indicators.py src/calculate_smc.py
+          python src/calculate_smc.py --market twse --stock-id 6213
+          python src/calculate_smc.py --market twse --stock-id 4919
+          python src/calculate_smc.py --market twse --stock-id 7827
+          python src/calculate_smc.py --market tpex --stock-id 8937
+      - name: Verify SMC rows in Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          expected = {("twse","6213"),("twse","4919"),("twse","7827"),("tpex","8937")}
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=psycopg.rows.dict_row, connect_timeout=20) as conn:
+              rows = conn.execute("""
+                  SELECT market, stock_id, COUNT(*) AS total_rows,
+                         COUNT(swing_high) AS swing_highs, COUNT(swing_low) AS swing_lows,
+                         COUNT(*) FILTER (WHERE bos_bullish OR bos_bearish) AS bos_events,
+                         COUNT(*) FILTER (WHERE choch_bullish OR choch_bearish) AS choch_events,
+                         COUNT(*) FILTER (WHERE order_block_type IS NOT NULL) AS order_blocks,
+                         COUNT(*) FILTER (WHERE fvg_type IS NOT NULL) AS fvgs,
+                         COUNT(*) FILTER (WHERE liquidity_sweep_high OR liquidity_sweep_low) AS sweeps,
+                         MIN(trade_date) AS first_date, MAX(trade_date) AS last_date
+                  FROM daily_smc
+                  WHERE (market, stock_id) IN (('twse','6213'),('twse','4919'),('twse','7827'),('tpex','8937'))
+                  GROUP BY market, stock_id ORDER BY market, stock_id
+              """).fetchall()
+          found = {(r["market"],r["stock_id"]) for r in rows}
+          if found != expected:
+              raise SystemExit(f"SMC coverage mismatch: expected={expected}, found={found}")
+          for row in rows:
+              if row["total_rows"] <= 0:
+                  raise SystemExit(f"No SMC rows: {row['market']} {row['stock_id']}")
+              print(row)
+          PY
