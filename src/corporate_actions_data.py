@@ -176,7 +176,7 @@ def supplemental_official_events(start_date:str,end_date:str)->list[dict]:
       "new_trading_date":event_date,"share_exchange_ratio":"1 old share -> 4 new shares",
       "official_source":"https://www.tpex.org.tw/storage/about_otc_news/2026/03/1773998202916_1279086_news.pdf"}
  return [{"market":"tpex","stock_id":"8937","ex_date":event_date,
-          "action_type":"STOCK_SPLIT","price_factor":0.25,"share_factor":4.0,
+          "action_type":"FACE_VALUE_CHANGE","price_factor":0.25,"share_factor":4.0,
           "source":"TPEx_OFFICIAL_FACE_VALUE_CHANGE",
           "source_event_id":"8937_FACE_VALUE_2026-04-13_10_TO_2_5",
           "verified":True,
