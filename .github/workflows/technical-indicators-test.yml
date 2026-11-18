@@ -1,0 +1,28 @@
+name: Technical indicator tests
+
+on:
+  push:
+    branches:
+      - "feature/technical-indicators"
+    paths:
+      - "src/technical_indicators.py"
+      - "tests/**"
+      - ".github/workflows/technical-indicators-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
