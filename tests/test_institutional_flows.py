@@ -49,6 +49,21 @@ class InstitutionalFlowTests(unittest.TestCase):
         self.assertEqual(row["total_net"], 900)
         self.assertEqual(row["market"], "tpex")
 
+    def test_tpex_maps_official_net_difference_fields(self):
+        payload = [{
+            "SecuritiesCompanyCode": "6488",
+            "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference": "600",
+            "SecuritiesInvestmentTrustCompanies-Difference": "200",
+            "Dealers-Difference": "100",
+            "TotalDifference": "900",
+        }]
+        row = parse_tpex(payload, date(2026, 11, 18))[0]
+        self.assertIsNone(row["foreign_buy"])
+        self.assertEqual(row["foreign_net"], 600)
+        self.assertEqual(row["trust_net"], 200)
+        self.assertEqual(row["dealer_net"], 100)
+        self.assertEqual(row["total_net"], 900)
+
     def test_missing_fields_stay_null_and_nonstock_codes_are_ignored(self):
         payload = [{"證券代號": "6488", "投信買進股數": "1,000"}]
         row = parse_tpex(payload, date(2026, 11, 18))[0]
