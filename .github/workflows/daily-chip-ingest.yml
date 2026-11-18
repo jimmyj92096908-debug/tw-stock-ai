@@ -18,7 +18,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tw-stock-daily-chip-ingest-v2
+  group: tw-stock-daily-chip-ingest-v3
   cancel-in-progress: false
 jobs:
   ingest:
