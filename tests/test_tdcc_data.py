@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from src.tdcc_data import parse_csv
+from src.tdcc_data import normalize_database_url, parse_csv
 
 
 class TDCCTests(unittest.TestCase):
@@ -40,6 +40,17 @@ class TDCCTests(unittest.TestCase):
         rows = parse_csv(json.dumps(payload, ensure_ascii=False).encode("utf-8"), {"6213": "twse"})
         self.assertEqual(rows[0]["as_of_date"], "2026-11-13")
         self.assertEqual(rows[0]["holder_range"], "1-999")
+
+
+    def test_database_url_percent_encodes_reserved_password_characters(self):
+        uri = "postgresql://user:p%40ss%2Fword@db.example.com/twstock?sslmode=require"
+        normalized = normalize_database_url(uri)
+        self.assertIn("p%40ss%2Fword@", normalized)
+        self.assertIn("?sslmode=require", normalized)
+
+    def test_database_url_rejects_leading_backslash(self):
+        with self.assertRaises(ValueError):
+            normalize_database_url("\\\\postgresql://user:pass@db.example.com/db")
 
     def test_rejects_missing_required_column(self):
         with self.assertRaises(RuntimeError):
