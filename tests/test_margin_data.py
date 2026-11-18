@@ -21,6 +21,21 @@ class MarginParserTests(unittest.TestCase):
         self.assertEqual(records[0]["short_balance"], 200)
         self.assertEqual(records[0]["short_sell"], 20)
 
+
+    def test_twse_allows_stock_without_margin_detail(self):
+        fields = ["代號", "名稱", "買進", "賣出", "現金償還", "前日餘額", "今日餘額",
+                  "次一營業日限額", "買進", "賣出", "現券償還", "前日餘額",
+                  "今日餘額", "次一營業日限額"]
+        rows = [["6213", "測試", "1", "1", "0", "10", "10", "100",
+                 "1", "1", "0", "10", "10", "100"],
+                ["4919", "測試", "1", "1", "0", "10", "10", "100",
+                 "1", "1", "0", "10", "10", "100"]]
+        payload = {"stat": "OK", "date": "20261117", "tables": [
+            {"fields": fields, "data": rows}
+        ]}
+        records = parse_twse(payload, "2026-11-17")
+        self.assertEqual({row["stock_id"] for row in records}, {"6213", "4919"})
+
     def test_twse_rejects_wrong_date(self):
         with self.assertRaises(RuntimeError):
             parse_twse({"stat":"OK","date":"1151116","data":[]}, "2026-11-17")
