@@ -1,6 +1,12 @@
 name: Calculate technical indicators from Neon
 
 on:
+  push:
+    branches:
+      - "feature/technical-indicators"
+    paths:
+      - "src/sync_technical_indicators.py"
+      - ".github/workflows/calculate-technical-indicators.yml"
   workflow_dispatch:
 
 permissions:
