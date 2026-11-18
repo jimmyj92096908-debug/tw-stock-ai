@@ -49,13 +49,19 @@ def main() -> None:
     date.fromisoformat(trade_date)
     print(f"以 TPEx 官方最新快照日期 {trade_date} 作為本次交易日")
     institutional = fetch_institutional(trade_date)
-    margin = fetch_margin(trade_date)
     if len(institutional) != 4:
         raise RuntimeError(f"法人資料應為四檔，實際 {len(institutional)} 筆")
-    if len(margin) < 3:
-        raise RuntimeError(f"融資融券資料筆數異常：{len(margin)}")
     print(f"法人資料寫入 {save_institutional(institutional)} 筆")
-    print(f"融資融券資料寫入 {save_margin(margin)} 筆（不適用股票不補零）")
+
+    # Exchange credit data can be published later than institutional flows.
+    # Keep the successful institutional snapshot even if margin data is not ready.
+    try:
+        margin = fetch_margin(trade_date)
+        if len(margin) < 3:
+            raise RuntimeError(f"融資融券資料筆數異常：{len(margin)}")
+        print(f"融資融券資料寫入 {save_margin(margin)} 筆（不適用股票不補零）")
+    except Exception as exc:
+        print(f"警告：融資融券資料暫不可用，法人資料已保存；下次排程再補抓。原因：{exc}")
 
 
 if __name__ == "__main__":
