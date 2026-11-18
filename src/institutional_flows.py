@@ -139,7 +139,7 @@ def parse_tpex(payload: Any, trade_date: date) -> list[dict[str, Any]]:
         # Never label a latest-day snapshot as a different requested date.
         source_date = _find_value(row, ("Date", "資料日期", "交易日期"))
         if source_date not in (None, ""):
-            digits = re.sub(r"\\D", "", str(source_date))
+            digits = re.sub(r"\D", "", str(source_date))
             if len(digits) == 7:
                 source_ad_date = date(int(digits[:3]) + 1911, int(digits[3:5]), int(digits[5:7]))
             elif len(digits) == 8:
