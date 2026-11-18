@@ -100,7 +100,10 @@ def select_batch(conn: psycopg.Connection, market: str, limit: int) -> list[dict
               ON st.market=sm.market AND st.stock_id=sm.stock_id
             WHERE sm.market=%s
             GROUP BY sm.market, sm.stock_id, sm.stock_name, st.last_attempt_at
-            ORDER BY st.last_attempt_at ASC NULLS FIRST, sm.stock_id
+            ORDER BY
+                CASE WHEN MAX(dp.trade_date) IS NULL THEN 0 ELSE 1 END ASC,
+                st.last_attempt_at ASC NULLS FIRST,
+                sm.stock_id
             LIMIT %s
             """,
             (market, limit),
