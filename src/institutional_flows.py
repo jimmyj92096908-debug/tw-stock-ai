@@ -56,7 +56,8 @@ def _find_value(row: dict[str, Any], aliases: tuple[str, ...]) -> Any:
 
 def _record(market: str, stock_id: Any, trade_date: date,
             foreign_buy: Any, foreign_sell: Any, trust_buy: Any, trust_sell: Any,
-            dealer_buy: Any, dealer_sell: Any, total_net: Any, source: str) -> dict[str, Any] | None:
+            dealer_buy: Any, dealer_sell: Any, total_net: Any, source: str,
+            foreign_net: Any = None, trust_net: Any = None, dealer_net: Any = None) -> dict[str, Any] | None:
     code = str(stock_id).strip()
     if not re.fullmatch(r"\d{4,6}", code):
         return None
@@ -70,11 +71,11 @@ def _record(market: str, stock_id: Any, trade_date: date,
     return {
         "market": market, "stock_id": code, "trade_date": trade_date,
         "foreign_buy": fb, "foreign_sell": fs,
-        "foreign_net": fb - fs if fb is not None and fs is not None else None,
+        "foreign_net": parse_number(foreign_net) if foreign_net is not None else (fb - fs if fb is not None and fs is not None else None),
         "trust_buy": tb, "trust_sell": ts,
-        "trust_net": tb - ts if tb is not None and ts is not None else None,
+        "trust_net": parse_number(trust_net) if trust_net is not None else (tb - ts if tb is not None and ts is not None else None),
         "dealer_buy": db, "dealer_sell": ds,
-        "dealer_net": db - ds if db is not None and ds is not None else None,
+        "dealer_net": parse_number(dealer_net) if dealer_net is not None else (db - ds if db is not None and ds is not None else None),
         "total_net": tn, "source": source,
     }
 
@@ -149,6 +150,15 @@ def parse_tpex(payload: Any, trade_date: date) -> list[dict[str, Any]]:
             _find_value(row, ("Dealers-TotalSell", "Dealers-Total Sell", "自營商賣出股數")),
             _find_value(row, ("TotalDifference", "Total Difference", "三大法人買賣超股數")),
             "TPEX_DAILY_TRADE",
+            foreign_net=_find_value(row, (
+                "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference",
+                "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded) - Difference",
+            )),
+            trust_net=_find_value(row, (
+                "SecuritiesInvestmentTrustCompanies-Difference",
+                "Securities Investment Trust Companies-Difference",
+            )),
+            dealer_net=_find_value(row, ("Dealers-Difference", "Dealers - Difference")),
         ))
     return [r for r in records if r is not None]
 
