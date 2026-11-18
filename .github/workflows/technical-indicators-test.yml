@@ -1,4 +1,4 @@
-name: Technical indicator tests
+name: Technical indicator and signal tests
 
 on:
   push:
@@ -6,7 +6,9 @@ on:
       - "feature/technical-indicators"
     paths:
       - "src/technical_indicators.py"
+      - "src/technical_signals.py"
       - "tests/test_technical_indicators.py"
+      - "tests/test_technical_signals.py"
       - ".github/workflows/technical-indicators-test.yml"
   workflow_dispatch:
 
@@ -26,3 +28,5 @@ jobs:
           python-version: "3.11"
       - name: Run technical indicator tests
         run: python -m unittest discover -s tests -p 'test_technical_indicators.py' -v
+      - name: Run technical signal tests
+        run: python -m unittest discover -s tests -p 'test_technical_signals.py' -v
