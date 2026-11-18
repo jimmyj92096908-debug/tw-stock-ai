@@ -45,40 +45,63 @@ def parse_twse(payload, trade_date):
     if payload.get("stat") != "OK":
         raise RuntimeError(f"TWSE MI_MARGN 無資料：{payload.get('stat')}")
     _check_date(payload.get("date"), trade_date, "TWSE MI_MARGN")
-    rows = payload.get("data")
+
+    # MI_MARGN returns a tables array; selectType=STOCK includes per-security detail.
+    tables = payload.get("tables")
+    table = None
+    if isinstance(tables, list):
+        for candidate in tables:
+            if not isinstance(candidate, dict):
+                continue
+            fields = candidate.get("fields") or []
+            if isinstance(fields, list) and len(fields) >= 14 and any(
+                str(x).strip() in ("代號", "證券代號", "股票代號") for x in fields
+            ):
+                table = candidate
+                break
+    if table is None:
+        # Keep compatibility with a direct fields/data response.
+        if isinstance(payload.get("fields"), list) and isinstance(payload.get("data"), list):
+            table = {"fields": payload["fields"], "data": payload["data"]}
+        else:
+            raise RuntimeError("TWSE MI_MARGN 找不到個股明細表（tables/fields/data）")
+
+    fields = table.get("fields") or []
+    rows = table.get("data")
     if not isinstance(rows, list):
-        raise RuntimeError("TWSE MI_MARGN data 格式異常")
+        raise RuntimeError("TWSE MI_MARGN 個股明細 data 格式異常")
+    try:
+        code_idx = next(i for i, value in enumerate(fields)
+                        if str(value).strip() in ("代號", "證券代號", "股票代號"))
+    except StopIteration:
+        raise RuntimeError("TWSE MI_MARGN 個股明細缺少股票代號欄位")
+
     output = []
-    fields = {
-        "margin_buy": "融資買進", "margin_sell": "融資賣出",
-        "margin_repayment": "融資現金償還", "margin_balance": "融資今日餘額",
-        "short_buyback": "融券買進", "short_sell": "融券賣出",
-        "short_repayment": "融券現券償還", "short_balance": "融券今日餘額",
-    }
-    quota_fields = {"margin_quota": "融資限額", "short_quota": "融券限額"}
-    labels = payload.get("fields", [])
-    if rows and isinstance(rows[0], list):
-        if not isinstance(labels, list) or "證券代號" not in labels:
-            raise RuntimeError("TWSE MI_MARGN 缺少 fields 欄位定義")
-        for raw in rows:
-            row = dict(zip(labels, raw))
-            rows_dict = row
-            code = str(rows_dict.get("證券代號", "")).strip()
-            if code not in STOCKS["twse"]:
-                continue
-            values = {name: _required(rows_dict, key, f"TWSE {code}") for name, key in fields.items()}
-            values.update({name: to_int(rows_dict.get(key)) for name, key in quota_fields.items()})
-            output.append({"market": "twse", "stock_id": code, "trade_date": trade_date, **values})
-    else:
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            code = str(row.get("股票代號", row.get("證券代號", ""))).strip()
-            if code not in STOCKS["twse"]:
-                continue
-            values = {name: _required(row, key, f"TWSE {code}") for name, key in fields.items()}
-            values.update({name: to_int(row.get(key)) for name, key in quota_fields.items()})
-            output.append({"market": "twse", "stock_id": code, "trade_date": trade_date, **values})
+    for raw in rows:
+        if not isinstance(raw, list) or len(raw) < 14:
+            continue
+        code = str(raw[code_idx]).strip()
+        if code not in STOCKS["twse"]:
+            continue
+        # MI_MARGN individual-stock table uses repeated buy/sell labels:
+        # 2-7 financing, 8-13 short selling.
+        indices = {
+            "margin_buy": 2, "margin_sell": 3, "margin_repayment": 4,
+            "margin_balance": 6, "short_buyback": 8, "short_sell": 9,
+            "short_repayment": 10, "short_balance": 12,
+            "margin_quota": 7, "short_quota": 13,
+        }
+        if max(indices.values()) >= len(raw):
+            raise RuntimeError(f"TWSE {code} 個股明細欄位數不足")
+        values = {name: _required({key: raw[idx]}, key, f"TWSE {code}")
+                  for name, (key, idx) in {}.items()}
+        values = {}
+        for name, idx in indices.items():
+            parsed = to_int(raw[idx])
+            if parsed is None:
+                raise RuntimeError(f"TWSE {code} 欄位 index={idx} 缺漏或格式改變")
+            values[name] = parsed
+        output.append({"market": "twse", "stock_id": code, "trade_date": trade_date, **values})
     if {r["stock_id"] for r in output} != STOCKS["twse"]:
         raise RuntimeError("TWSE 目標股票資料不完整")
     return output
@@ -115,7 +138,7 @@ def parse_tpex(rows, trade_date):
 
 def fetch_records(trade_date):
     session = requests.Session()
-    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "ALL", "response": "json"}, headers=HEADERS, timeout=30)
+    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=30)
     twse.raise_for_status()
     tpex = session.get(TPEX_URL, headers=HEADERS, timeout=30)
     tpex.raise_for_status()
