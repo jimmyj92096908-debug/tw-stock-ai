@@ -24,14 +24,17 @@ API_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock"
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "history" / "tpex"
 TIMEOUT_SECONDS = 30
 REQUEST_INTERVAL_SECONDS = 2
+# TPEx 偶爾會回傳 Cloudflare 525 或暫時性 5xx/逾時。
+# 對 GET 請求增加重試次數，並涵蓋常見暫時性 HTTP 狀態碼。
 RETRY_POLICY = Retry(
-    total=4,
-    connect=4,
-    read=4,
-    status=4,
+    total=6,
+    connect=6,
+    read=6,
+    status=6,
     backoff_factor=2,
-    status_forcelist=(429, 500, 502, 503, 504),
+    status_forcelist=(408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 530),
     allowed_methods=frozenset({"GET"}),
+    respect_retry_after_header=True,
     raise_on_status=False,
 )
 SESSION = requests.Session()
