@@ -3,6 +3,7 @@ Never reads the 2025+ out-of-sample window and never changes production paramete
 """
 from __future__ import annotations
 import os
+from datetime import date
 import psycopg
 import backtest_engine as engine
 from tdcc_data import normalize_database_url
