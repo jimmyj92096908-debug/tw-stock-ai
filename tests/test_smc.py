@@ -43,7 +43,7 @@ class SMCTests(unittest.TestCase):
         rows = [
             bar(1, 10, 6, 8), bar(2, 12, 7, 9), bar(3, 15, 8, 12),
             bar(4, 11, 7, 8, open_=10), bar(5, 10, 6, 7),
-            bar(6, 13, 8, 11), bar(7, 16, 9, 15),
+            bar(6, 13, 8, 11), bar(7, 17, 9, 16),
         ]
         result = compute_smc(rows, pivot_left=2, pivot_right=2)
         event = next(e for e in result[6]["events"] if e["type"] == "bos")
@@ -59,10 +59,11 @@ class SMCTests(unittest.TestCase):
             bar(6, 16, 8, 14), bar(7, 17, 9, 15),
             bar(8, 18, 10, 15),
         ]
-        # The high pivot is confirmed at bar 6; the sweep is on bar 7 only if it
-        # crosses the newly confirmed level and closes back below it.
+        # Swing high from bar 3 is confirmed on bar 5; bar 6 wicks above it
+        # but closes below, so the sweep is available on bar 6.
         result = compute_smc(rows, pivot_left=2, pivot_right=2)
-        self.assertTrue(any(e["type"] == "buy_side_liquidity_sweep" for e in result[6]["events"]) is False)
+        self.assertTrue(any(e["type"] == "buy_side_liquidity_sweep" for e in result[5]["events"]))
+        self.assertFalse(any(e["type"] == "buy_side_liquidity_sweep" for e in result[2]["events"]))
 
     def test_invalid_order_and_parameters(self):
         with self.assertRaises(ValueError):
