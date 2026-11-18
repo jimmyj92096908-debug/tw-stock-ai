@@ -49,3 +49,10 @@ jobs:
               conn.execute(sql)
           PY
           python src/corporate_actions_data.py --market both --start-date "$START_DATE" --end-date "$END_DATE"
+          python src/build_adjusted_prices.py --market both --stock-ids 6213 4919 7827 8937
+          for stock in 6213 4919 7827; do
+            python src/calculate_technicals.py --market twse --stock-id "$stock"
+            python src/calculate_smc.py --market twse --stock-id "$stock"
+          done
+          python src/calculate_technicals.py --market tpex --stock-id 8937
+          python src/calculate_smc.py --market tpex --stock-id 8937
