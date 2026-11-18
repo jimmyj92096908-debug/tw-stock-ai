@@ -8,10 +8,22 @@ import argparse, os, re
 from datetime import date
 import psycopg
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 TWSE_URL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN"
 TPEX_URL = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_margin_balance"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockResearch/1.0)"}
+
+
+def _session():
+    session = _session()
+    retry = Retry(total=4, connect=4, read=4, backoff_factor=2,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=frozenset({"GET"}),
+                  respect_retry_after_header=True)
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
 STOCKS = {"twse": {"6213", "4919", "7827"}, "tpex": {"8937"}}
 
 def to_int(value):
@@ -140,7 +152,7 @@ def parse_tpex(rows, trade_date):
 
 def fetch_records(trade_date):
     session = requests.Session()
-    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=30)
+    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=(15, 60))
     twse.raise_for_status()
     tpex = session.get(TPEX_URL, headers=HEADERS, timeout=30)
     tpex.raise_for_status()
