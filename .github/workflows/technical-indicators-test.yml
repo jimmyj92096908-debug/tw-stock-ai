@@ -50,7 +50,7 @@ jobs:
 
   institutional-flow-smoke-test:
     needs: unit-tests
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Verify TPEx institutional net fields end-to-end')
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Test official TPEx OpenAPI fields and ROC date handling')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
