@@ -12,7 +12,6 @@ import io
 import json
 import os
 import re
-from datetime import date
 from typing import Any
 
 import psycopg
@@ -33,7 +32,7 @@ RANGES = {
 
 
 def _key(value: Any) -> str:
-    return re.sub(r"[\s％%()（）]", "", str(value or "")).strip()
+    return re.sub(r"[\s％%()（）\ufeff]", "", str(value or "")).strip()
 
 
 def _number(value: Any) -> float | None:
@@ -106,7 +105,6 @@ def parse_csv(content: bytes | str, stock_map: dict[str, str] | None = None) -> 
         level_raw = str(row.get(selected["level"], "")).strip()
         level_match = re.search(r"\d+", level_raw)
         level = level_match.group(0) if level_match else level_raw
-        # Level 16 is a reconciliation adjustment, not a holder-size tier.
         if level == "16":
             continue
         holder_range = RANGES.get(level)
@@ -131,31 +129,23 @@ def parse_csv(content: bytes | str, stock_map: dict[str, str] | None = None) -> 
 
 def fetch_records() -> list[dict]:
     session = requests.Session()
-    retry = requests.adapters.Retry(
-        total=3, connect=3, read=2, backoff_factor=2,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["GET"]),
-    )
+    retry = requests.adapters.Retry(total=3, connect=3, read=2, backoff_factor=2,
+        status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset(["GET"]))
     session.mount("https://", requests.adapters.HTTPAdapter(max_retries=retry))
     try:
-        response = session.get(
-            TDCC_URL, headers={**HEADERS, "Accept": "application/json"},
-            timeout=(15, 60),
-        )
+        response = session.get(TDCC_URL, headers={**HEADERS, "Accept": "application/json"}, timeout=(15, 60))
         response.raise_for_status()
     except requests.RequestException as primary_error:
         print(f"TDCC OpenAPI 連線失敗，改用舊版官方 CSV：{primary_error}")
-        response = session.get(
-            "https://smart.tdcc.com.tw/opendata/getOD.ashx?id=1-5",
-            headers=HEADERS, timeout=(15, 60),
-        )
+        response = session.get("https://smart.tdcc.com.tw/opendata/getOD.ashx?id=1-5", headers=HEADERS, timeout=(15, 60))
         response.raise_for_status()
     records = parse_csv(response.content)
     dates = {r["as_of_date"] for r in records}
     if len(dates) != 1:
         raise RuntimeError(f"TDCC 同批資料日期不一致：{sorted(dates)}")
+    present = {r["stock_id"] for r in records}
     for code in STOCKS:
-        if code not in {r["stock_id"] for r in records}:
+        if code not in present:
             raise RuntimeError(f"TDCC 當期資料缺少測試股票 {code}，不建立假資料")
     return records
 
@@ -182,16 +172,14 @@ def save_records(records: list[dict]) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.parse_args()
+    argparse.ArgumentParser().parse_args()
     records = fetch_records()
     count = save_records(records)
     print(f"TDCC 成功寫入 {count} 筆級距資料；資料日期 {records[0]['as_of_date']}")
     for code in STOCKS:
         subset = [r for r in records if r["stock_id"] == code and r["holder_range"] != "合計"]
         big = sum(r["share_percent"] for r in subset if r["holder_range"] in (
-            "400,001-600,000", "600,001-800,000", "800,001-1,000,000", "1,000,001以上"
-        ))
+            "400,001-600,000", "600,001-800,000", "800,001-1,000,000", "1,000,001以上"))
         print(code, "級距筆數", len(subset), "大額持股級距比例合計", round(big, 2), "%")
 
 
