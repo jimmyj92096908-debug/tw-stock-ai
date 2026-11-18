@@ -4,7 +4,7 @@ TWSE and TPEx endpoints are latest-snapshot feeds; they do not provide a
 reliable historical backfill. Each row is retained by its reported as-of date.
 """
 from __future__ import annotations
-import json, os, re
+import hashlib, json, os, re
 from datetime import date
 from typing import Any
 
@@ -94,6 +94,7 @@ def parse_rows(rows: list[dict], market: str) -> list[dict]:
             "market": market, "stock_id": code, "as_of_date": as_of,
             "person_name": name, "person_role": role, "share_count": int(shares),
             "share_percent": percent, "pledged_shares": int(pledged) if pledged is not None else None,
+            "record_key": hashlib.sha256(json.dumps(row, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")).hexdigest(),
         })
     if not output:
         raise RuntimeError(f"{market} 官方資料中找不到指定股票")
@@ -130,20 +131,60 @@ def save_records(records: list[dict]) -> int:
     from tdcc_data import normalize_database_url
     sql = """
       INSERT INTO insider_holdings
-        (market, stock_id, as_of_date, person_name, person_role,
+        (market, stock_id, as_of_date, person_name, person_role, record_key,
          share_count, share_percent, pledged_shares, source, retrieved_at)
       VALUES
-        (%(market)s, %(stock_id)s, %(as_of_date)s, %(person_name)s, %(person_role)s,
+        (%(market)s, %(stock_id)s, %(as_of_date)s, %(person_name)s, %(person_role)s, %(record_key)s,
          %(share_count)s, %(share_percent)s, %(pledged_shares)s, %(source)s, now())
-      ON CONFLICT (market, stock_id, as_of_date, person_name, person_role)
-      DO UPDATE SET share_count=EXCLUDED.share_count,
-        share_percent=EXCLUDED.share_percent, pledged_shares=EXCLUDED.pledged_shares,
-        source=EXCLUDED.source, retrieved_at=now()
+      ON CONFLICT (market, stock_id, as_of_date, record_key)
+      DO UPDATE SET person_name=EXCLUDED.person_name, person_role=EXCLUDED.person_role,
+        share_count=EXCLUDED.share_count, share_percent=EXCLUDED.share_percent,
+        pledged_shares=EXCLUDED.pledged_shares, source=EXCLUDED.source, retrieved_at=now()
     """
     for row in records:
         row["source"] = "TWSE_t187ap11_L" if row["market"] == "twse" else "TPEX_mopsfin_t187ap11_O"
     with psycopg.connect(normalize_database_url(os.environ["DATABASE_URL"])) as conn:
         with conn.cursor() as cur:
+            # Add a stable source-row key and migrate the old person/role primary key.
+            cur.execute("ALTER TABLE insider_holdings ADD COLUMN IF NOT EXISTS record_key TEXT")
+            cur.execute("""
+              UPDATE insider_holdings
+              SET record_key = md5(concat_ws('|', market, stock_id, as_of_date::text,
+                  person_name, person_role, share_count::text,
+                  coalesce(share_percent::text, ''), coalesce(pledged_shares::text, ''), source))
+              WHERE record_key IS NULL
+            """)
+            cur.execute("ALTER TABLE insider_holdings ALTER COLUMN record_key SET NOT NULL")
+            cur.execute("""
+              DO $
+              DECLARE old_pk TEXT;
+              BEGIN
+                SELECT conname INTO old_pk
+                FROM pg_constraint
+                WHERE conrelid = 'insider_holdings'::regclass AND contype = 'p'
+                  AND pg_get_constraintdef(oid) NOT LIKE '%record_key%';
+                IF old_pk IS NOT NULL THEN
+                  EXECUTE format('ALTER TABLE insider_holdings DROP CONSTRAINT %I', old_pk);
+                END IF;
+                IF NOT EXISTS (
+                  SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'insider_holdings'::regclass AND contype = 'p'
+                    AND pg_get_constraintdef(oid) LIKE '%record_key%'
+                ) THEN
+                  ALTER TABLE insider_holdings
+                    ADD CONSTRAINT insider_holdings_pkey
+                    PRIMARY KEY (market, stock_id, as_of_date, record_key);
+                END IF;
+              END $;
+            """)
+            # Replace only the dates being refreshed; transaction rollback protects prior data.
+            for market, code, as_of in sorted({
+                (r["market"], r["stock_id"], r["as_of_date"]) for r in records
+            }):
+                cur.execute(
+                    "DELETE FROM insider_holdings WHERE market=%s AND stock_id=%s AND as_of_date=%s",
+                    (market, code, as_of),
+                )
             cur.executemany(sql, records)
     return len(records)
 
