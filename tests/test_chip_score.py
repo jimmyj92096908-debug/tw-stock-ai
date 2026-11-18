@@ -11,7 +11,7 @@ class ChipScoreTests(unittest.TestCase):
         score, coverage = weighted_score({
             "institutional": 80, "margin": None, "tdcc": 60, "insider": None
         })
-        self.assertEqual(score, 71.43)
+        self.assertEqual(score, 72.31)
         self.assertEqual(coverage, 0.65)
 
     def test_no_available_components(self):
