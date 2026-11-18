@@ -63,3 +63,9 @@ jobs:
           echo "Running out-of-sample comparison at candidate threshold 75"
           BACKTEST_LABEL=out_of_sample BACKTEST_ENTRY_SCORE=75 BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
           BACKTEST_LABEL=out_of_sample python src/benchmark_analysis.py
+          echo "ATR sensitivity: 2.5x, out-of-sample"
+          BACKTEST_LABEL=out_of_sample_atr_2_5 BACKTEST_ENTRY_SCORE=60 BACKTEST_ATR_MULTIPLE=2.5 BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
+          BACKTEST_LABEL=out_of_sample_atr_2_5 python src/benchmark_analysis.py
+          echo "ATR sensitivity: 3.0x, out-of-sample"
+          BACKTEST_LABEL=out_of_sample_atr_3_0 BACKTEST_ENTRY_SCORE=60 BACKTEST_ATR_MULTIPLE=3.0 BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
+          BACKTEST_LABEL=out_of_sample_atr_3_0 python src/benchmark_analysis.py
