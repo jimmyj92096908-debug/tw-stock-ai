@@ -1,0 +1,56 @@
+name: Apply Chip Data Schema to Neon
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check database secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::GitHub Actions secret DATABASE_URL is missing"
+            exit 1
+          fi
+      - name: Install database driver
+        run: python -m pip install "psycopg[binary]>=3.2,<4"
+      - name: Apply additive schema migration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+
+          sql = Path("sql/chip_schema.sql").read_text(encoding="utf-8")
+          with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+              conn.execute(sql, prepare=False)
+              expected = (
+                  "institutional_daily",
+                  "margin_daily",
+                  "tdcc_distribution_weekly",
+                  "insider_holdings",
+              )
+              rows = conn.execute(
+                  """
+                  SELECT table_name
+                  FROM information_schema.tables
+                  WHERE table_schema = 'public' AND table_name = ANY(%s)
+                  """,
+                  (list(expected),),
+              ).fetchall()
+              found = {row[0] for row in rows}
+              missing = set(expected) - found
+              if missing:
+                  raise SystemExit(f"Missing tables after migration: {sorted(missing)}")
+              print("Verified chip tables:", ", ".join(sorted(found)))
+          PY
