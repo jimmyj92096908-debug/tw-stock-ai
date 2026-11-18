@@ -18,7 +18,7 @@ TWSE_REDUCTION_URL="https://www.twse.com.tw/exchangeReport/TWTAUU"
 TPEX_EX_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/exDailyQ"
 TPEX_REDUCTION_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/revivt"
 TPEX_EX_LEGACY_URL="https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php"
-TPEX_EX_COLUMNS=["除權息日期","代號","名稱","除權息前收盤價","除權息參考價","權值","息值","權值加息值","權或息","漲停價","跌停價","開始交易基準價","減除股利參考價","現金股利","每仟股無償配股","現金增資股數","現金增資認購價","公開承銷股數","員工認購股數","原股東認購股數","按持股比例仟股認購"]
+TPEX_EX_COLUMNS=["除權息日期","代號","名稱","除權息前收盤價","除權息參考價","權值","息值","權值+息值","權/息","漲停價","跌停價","開始交易基準價","減除股利參考價","現金股利","每仟股無償配股","現金增資股數","現金增資認購價","公開承銷股數","員工認購股數","原股東認購股數","按持股比例仟股認購"]
 TARGETS={"twse":{"6213","4919","7827"},"tpex":{"8937"}}
 
 def _norm(s: Any)->str:
@@ -54,10 +54,19 @@ def unpack(payload:Any)->list[dict]:
   if isinstance(payload[0],dict): return payload
   raise ValueError("官方資料陣列不是物件格式")
  if isinstance(payload,dict):
+  if isinstance(payload.get("tables"),list):
+   for table in payload["tables"]:
+    try:
+     rows=unpack(table)
+     if rows: return rows
+    except ValueError:
+     pass
   if isinstance(payload.get("data"),list):
-   data=payload["data"]; fields=payload.get("fields") or payload.get("field") or []
+   data=payload["data"]; fields=payload.get("fields") or payload.get("field") or payload.get("columns") or []
    if data and isinstance(data[0],dict): return data
-   if fields and data: return [dict(zip(fields,row)) for row in data if isinstance(row,(list,tuple))]
+   if data and isinstance(data[0],(list,tuple)):
+    names=fields if fields and isinstance(fields[0],str) else TPEX_EX_COLUMNS
+    return [dict(zip(names,row)) for row in data]
   if isinstance(payload.get("aaData"),list):
    rows=payload["aaData"]
    if rows and isinstance(rows[0],dict): return rows
@@ -184,7 +193,9 @@ def main():
   with conn.cursor() as cur: cur.executemany(sql,rows)
  verified=sum(bool(x["verified"]) for x in rows)
  log.info("匯入 %d 筆；核實 %d 筆；待核對 %d 筆",len(rows),verified,len(rows)-verified)
- if errors: log.warning("部分來源失敗：%s","; ".join(errors))
+ if errors:
+  log.error("部分來源失敗：%s","; ".join(errors))
+  raise RuntimeError("部分市場資料未成功取得；已寫入成功市場資料，請修復來源後重跑")
  for x in rows: log.info("%s %s %s %s verified=%s",x["market"],x["stock_id"],x["ex_date"],x["action_type"],x["verified"])
 
 if __name__=="__main__": main()
