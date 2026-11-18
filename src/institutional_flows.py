@@ -12,7 +12,6 @@ import time
 from datetime import date, datetime
 from typing import Any
 
-import requests
 
 TWSE_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
 TPEX_URL = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade"
@@ -154,7 +153,8 @@ def parse_tpex(payload: Any, trade_date: date) -> list[dict[str, Any]]:
     return [r for r in records if r is not None]
 
 
-def fetch_for_date(trade_date: date, session: requests.Session | None = None) -> list[dict[str, Any]]:
+def fetch_for_date(trade_date: date, session: Any = None) -> list[dict[str, Any]]:
+    import requests
     client = session or requests.Session()
     date_text = trade_date.strftime("%Y%m%d")
     twse = client.get(TWSE_URL, params={
