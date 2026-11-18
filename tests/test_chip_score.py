@@ -1,5 +1,5 @@
 import unittest
-from src.chip_score import clamp, weighted_score
+from src.chip_score import clamp, weighted_score, publishable_score
 
 
 class ChipScoreTests(unittest.TestCase):
@@ -18,6 +18,20 @@ class ChipScoreTests(unittest.TestCase):
         self.assertEqual(weighted_score({
             "institutional": None, "margin": None, "tdcc": None, "insider": None
         }), (None, 0.0))
+
+    def test_overall_score_requires_minimum_coverage(self):
+        score, coverage = publishable_score({
+            "institutional": None, "margin": None, "tdcc": None, "insider": 100
+        })
+        self.assertIsNone(score)
+        self.assertEqual(coverage, 0.10)
+
+    def test_overall_score_with_sufficient_coverage(self):
+        score, coverage = publishable_score({
+            "institutional": 80, "margin": None, "tdcc": 60, "insider": None
+        })
+        self.assertEqual(score, 72.31)
+        self.assertEqual(coverage, 0.65)
 
     def test_full_coverage(self):
         score, coverage = weighted_score({
