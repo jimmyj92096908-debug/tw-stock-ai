@@ -40,6 +40,14 @@ class InsiderHoldingsTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             parse_rows(rows, "twse")
 
+    def test_column_keys_ignore_whitespace_and_bom(self):
+        rows = [{
+            chr(65279) + "公司 代號": "6213", "資料 年月": "11510", "姓 名": "測試",
+            "職 稱": "董事", "持有 股數": "100",
+        }]
+        parsed = parse_rows(rows, "twse")
+        self.assertEqual(parsed[0]["share_count"], 100)
+
     def test_date_parser(self):
         self.assertEqual(as_date("115/10/31"), "2026-10-31")
         self.assertEqual(as_date("2026-10"), "2026-10-01")
