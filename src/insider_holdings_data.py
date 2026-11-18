@@ -18,7 +18,7 @@ STOCKS = {"twse": {"6213", "4919", "7827"}, "tpex": {"8937"}}
 
 
 def key(value: Any) -> str:
-    return re.sub(r"[\\s　：:％%()（）_\\-]", "", str(value or "")).lstrip("\\ufeff").lower()
+    return re.sub(r"[\s　：:％%()（）_\-]", "", str(value or "")).lstrip("\ufeff").lower()
 
 
 def number(value: Any) -> float | None:
