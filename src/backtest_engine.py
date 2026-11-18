@@ -138,7 +138,8 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=Non
     wins=sum(t["pnl"]>0 for t in trades)
     gross_profit=sum(t["pnl"] for t in trades if t["pnl"]>0)
     gross_loss=-sum(t["pnl"] for t in trades if t["pnl"]<0)
-    days=(scored[-1]["trade_date"]-scored[0]["trade_date"]).days if len(scored)>1 else 0
+    # CAGR must use the actual evaluation window, not the full indicator warm-up history.
+    days=(period_rows[-1]["trade_date"]-period_rows[0]["trade_date"]).days if len(period_rows)>1 else 0
     years=days/365.25
     total_return=(equity/starting_capital-1)*100
     cagr=((equity/starting_capital)**(1/years)-1)*100 if years>0 and equity>0 else None
@@ -149,7 +150,8 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=Non
         "max_drawdown_pct":max_dd*100,"ending_equity":equity,
         "avg_trade_pct":sum(t["return_pct"] for t in trades)/len(trades) if trades else None,
         "data_start":str(period_rows[0]["trade_date"]) if period_rows else None,
-        "data_end":str(period_rows[-1]["trade_date"]) if period_rows else None}
+        "data_end":str(period_rows[-1]["trade_date"]) if period_rows else None,
+        "evaluation_days":days}
     return summary,trades
 
 def load_rows(cur,market,stock_id):
