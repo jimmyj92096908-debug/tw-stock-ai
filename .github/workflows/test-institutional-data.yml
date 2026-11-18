@@ -1,0 +1,26 @@
+name: Test Institutional Data Importer
+on:
+  push:
+    paths:
+      - "src/institutional_data.py"
+      - "tests/test_institutional_data.py"
+      - ".github/workflows/test-institutional-data.yml"
+  pull_request:
+    paths:
+      - "src/institutional_data.py"
+      - "tests/test_institutional_data.py"
+      - ".github/workflows/test-institutional-data.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests "psycopg[binary]>=3.2,<4"
+      - run: python -m py_compile src/institutional_data.py tests/test_institutional_data.py
+      - run: python -m unittest tests.test_institutional_data -v
