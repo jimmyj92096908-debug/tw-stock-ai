@@ -37,3 +37,13 @@ def test_tpex_legacy_aadata_rows_are_mapped():
  assert row["除權息參考價"]=="49"
 def test_twse_payload_matrix():
  assert unpack({"fields":["股票代號"],"data":[["6213"]]})==[{"股票代號":"6213"}]
+
+def test_supplemental_8937_face_value_change():
+ from corporate_actions_data import supplemental_official_events
+ rows=supplemental_official_events("2021-01-01","2026-11-18")
+ event=next(x for x in rows if x["stock_id"]=="8937")
+ assert event["ex_date"]=="2026-04-13"
+ assert event["price_factor"]==pytest.approx(0.25)
+ assert event["share_factor"]==pytest.approx(4.0)
+ assert event["verified"] is True
+ assert supplemental_official_events("2026-04-14","2026-11-18")==[]
