@@ -17,6 +17,8 @@ TWSE_EX_URL="https://www.twse.com.tw/rwd/zh/exRight/TWT49U"
 TWSE_REDUCTION_URL="https://www.twse.com.tw/exchangeReport/TWTAUU"
 TPEX_EX_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/exDailyQ"
 TPEX_REDUCTION_URL="https://www.tpex.org.tw/www/zh-tw/bulletin/revivt"
+TPEX_EX_LEGACY_URL="https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php"
+TPEX_EX_COLUMNS=["除權息日期","代號","名稱","除權息前收盤價","除權息參考價","權值","息值","權值加息值","權或息","漲停價","跌停價","開始交易基準價","減除股利參考價","現金股利","每仟股無償配股","現金增資股數","現金增資認購價","公開承銷股數","員工認購股數","原股東認購股數","按持股比例仟股認購"]
 TARGETS={"twse":{"6213","4919","7827"},"tpex":{"8937"}}
 
 def _norm(s: Any)->str:
@@ -56,6 +58,10 @@ def unpack(payload:Any)->list[dict]:
    data=payload["data"]; fields=payload.get("fields") or payload.get("field") or []
    if data and isinstance(data[0],dict): return data
    if fields and data: return [dict(zip(fields,row)) for row in data if isinstance(row,(list,tuple))]
+  if isinstance(payload.get("aaData"),list):
+   rows=payload["aaData"]
+   if rows and isinstance(rows[0],dict): return rows
+   if rows: return [dict(zip(TPEX_EX_COLUMNS,row)) for row in rows if isinstance(row,(list,tuple))]
   for key in ("result","records","items"):
    if isinstance(payload.get(key),list): return unpack(payload[key])
  raise ValueError("官方 API 回傳格式不符合預期")
@@ -116,6 +122,21 @@ def _get(url:str,params:dict)->list[dict]:
  r.raise_for_status()
  return unpack(r.json())
 
+def _roc_date(iso_date:str)->str:
+ y,m,d=map(int,iso_date.split("-"))
+ return f"{y-1911}/{m:02d}/{d:02d}"
+
+def _fetch_tpex_ex_rows(start_date:str,end_date:str)->list[dict]:
+ # Prefer current TPEx historical endpoint; fall back when it fails or returns no rows.
+ try:
+  rows=_get(TPEX_EX_URL,{"startDate":start_date.replace("-","/"),
+                         "endDate":end_date.replace("-","/"),"response":"json"})
+  if rows: return rows
+ except Exception as exc:
+  log.warning("TPEx 新版除權息端點失敗，改用歷史查詢端點：%s",exc)
+ return _get(TPEX_EX_LEGACY_URL,{"l":"zh-tw","d":_roc_date(start_date),
+                                "ed":_roc_date(end_date)})
+
 def fetch_market(market:str,start_date:str,end_date:str)->list[dict]:
  start=start_date.replace("-",""); end=end_date.replace("-","")
  if market=="twse":
@@ -124,7 +145,7 @@ def fetch_market(market:str,start_date:str,end_date:str)->list[dict]:
  else:
   # TPEx historical web endpoints accept Gregorian YYYY/MM/DD, unlike OpenAPI snapshots.
   start_slash=start_date.replace("-","/"); end_slash=end_date.replace("-","/")
-  ex_rows=_get(TPEX_EX_URL,{"startDate":start_slash,"endDate":end_slash,"response":"json"})
+  ex_rows=_fetch_tpex_ex_rows(start_date,end_date)
   red_rows=_get(TPEX_REDUCTION_URL,{"startDate":start_slash,"endDate":end_slash,"response":"json"})
  output=[]
  for row in ex_rows:
