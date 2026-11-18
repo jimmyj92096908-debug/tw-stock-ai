@@ -72,3 +72,6 @@ jobs:
 
       - name: Refresh rotating market batches and recalculate indicators
         run: python src/full_market_refresh.py
+
+      - name: Recalculate composite scores after market refresh
+        run: python src/sync_composite_scores.py
