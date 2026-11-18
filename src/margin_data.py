@@ -166,7 +166,7 @@ def load_stock_universe():
 
 def fetch_records(trade_date, stock_universe):
     session = _session()
-    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "STOCK", "response": "json"}, headers=HEADERS, timeout=(15, 60))
+    twse = session.get(TWSE_URL, params={"date": trade_date.replace("-", ""), "selectType": "ALL", "response": "json"}, headers=HEADERS, timeout=(15, 60))
     twse.raise_for_status()
     tpex = session.get(TPEX_URL, headers=HEADERS, timeout=(15, 60))
     tpex.raise_for_status()
