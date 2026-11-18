@@ -39,7 +39,7 @@ def calculate_stock(conn: psycopg.Connection, market: str, stock_id: str) -> int
         cur.execute(
             """
             SELECT market, stock_id, trade_date, high, low, close, volume
-            FROM daily_prices
+            FROM daily_adjusted_prices
             WHERE market=%s AND stock_id=%s
             ORDER BY trade_date
             """,
@@ -78,7 +78,7 @@ def main() -> None:
         with conn.cursor() as cur:
             if args.stock_id:
                 cur.execute(
-                    "SELECT DISTINCT market, stock_id FROM daily_prices WHERE market = ANY(%s) AND stock_id=%s ORDER BY market, stock_id",
+                    "SELECT DISTINCT market, stock_id FROM daily_adjusted_prices WHERE market = ANY(%s) AND stock_id=%s ORDER BY market, stock_id",
                     (list(markets), args.stock_id),
                 )
                 stocks = cur.fetchall()
@@ -88,7 +88,7 @@ def main() -> None:
                     cur.execute(
                         """
                         SELECT DISTINCT market, stock_id
-                        FROM daily_prices
+                        FROM daily_adjusted_prices
                         WHERE market = %s
                         ORDER BY stock_id
                         OFFSET %s LIMIT %s
