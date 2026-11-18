@@ -1,10 +1,10 @@
-CREATE TABLE IF NOT EXISTS backtest_runs (
+CREATE TABLE IF NOT EXISTS strategy_backtest_runs (
  run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  config JSONB NOT NULL
 );
-CREATE TABLE IF NOT EXISTS backtest_summary (
- run_id BIGINT NOT NULL REFERENCES backtest_runs(run_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS strategy_backtest_summary (
+ run_id BIGINT NOT NULL REFERENCES strategy_backtest_runs(run_id) ON DELETE CASCADE,
  market TEXT NOT NULL,
  stock_id VARCHAR(6) NOT NULL,
  horizon TEXT NOT NULL CHECK(horizon IN ('short','swing','long')),
@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS backtest_summary (
  metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
  PRIMARY KEY(run_id,market,stock_id,horizon)
 );
-CREATE TABLE IF NOT EXISTS backtest_trades (
+CREATE TABLE IF NOT EXISTS strategy_backtest_trades (
  trade_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
- run_id BIGINT NOT NULL REFERENCES backtest_runs(run_id) ON DELETE CASCADE,
+ run_id BIGINT NOT NULL REFERENCES strategy_backtest_runs(run_id) ON DELETE CASCADE,
  market TEXT NOT NULL,
  stock_id VARCHAR(6) NOT NULL,
  horizon TEXT NOT NULL CHECK(horizon IN ('short','swing','long')),
@@ -42,5 +42,5 @@ CREATE TABLE IF NOT EXISTS backtest_trades (
  exit_reason TEXT NOT NULL,
  planned_risk NUMERIC(18,2) NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_backtest_summary_run ON backtest_summary(run_id,horizon);
-CREATE INDEX IF NOT EXISTS idx_backtest_trades_run ON backtest_trades(run_id,market,stock_id,horizon);
+CREATE INDEX IF NOT EXISTS idx_strategy_backtest_summary_run ON strategy_backtest_summary(run_id,horizon);
+CREATE INDEX IF NOT EXISTS idx_strategy_backtest_trades_run ON strategy_backtest_trades(run_id,market,stock_id,horizon);
