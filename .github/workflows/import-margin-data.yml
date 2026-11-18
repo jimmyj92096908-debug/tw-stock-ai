@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DATABASE_URL: \${{ secrets.DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       TRADE_DATE: ${{ inputs.trade_date }}
     steps:
       - uses: actions/checkout@v4
