@@ -22,6 +22,14 @@ class TDCCTests(unittest.TestCase):
         self.assertEqual(rows[2]["holder_range"], "合計")
 
 
+    def test_parses_bom_prefixed_date_header(self):
+        csv_text = (
+            "證券代號,占集保庫存數比例%,人數,\\ufeff資料日期,股數,持股分級\\n"
+            "6213,0.25,100,1151113,20000,1\\n"
+        )
+        rows = parse_csv(csv_text, {"6213": "twse"})
+        self.assertEqual(rows[0]["as_of_date"], "2026-11-13")
+
     def test_parses_openapi_json_rows(self):
         payload = {
             "data": [
