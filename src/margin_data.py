@@ -18,7 +18,7 @@ def to_int(value):
     text = str(value if value is not None else "").replace(",", "").strip()
     if text in ("", "-", "--", "—", "None"):
         return 0
-    if not re.fullmatch(r"[+-]?\\d+(?:\\.0+)?", text):
+    if not re.fullmatch(r"[+-]?\d+(?:\\.0+)?", text):
         return None
     return int(float(text))
 
