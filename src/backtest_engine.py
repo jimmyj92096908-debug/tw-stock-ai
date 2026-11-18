@@ -45,7 +45,7 @@ def trade_costs(buy_price,sell_price,shares):
     tax=sell_value*SELL_TAX_RATE
     return buy_value+buy_fee, sell_value-sell_fee-tax
 
-def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL):
+def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL,start_date=None,end_date=None):
     rows=sorted(rows,key=lambda r:r["trade_date"])
     scored=[]
     for r in rows:
@@ -53,7 +53,10 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL):
         scored.append({**r,"score":score,"coverage":cov,"score_detail":detail})
     equity=float(starting_capital); peak=equity; max_dd=0.0
     trades=[]; position=None; pending_entry=None
+    period_rows=[r for r in scored if (start_date is None or r["trade_date"]>=start_date) and (end_date is None or r["trade_date"]<=end_date)]
     for i,row in enumerate(scored):
+        if start_date is not None and row["trade_date"]<start_date: continue
+        if end_date is not None and row["trade_date"]>end_date: break
         op,lo,close=row.get("open"),row.get("low"),row.get("close")
         # Orders generated at the previous close execute at today's open.
         if position:
@@ -114,11 +117,12 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL):
         max_dd=max(max_dd,(peak-marked_equity)/peak if peak else 0)
         # A close-time entry signal is stored and filled on the next session only.
         if position is None and pending_entry is None and i+1<len(scored):
+            if end_date is not None and scored[i+1]["trade_date"]>end_date: continue
             atr=row.get("atr14")
             if row["score"] is not None and row["score"]>=ENTRY_SCORE and atr is not None and float(atr)>0:
                 pending_entry={"score":row["score"],"atr":float(atr)}
-    if position and scored and scored[-1].get("close") is not None:
-        last=scored[-1]; sell_fill=float(last["close"])*(1-SLIPPAGE_RATE)
+    if position and period_rows and period_rows[-1].get("close") is not None:
+        last=period_rows[-1]; sell_fill=float(last["close"])*(1-SLIPPAGE_RATE)
         net_sell=sell_fill*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
         pnl=net_sell-position["entry_cost"]; equity+=pnl
         trades.append({"entry_date":position["entry_date"],"exit_date":last["trade_date"],
@@ -139,8 +143,8 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL):
         "profit_factor":gross_profit/gross_loss if gross_loss>0 else (None if gross_profit==0 else 999.0),
         "max_drawdown_pct":max_dd*100,"ending_equity":equity,
         "avg_trade_pct":sum(t["return_pct"] for t in trades)/len(trades) if trades else None,
-        "data_start":str(scored[0]["trade_date"]) if scored else None,
-        "data_end":str(scored[-1]["trade_date"]) if scored else None}
+        "data_start":str(period_rows[0]["trade_date"]) if period_rows else None,
+        "data_end":str(period_rows[-1]["trade_date"]) if period_rows else None}
     return summary,trades
 
 def load_rows(cur,market,stock_id):
@@ -157,19 +161,25 @@ def load_rows(cur,market,stock_id):
 
 def run(database_url):
     results=[]; all_trades=[]
+    start_text=os.getenv("BACKTEST_START_DATE","2021-01-01")
+    end_text=os.getenv("BACKTEST_END_DATE","2026-12-31")
+    start_date=date.fromisoformat(start_text); end_date=date.fromisoformat(end_text)
+    if start_date>end_date: raise ValueError("BACKTEST_START_DATE must be <= BACKTEST_END_DATE")
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
             for market,stock_id in STOCKS:
                 rows=load_rows(cur,market,stock_id)
                 for horizon in HOLD_DAYS:
-                    summary,trades=simulate_stock(rows,horizon)
+                    summary,trades=simulate_stock(rows,horizon,start_date=start_date,end_date=end_date)
                     results.append((market,stock_id,horizon,summary))
                     all_trades.extend((market,stock_id,horizon,t) for t in trades)
             cur.execute("INSERT INTO strategy_backtest_runs(config) VALUES (%s::jsonb) RETURNING run_id",
                 (json.dumps({"entry_score":ENTRY_SCORE,"exit_score":EXIT_SCORE,"risk_fraction":RISK_FRACTION,
                  "atr_multiple":ATR_MULTIPLE,"holding_days":HOLD_DAYS,"starting_capital_per_stock":STARTING_CAPITAL,
                  "lot_size":LOT_SIZE,"commission_rate":COMMISSION_RATE,"sell_tax_rate":SELL_TAX_RATE,
-                 "slippage_rate_each_side":SLIPPAGE_RATE,"execution":"next_session_open"},ensure_ascii=False),))
+                 "slippage_rate_each_side":SLIPPAGE_RATE,"execution":"next_session_open",
+                 "evaluation_start":start_text,"evaluation_end":end_text,
+                 "evaluation_type":os.getenv("BACKTEST_LABEL","unspecified")},ensure_ascii=False),))
             run_id=cur.fetchone()[0]
             for market,stock_id,horizon,s in results:
                 cur.execute("""INSERT INTO strategy_backtest_summary
@@ -186,6 +196,8 @@ def run(database_url):
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (run_id,market,stock_id,horizon,t["entry_date"],t["exit_date"],t["entry_price"],t["exit_price"],
                      t["shares"],t["pnl"],t["return_pct"],t["holding_days"],t["entry_score"],t["exit_reason"],t["planned_risk"]))
+    print("BACKTEST_LABEL",os.getenv("BACKTEST_LABEL","unspecified"))
+    print("BACKTEST_PERIOD",start_text,end_text)
     print("BACKTEST_RUN_ID",run_id)
     for market,stock_id,horizon,s in results:
         print(market,stock_id,horizon,json.dumps(s,ensure_ascii=False,default=str))
