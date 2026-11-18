@@ -38,7 +38,10 @@ jobs:
         run: |
           python -m unittest tests.test_institutional_flows -v
           python -m unittest tests.test_margin_data -v
+          python -m unittest tests.test_composite_scoring -v
       - name: Import latest official daily chip snapshots
         run: python src/daily_chip_ingest.py
       - name: Recalculate composite chip scores
         run: python src/chip_score.py
+      - name: Recalculate daily composite scores with chip factor
+        run: python src/sync_composite_scores.py
