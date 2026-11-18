@@ -39,21 +39,22 @@ jobs:
           python - <<'PY'
           import os
           import psycopg
-          from psycopg.rows import dict_row
 
-          expected = [("twse", "6213"), ("twse", "4919"), ("tpex", "8937")]
-          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+          with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
               with conn.cursor() as cur:
-                  for market, code in expected:
+                  for market in ("twse", "tpex"):
                       cur.execute("""
-                          SELECT count(*) AS rows, max(margin_balance) AS margin_balance,
-                                 max(short_balance) AS short_balance
+                          SELECT count(*),
+                                 count(*) FILTER (WHERE margin_balance IS NOT NULL),
+                                 count(*) FILTER (WHERE short_balance IS NOT NULL),
+                                 count(DISTINCT stock_id)
                           FROM margin_short
-                          WHERE market=%s AND stock_id=%s AND trade_date=%s
-                      """, (market, code, os.environ["TRADE_DATE"]))
-                      row = cur.fetchone()
-                      print(market, code, row)
-                      if row["rows"] != 1:
-                          raise SystemExit(f"Missing margin row for {market} {code}")
-          print("注意：TWSE 7827 若未列入信用交易標的，當日不會有 margin_short 資料列。")
+                          WHERE market=%s AND trade_date=%s
+                      """, (market, os.environ["TRADE_DATE"]))
+                      rows, margin_ok, short_ok, distinct_stocks = cur.fetchone()
+                      print(market, {"rows": rows, "margin_balance_present": margin_ok,
+                                     "short_balance_present": short_ok, "distinct_stocks": distinct_stocks})
+                      if rows == 0 or rows != distinct_stocks or rows != margin_ok or rows != short_ok:
+                          raise SystemExit(f"{market} 融資融券資料驗收失敗")
+          print("上市／上櫃融資融券資料驗收通過")
           PY
