@@ -170,7 +170,7 @@ def fetch_records(trade_date, stock_universe):
     twse.raise_for_status()
     tpex = session.get(TPEX_URL, headers=HEADERS, timeout=(15, 60))
     tpex.raise_for_status()
-    return parse_twse(twse.json(), trade_date) + parse_tpex(tpex.json(), trade_date)
+    return parse_twse(twse.json(), trade_date, stock_universe['twse']) + parse_tpex(tpex.json(), trade_date, stock_universe['tpex'])
 
 def save_records(records):
     sql = """
@@ -203,8 +203,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", required=True, help="交易日期 YYYY-MM-DD")
     trade_date = date.fromisoformat(parser.parse_args().date).isoformat()
-    records = fetch_records(trade_date)
-    print(f"取得 {len(records)} 筆融資融券資料，交易日 {trade_date}")
+    stock_universe = load_stock_universe()
+    records = fetch_records(trade_date, stock_universe)
+    counts = {market: sum(row['market'] == market for row in records) for market in ('twse', 'tpex')}
+    print(f"取得 {len(records)} 筆融資融券資料，交易日 {trade_date}；TWSE {counts['twse']} 檔、TPEx {counts['tpex']} 檔")
     print(f"寫入 Neon：{save_records(records)} 筆")
     for row in records:
         print(row["market"], row["stock_id"], "融資餘額", row["margin_balance"], "融券餘額", row["short_balance"])
