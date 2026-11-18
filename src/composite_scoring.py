@@ -135,17 +135,74 @@ def _smc_scores(row: dict[str, Any]) -> dict[str, float | None]:
 
 
 def compute_composite_score(row: dict[str, Any]) -> dict[str, Any]:
-    """Return score columns and transparent coverage/status metadata for one day."""
+    """Return explainable technical + SMC + chip scores with explicit coverage."""
     technical = _technical_scores(row)
     smc = _smc_scores(row)
-    horizon_scores = {}
+
+    raw_chip = _number(row.get("chip_score"))
+    raw_chip_coverage = _number(row.get("chip_coverage_weight"))
+    chip_coverage = max(0.0, min(1.0, raw_chip_coverage or 0.0))
+    chip = raw_chip if raw_chip is not None and chip_coverage >= 0.50 else None
+    chip_status = (
+        "available" if chip is not None
+        else "insufficient_coverage" if chip_coverage > 0
+        else "not_available"
+    )
+
+    horizon_scores: dict[str, float | None] = {}
+    horizon_coverages: dict[str, float] = {}
     for horizon in ("short", "swing", "long"):
         t = technical[f"{horizon}_technical"]
         s = smc[f"{horizon}_smc"]
-        available = [(v, w) for v, w in [(t, MODEL_WEIGHTS["technical"]), (s, MODEL_WEIGHTS["smc"])] if v is not None]
-        horizon_scores[horizon] = _average(available)
+        parts = [
+            (t, MODEL_WEIGHTS["technical"]),
+            (s, MODEL_WEIGHTS["smc"]),
+            (chip, MODEL_WEIGHTS["chip"]),
+        ]
+        horizon_scores[horizon] = _average(parts)
+        horizon_coverages[horizon] = round(
+            (MODEL_WEIGHTS["technical"] if t is not None else 0.0)
+            + (MODEL_WEIGHTS["smc"] if s is not None else 0.0)
+            + (MODEL_WEIGHTS["chip"] * chip_coverage if chip is not None else 0.0),
+            4,
+        )
 
     overall = _average([
+        (horizon_scores["short"], 0.30),
+        (horizon_scores["swing"], 0.35),
+        (horizon_scores["long"], 0.35),
+    ])
+    available_model_weight = round(
+        (MODEL_WEIGHTS["technical"] if technical["technical_score"] is not None else 0.0)
+        + (MODEL_WEIGHTS["smc"] if smc["smc_score"] is not None else 0.0)
+        + (MODEL_WEIGHTS["chip"] * chip_coverage if chip is not None else 0.0),
+        4,
+    )
+    if available_model_weight < 0.50:
+        overall = None
+
+    return {
+        "total_score": overall,
+        "technical_score": technical["technical_score"],
+        "smc_score": smc["smc_score"],
+        "chip_score": chip,
+        "short_term_score": horizon_scores["short"],
+        "swing_score": horizon_scores["swing"],
+        "long_term_score": horizon_scores["long"],
+        "coverage_weight": available_model_weight,
+        "short_coverage": horizon_coverages["short"],
+        "swing_coverage": horizon_coverages["swing"],
+        "long_coverage": horizon_coverages["long"],
+        "component_status": {
+            "technical": "available" if technical["technical_score"] is not None else "insufficient_data",
+            "smc": "available" if smc["smc_score"] is not None else "insufficient_data",
+            "chip": chip_status,
+            "chip_source_coverage": chip_coverage,
+            "model_weights": MODEL_WEIGHTS,
+            "scoring_version": "v2",
+        },
+    }
+
         (horizon_scores["short"], 0.30),
         (horizon_scores["swing"], 0.35),
         (horizon_scores["long"], 0.35),
