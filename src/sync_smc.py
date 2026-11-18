@@ -9,9 +9,6 @@ import os
 from collections import defaultdict
 from typing import Any, Iterable
 
-import psycopg
-from psycopg.rows import dict_row
-
 try:
     from .smc import compute_smc
 except ImportError:  # Running as: python sync_smc.py from the src directory.
@@ -118,6 +115,9 @@ def build_daily_smc_records(
 
 
 def main() -> None:
+    import psycopg
+    from psycopg.rows import dict_row
+
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL 未設定，停止執行。")
