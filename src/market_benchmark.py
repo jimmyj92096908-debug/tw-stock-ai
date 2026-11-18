@@ -2,7 +2,10 @@
 from __future__ import annotations
 import os, time, requests, psycopg
 from datetime import date
-from tdcc_data import normalize_database_url
+try:
+    from tdcc_data import normalize_database_url
+except ModuleNotFoundError:
+    from src.tdcc_data import normalize_database_url
 
 URL="https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST"
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json,text/plain,*/*"}
