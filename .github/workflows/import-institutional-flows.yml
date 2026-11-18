@@ -1,0 +1,65 @@
+name: Import Institutional Flows for Requested Stocks
+
+on:
+  workflow_dispatch:
+    inputs:
+      trade_date:
+        description: "交易日期 YYYY-MM-DD（TPEx API 只提供最新交易日，日期不符會停止）"
+        required: true
+        default: "2026-11-17"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tw-stock-institutional-import
+  cancel-in-progress: false
+
+jobs:
+  import-institutional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TRADE_DATE: ${{ inputs.trade_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: pip install requests "psycopg[binary]>=3.2,<4"
+      - name: Test institutional parser
+        run: python -m unittest tests.test_institutional_data -v
+      - name: Fetch and import official institutional data
+        run: python src/institutional_data.py --date "$TRADE_DATE"
+      - name: Verify Neon rows
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          from psycopg.rows import dict_row
+          expected = [("twse", "6213"), ("twse", "4919"), ("twse", "7827"), ("tpex", "8937")]
+          with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+              with conn.cursor() as cur:
+                  for market, code in expected:
+                      cur.execute("""
+                          SELECT count(*) AS rows, min(trade_date) AS first_date,
+                                 max(trade_date) AS last_date,
+                                 max(foreign_net) AS foreign_net,
+                                 max(trust_net) AS trust_net,
+                                 max(dealer_net) AS dealer_net
+                          FROM institutional_flows
+                          WHERE market=%s AND stock_id=%s AND trade_date=%s
+                      """, (market, code, os.environ["TRADE_DATE"]))
+                      row = cur.fetchone()
+                      print(market, code, row)
+                      if row["rows"] != 1:
+                          raise SystemExit(f"Missing institutional row for {market} {code}")
+          PY
