@@ -151,6 +151,3 @@ def compute_indicators(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         })
     return output
 
-
-if __name__ == "__main__":
-    import unittest
