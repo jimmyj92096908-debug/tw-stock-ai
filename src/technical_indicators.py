@@ -1,7 +1,8 @@
 """以歷史日 K 計算九均線、RSI14、成交量均線與 ATR14。
 
 所有指標只使用當日及以前的資料，不使用未來資料。
-資料不足時回傳 None，不填補或猜測指標值。
+遇到停牌／無成交而缺少 OHLC 的日期，不虛構價格；價格指標略過該日，
+並在該日輸出 None。有效交易日仍可持續累積計算窗口。
 """
 from __future__ import annotations
 
@@ -26,24 +27,23 @@ def _number(value: Any, field: str, index: int) -> float | None:
 
 
 def _rolling_mean(values: list[float | None], window: int) -> list[float | None]:
+    """以有效觀測值計算移動平均，缺值日期保持 None。"""
     result: list[float | None] = [None] * len(values)
-    for end in range(window - 1, len(values)):
-        sample = values[end - window + 1 : end + 1]
-        if all(value is not None for value in sample):
-            result[end] = sum(value for value in sample if value is not None) / window
+    valid = [(index, value) for index, value in enumerate(values) if value is not None]
+    for position in range(window - 1, len(valid)):
+        sample = [value for _, value in valid[position - window + 1 : position + 1]]
+        result[valid[position][0]] = sum(sample) / window
     return result
 
 
 def _wilder_rsi(closes: list[float | None], period: int = RSI_PERIOD) -> list[float | None]:
     result: list[float | None] = [None] * len(closes)
-    if len(closes) <= period or any(value is None for value in closes):
-        # Missing closes invalidate the sequence rather than silently bridging gaps.
-        if any(value is None for value in closes):
-            return result
-    if len(closes) <= period:
+    valid = [(index, value) for index, value in enumerate(closes) if value is not None]
+    if len(valid) <= period:
         return result
 
-    changes = [closes[i] - closes[i - 1] for i in range(1, len(closes))]  # type: ignore[operator]
+    prices = [value for _, value in valid]
+    changes = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
     gains = [max(change, 0.0) for change in changes]
     losses = [max(-change, 0.0) for change in changes]
     avg_gain = sum(gains[:period]) / period
@@ -57,11 +57,12 @@ def _wilder_rsi(closes: list[float | None], period: int = RSI_PERIOD) -> list[fl
         rs = gain / loss
         return 100.0 - (100.0 / (1.0 + rs))
 
-    result[period] = value(avg_gain, avg_loss)
-    for index in range(period + 1, len(closes)):
-        avg_gain = ((avg_gain * (period - 1)) + gains[index - 1]) / period
-        avg_loss = ((avg_loss * (period - 1)) + losses[index - 1]) / period
-        result[index] = value(avg_gain, avg_loss)
+    result[valid[period][0]] = value(avg_gain, avg_loss)
+    for position in range(period + 1, len(valid)):
+        change_index = position - 1
+        avg_gain = ((avg_gain * (period - 1)) + gains[change_index]) / period
+        avg_loss = ((avg_loss * (period - 1)) + losses[change_index]) / period
+        result[valid[position][0]] = value(avg_gain, avg_loss)
     return result
 
 
@@ -72,19 +73,20 @@ def _wilder_atr(
     period: int = ATR_PERIOD,
 ) -> list[float | None]:
     result: list[float | None] = [None] * len(highs)
-    if len(highs) < period:
+    valid = [
+        (index, high, low, closes[index])
+        for index, (high, low) in enumerate(zip(highs, lows))
+        if high is not None and low is not None and closes[index] is not None
+    ]
+    if len(valid) < period:
         return result
 
     true_ranges: list[float] = []
-    for index, (high, low) in enumerate(zip(highs, lows)):
-        if high is None or low is None:
-            return result
-        if index == 0:
+    for position, (_, high, low, _) in enumerate(valid):
+        if position == 0:
             true_ranges.append(high - low)
         else:
-            previous_close = closes[index - 1]
-            if previous_close is None:
-                return result
+            previous_close = valid[position - 1][3]
             true_ranges.append(max(
                 high - low,
                 abs(high - previous_close),
@@ -92,10 +94,10 @@ def _wilder_atr(
             ))
 
     current = sum(true_ranges[:period]) / period
-    result[period - 1] = current
-    for index in range(period, len(true_ranges)):
-        current = ((current * (period - 1)) + true_ranges[index]) / period
-        result[index] = current
+    result[valid[period - 1][0]] = current
+    for position in range(period, len(valid)):
+        current = ((current * (period - 1)) + true_ranges[position]) / period
+        result[valid[position][0]] = current
     return result
 
 
@@ -148,3 +150,7 @@ def compute_indicators(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             **{name: values[index] for name, values in indicators.items()},
         })
     return output
+
+
+if __name__ == "__main__":
+    import unittest
