@@ -38,6 +38,15 @@ class CompositeScoringTests(unittest.TestCase):
         overbought = compute_composite_score({**base, "rsi14": 95})
         self.assertLess(overbought["technical_score"], normal["technical_score"])
 
+    def test_missing_smc_row_is_not_fabricated_as_neutral(self):
+        result = compute_composite_score({
+            "close": 100, "ma5": 99, "ma20": 98, "rsi14": 55,
+            "volume": 100, "volume_ma20": 100,
+        })
+        self.assertIsNone(result["smc_score"])
+        self.assertAlmostEqual(result["coverage_weight"], 0.5)
+        self.assertEqual(result["component_status"]["smc"], "insufficient_data")
+
     def test_all_scores_are_none_when_no_data(self):
         result = compute_composite_score({})
         self.assertIsNone(result["total_score"])
