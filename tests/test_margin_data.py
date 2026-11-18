@@ -19,7 +19,8 @@ class MarginParserTests(unittest.TestCase):
         self.assertEqual(len(records), 3)
         self.assertEqual(records[0]["margin_balance"], 1000)
         self.assertEqual(records[0]["short_balance"], 200)
-        self.assertEqual(records[0]["short_sell"], 20)
+        self.assertEqual(records[0]["short_sell"], 10)
+        self.assertEqual(records[0]["short_buyback"], 20)
 
 
     def test_twse_allows_stock_without_margin_detail(self):
