@@ -37,7 +37,7 @@ jobs:
       - name: Validate database secret
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::DATABASE_URL missing"; exit 1; fi
-      - name: Apply schema and run backtest
+      - name: Development-only entry threshold sensitivity\n        run: python src/entry_threshold_research.py\n      - name: Apply schema and run backtest
         run: |
           python - <<'PY'
           import os,sys,psycopg
