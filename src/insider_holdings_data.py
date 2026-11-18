@@ -38,16 +38,13 @@ def as_date(value: Any) -> str | None:
         return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
     if len(digits) == 7:
         return f"{int(digits[:3]) + 1911}-{digits[3:5]}-{digits[5:]}"
-    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", raw):
+    if len(digits) == 6:
+        return f"{digits[:4]}-{digits[4:6]}-01"
+    if len(digits) == 5:
+        return f"{int(digits[:3]) + 1911}-{digits[3:5]}-01"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
         return raw
-    if re.fullmatch(r"\\d{4}[-/]\\d{1,2}", raw):
-        y,m = raw.replace("/", "-").split("-")
-        return f"{y}-{int(m):02d}-01"
-    if re.fullmatch(r"\\d{3}[-/]\\d{1,2}", raw):
-        y,m = raw.replace("/", "-").split("-")
-        return f"{int(y)+1911}-{int(m):02d}-01"
     return None
-
 
 ALIASES = {
     "stock": ("公司代號", "證券代號", "股票代號", "代號", "公司代碼", "SecuritiesCompanyCode", "CompanyCode", "stock_id"),
