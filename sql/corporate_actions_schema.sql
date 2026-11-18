@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS corporate_actions (
   stock_id VARCHAR(6) NOT NULL,
   ex_date DATE NOT NULL,
   action_type TEXT NOT NULL CHECK (action_type IN
-    ('STOCK_SPLIT','REVERSE_SPLIT','STOCK_DIVIDEND','CASH_DIVIDEND','CAPITAL_REDUCTION','OTHER')),
+    ('STOCK_SPLIT','REVERSE_SPLIT','STOCK_DIVIDEND','CASH_DIVIDEND','CAPITAL_REDUCTION','FACE_VALUE_CHANGE','OTHER')),
   price_factor NUMERIC(24,12) NOT NULL CHECK (price_factor > 0),
   share_factor NUMERIC(24,12) NOT NULL CHECK (share_factor > 0),
   cash_amount NUMERIC(18,6),
@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS corporate_actions (
   FOREIGN KEY (market,stock_id) REFERENCES stock_master(market,stock_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
+-- Idempotent constraint migration for databases created before FACE_VALUE_CHANGE.
+ALTER TABLE corporate_actions DROP CONSTRAINT IF EXISTS corporate_actions_action_type_check;
+ALTER TABLE corporate_actions ADD CONSTRAINT corporate_actions_action_type_check
+  CHECK (action_type IN
+    ('STOCK_SPLIT','REVERSE_SPLIT','STOCK_DIVIDEND','CASH_DIVIDEND','CAPITAL_REDUCTION','FACE_VALUE_CHANGE','OTHER'));
 CREATE INDEX IF NOT EXISTS idx_corporate_actions_stock_date
   ON corporate_actions(market,stock_id,ex_date);
 
