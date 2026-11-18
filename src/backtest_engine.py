@@ -6,7 +6,10 @@ from __future__ import annotations
 import json, math, os
 from datetime import date
 import psycopg
-from composite_score import horizon_technical_score, horizon_smc_score, combine_scores, HORIZON_WEIGHTS, HORIZONS
+try:
+    from composite_score import horizon_technical_score, horizon_smc_score, combine_scores, HORIZON_WEIGHTS, HORIZONS
+except ModuleNotFoundError:
+    from src.composite_score import horizon_technical_score, horizon_smc_score, combine_scores, HORIZON_WEIGHTS, HORIZONS
 
 STOCKS=(("twse","6213"),("tpex","8937"),("twse","4919"),("twse","7827"))
 HOLD_DAYS={"short":5,"swing":20,"long":60}
@@ -96,9 +99,14 @@ def simulate_stock(rows,horizon,starting_capital=STARTING_CAPITAL):
             # Count actual trading sessions from entry day.
             if row["trade_date"]>=position["entry_date"]:
                 position["holding_days"]+=1
-        peak=max(peak,equity)
-        max_dd=max(max_dd,(peak-equity)/peak if peak else 0)
-        equity_points.append(equity)
+        marked_equity=equity
+        if position and row.get("close") is not None:
+            mark_sell=float(row["close"])*(1-SLIPPAGE_RATE)
+            mark_net=mark_sell*position["shares"]*(1-COMMISSION_RATE-SELL_TAX_RATE)
+            marked_equity += mark_net-position["entry_cost"]
+        peak=max(peak,marked_equity)
+        max_dd=max(max_dd,(peak-marked_equity)/peak if peak else 0)
+        equity_points.append(marked_equity)
     # Liquidate any remaining position at the final available close.
     if position and scored:
         last=scored[-1]; close=last.get("close")
