@@ -14,7 +14,7 @@ from typing import Any
 
 
 TWSE_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
-TPEX_URL = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade"
+TPEX_URL = "https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading"
 TIMEOUT_SECONDS = 30
 REQUEST_INTERVAL_SECONDS = 1.0
 HEADERS = {
@@ -135,6 +135,19 @@ def _dealer_total(row: dict[str, Any], side: str) -> int | None:
 def parse_tpex(payload: Any, trade_date: date) -> list[dict[str, Any]]:
     records = []
     for row in _payload_rows(payload):
+        # TPEx OpenAPI returns its own date in ROC calendar (e.g. 1151118).
+        # Never label a latest-day snapshot as a different requested date.
+        source_date = _find_value(row, ("Date", "資料日期", "交易日期"))
+        if source_date not in (None, ""):
+            digits = re.sub(r"\\D", "", str(source_date))
+            if len(digits) == 7:
+                source_ad_date = date(int(digits[:3]) + 1911, int(digits[3:5]), int(digits[5:7]))
+            elif len(digits) == 8:
+                source_ad_date = date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+            else:
+                continue
+            if source_ad_date != trade_date:
+                continue
         code = _find_value(row, ("SecuritiesCompanyCode", "證券代號", "代號", "Code"))
         records.append(_record(
             "tpex", code, trade_date,
@@ -173,10 +186,9 @@ def fetch_for_date(trade_date: date, session: Any = None) -> list[dict[str, Any]
     twse.raise_for_status()
     twse_rows = parse_twse(twse.json(), trade_date)
     time.sleep(REQUEST_INTERVAL_SECONDS)
-    tpex = client.get(TPEX_URL, params={
-        "type": "Daily", "sect": "EW", "date": trade_date.strftime("%Y/%m/%d"),
-        "id": "", "response": "json",
-    }, headers=HEADERS, timeout=TIMEOUT_SECONDS)
+    # Official TPEx OpenAPI is a latest-day snapshot; it has no historical
+    # date parameter. parse_tpex validates each row's own Date field.
+    tpex = client.get(TPEX_URL, headers=HEADERS, timeout=TIMEOUT_SECONDS)
     tpex.raise_for_status()
     tpex_rows = parse_tpex(tpex.json(), trade_date)
     logger.info("法人資料 %s：TWSE %s 檔，TPEx %s 檔", trade_date, len(twse_rows), len(tpex_rows))
