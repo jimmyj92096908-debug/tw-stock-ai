@@ -8,6 +8,7 @@ on:
       - "tests/test_backtest_engine.py"
       - "src/market_benchmark.py"
       - "src/benchmark_analysis.py"
+      - "src/regime_classifier.py"
       - "src/entry_threshold_research.py"
       - "sql/benchmark_schema.sql"
       - "tests/test_market_benchmark.py"
@@ -22,7 +23,7 @@ jobs:
           python-version: "3.11"
       - run: pip install requests "psycopg[binary]>=3.2,<4"
       - run: python -m unittest tests.test_backtest_engine tests.test_market_benchmark tests.test_benchmark_analysis -v
-      - run: python -m py_compile src/backtest_engine.py src/market_benchmark.py src/benchmark_analysis.py src/entry_threshold_research.py tests/test_benchmark_analysis.py
+      - run: python -m py_compile src/backtest_engine.py src/market_benchmark.py src/benchmark_analysis.py src/regime_classifier.py src/entry_threshold_research.py tests/test_benchmark_analysis.py
   backtest:
     needs: test
     runs-on: ubuntu-latest
@@ -69,3 +70,10 @@ jobs:
           echo "ATR sensitivity: 3.0x, out-of-sample"
           BACKTEST_LABEL=out_of_sample_atr_3_0 BACKTEST_ENTRY_SCORE=60 BACKTEST_ATR_MULTIPLE=3.0 BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
           BACKTEST_LABEL=out_of_sample_atr_3_0 python src/benchmark_analysis.py
+
+          echo "Development-only adaptive regime test: BEAR 60, BULL/SIDEWAYS 70"
+          BACKTEST_LABEL=development_regime_adaptive BACKTEST_ENTRY_SCORE=60 BACKTEST_REGIME_ENTRY_SCORES='{"BEAR":60,"BULL":70,"SIDEWAYS":70,"UNKNOWN":999}' BACKTEST_START_DATE=2021-01-01 BACKTEST_END_DATE=2024-12-31 python src/backtest_engine.py
+          BACKTEST_LABEL=development_regime_adaptive python src/benchmark_analysis.py
+          echo "Out-of-sample adaptive regime validation"
+          BACKTEST_LABEL=out_of_sample_regime_adaptive BACKTEST_ENTRY_SCORE=60 BACKTEST_REGIME_ENTRY_SCORES='{"BEAR":60,"BULL":70,"SIDEWAYS":70,"UNKNOWN":999}' BACKTEST_START_DATE=2025-01-01 BACKTEST_END_DATE=2026-12-31 python src/backtest_engine.py
+          BACKTEST_LABEL=out_of_sample_regime_adaptive python src/benchmark_analysis.py
