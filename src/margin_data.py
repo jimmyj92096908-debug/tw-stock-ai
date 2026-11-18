@@ -98,7 +98,7 @@ def parse_twse(payload, trade_date, allowed_codes=None):
         # 2-7 financing, 8-13 short selling.
         indices = {
             "margin_buy": 2, "margin_sell": 3, "margin_repayment": 4,
-            "margin_balance": 6, "short_buyback": 8, "short_sell": 9,
+            "margin_balance": 6, "short_sell": 8, "short_buyback": 9,
             "short_repayment": 10, "short_balance": 12,
             "margin_quota": 7, "short_quota": 13,
         }
