@@ -93,8 +93,6 @@ def parse_twse(payload, trade_date):
         }
         if max(indices.values()) >= len(raw):
             raise RuntimeError(f"TWSE {code} 個股明細欄位數不足")
-        values = {name: _required({key: raw[idx]}, key, f"TWSE {code}")
-                  for name, (key, idx) in {}.items()}
         values = {}
         for name, idx in indices.items():
             parsed = to_int(raw[idx])
