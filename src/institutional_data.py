@@ -102,16 +102,25 @@ def parse_tpex(rows: list, trade_date: str) -> list[dict]:
         code = str(row.get("SecuritiesCompanyCode", "")).strip()
         if code not in STOCKS["tpex"]:
             continue
-        normalized = {_norm_key(k): v for k, v in row.items()}
+        # TPEx field labels are inconsistent: some use "Total Buy", others
+        # "TotalBuy", and a few begin with whitespace. Compact whitespace
+        # before matching so these official variants map to the same field.
+        compact = {"".join(str(k).split()): v for k, v in row.items()}
         def val(base: str, suffix: str) -> int | None:
-            key = _norm_key(f"{base}-{suffix}")
-            return to_int(normalized.get(key))
+            key = "".join(f"{base}-{suffix}".split())
+            return to_int(compact.get(key))
         foreign_buy, foreign_sell, foreign_net = (val(TPEX_BASES["foreign"], x) for x in ("TotalBuy", "TotalSell", "Difference"))
         trust_buy, trust_sell, trust_net = (val(TPEX_BASES["trust"], x) for x in ("TotalBuy", "TotalSell", "Difference"))
         dealer_buy, dealer_sell, dealer_net = (val(TPEX_BASES["dealer"], x) for x in ("TotalBuy", "TotalSell", "Difference"))
         total_net = to_int(row.get("TotalDifference"))
-        if any(v is None for v in (foreign_net, trust_net, dealer_net, total_net)):
-            raise RuntimeError(f"TPEx {code} 三大法人欄位缺漏或格式變更")
+        if any(v is None for v in (
+            foreign_buy, foreign_sell, foreign_net,
+            trust_buy, trust_sell, trust_net,
+            dealer_buy, dealer_sell, dealer_net, total_net,
+        )):
+            raise RuntimeError(f"TPEx {code} 三大法人買進、賣出或買賣超欄位缺漏／格式變更")
+        if foreign_net + trust_net + dealer_net != total_net:
+            raise RuntimeError(f"TPEx {code} 三大法人分項加總與官方合計不一致")
         output.append({
             "market": "tpex", "stock_id": code, "trade_date": trade_date,
             "foreign_buy": foreign_buy, "foreign_sell": foreign_sell, "foreign_net": foreign_net,
