@@ -50,7 +50,7 @@ jobs:
 
   institutional-flow-smoke-test:
     needs: unit-tests
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Fix institutional flow PostgreSQL parameter type ambiguity')
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Run institutional flow smoke test after SQL type fix')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
