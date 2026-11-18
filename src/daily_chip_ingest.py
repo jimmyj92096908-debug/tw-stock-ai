@@ -20,6 +20,7 @@ from institutional_data import TPEX_URL as INSTITUTIONAL_TPEX_URL, ad_date
 from institutional_flows import fetch_for_date, sync_rows
 from margin_data import fetch_records as fetch_margin
 from margin_data import load_stock_universe, save_records as save_margin
+import psycopg
 
 
 def retry_session() -> requests.Session:
@@ -69,18 +70,35 @@ def main() -> None:
     # Keep the verified institutional data if credit data has not published yet.
     try:
         universe = load_stock_universe()
-        margin = fetch_margin(trade_date.isoformat(), universe)
-        if not margin:
-            raise RuntimeError("融資融券資料為空")
-        margin_written = save_margin(margin)
-        by_market = {
-            market: sum(row["market"] == market for row in margin)
+        with psycopg.connect(database_url, connect_timeout=20) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT market, COUNT(*) FROM public.margin_short WHERE trade_date=%s GROUP BY market",
+                    (trade_date,),
+                )
+                existing = {market: int(count) for market, count in cur.fetchall()}
+        enough_existing = all(
+            existing.get(market, 0) >= int(len(universe[market]) * 0.70)
             for market in ("twse", "tpex")
-        }
-        print(
-            f"融資融券資料：取得 {len(margin)} 筆，寫入 {margin_written} 筆；"
-            f"TWSE {by_market['twse']} 檔、TPEx {by_market['tpex']} 檔"
         )
+        if enough_existing:
+            print(
+                "融資融券資料已存在且覆蓋率達 70%，略過重複下載："
+                f"TWSE {existing.get('twse', 0)} 檔、TPEx {existing.get('tpex', 0)} 檔"
+            )
+        else:
+            margin = fetch_margin(trade_date.isoformat(), universe)
+            if not margin:
+                raise RuntimeError("融資融券資料為空")
+            margin_written = save_margin(margin)
+            by_market = {
+                market: sum(row["market"] == market for row in margin)
+                for market in ("twse", "tpex")
+            }
+            print(
+                f"融資融券資料：取得 {len(margin)} 筆，寫入 {margin_written} 筆；"
+                f"TWSE {by_market['twse']} 檔、TPEx {by_market['tpex']} 檔"
+            )
     except Exception as exc:
         print(f"WARNING: 融資融券資料暫不可用，法人資料已保存；下次排程補抓。原因：{exc}")
 
