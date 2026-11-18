@@ -27,5 +27,13 @@ def test_unrelated_stock_ignored():
  assert normalize(row,"twse") is None
 def test_tpex_payload_object_list():
  assert len(unpack([{"代號":"8937"}]))==1
+def test_tpex_legacy_aadata_rows_are_mapped():
+ payload={"aaData":[["115/07/02","8937","合騏","50","49","0","1","1","息",
+                    "53.9","44.1","49","49","1","0","0","0","0","0","0","0"]]}
+ row=unpack(payload)[0]
+ assert row["代號"]=="8937"
+ assert row["除權息日期"]=="115/07/02"
+ assert row["權或息"]=="息"
+ assert row["除權息參考價"]=="49"
 def test_twse_payload_matrix():
  assert unpack({"fields":["股票代號"],"data":[["6213"]]})==[{"股票代號":"6213"}]
