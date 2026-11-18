@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS corporate_actions (
   source_event_id TEXT NOT NULL,
   verified BOOLEAN NOT NULL DEFAULT FALSE,
   notes TEXT NOT NULL DEFAULT '',
+  raw_data JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (market, stock_id, ex_date, source_event_id),
   FOREIGN KEY (market,stock_id) REFERENCES stock_master(market,stock_id)
@@ -40,3 +41,5 @@ CREATE TABLE IF NOT EXISTS daily_adjusted_prices (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_adjusted_prices_stock_date
   ON daily_adjusted_prices(market,stock_id,trade_date DESC);
+
+ALTER TABLE corporate_actions ADD COLUMN IF NOT EXISTS raw_data JSONB NOT NULL DEFAULT '{}'::jsonb;
