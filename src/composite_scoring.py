@@ -19,7 +19,7 @@ def _number(value: Any) -> float | None:
 
 
 def _average(items: list[tuple[float, float]]) -> float | None:
-    valid = [(score, weight) for score, weight in items if weight > 0]
+    valid = [(score, weight) for score, weight in items if score is not None and weight > 0]
     if not valid:
         return None
     return sum(score * weight for score, weight in valid) / sum(weight for _, weight in valid)
