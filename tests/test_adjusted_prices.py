@@ -26,3 +26,17 @@ def test_multiple_events_compound():
 def test_invalid_factor_rejected():
  with pytest.raises(ValueError):
   adjust_bars(bars(),[{"ex_date":"2024-01-02","price_factor":0,"share_factor":1}])
+
+def test_duplicate_identical_events_are_applied_once():
+ event={"ex_date":"2024-01-02","action_type":"CASH_DIVIDEND","price_factor":0.98,"share_factor":1.0,"cash_amount":1.0}
+ out=adjust_bars(bars(),[event,{**event,"source_event_id":"duplicate-row"}])
+ assert out[0]["close"]==pytest.approx(98)
+ assert out[0]["price_adjustment_factor"]==pytest.approx(0.98)
+
+def test_distinct_same_day_events_still_compound():
+ out=adjust_bars(bars(),[
+  {"ex_date":"2024-01-02","action_type":"CASH_DIVIDEND","price_factor":0.98,"share_factor":1},
+  {"ex_date":"2024-01-02","action_type":"STOCK_DIVIDEND","price_factor":0.95,"share_factor":1.05},
+ ])
+ assert out[0]["close"]==pytest.approx(100*0.98*0.95)
+ assert out[0]["volume"]==pytest.approx(1000*1.05)
