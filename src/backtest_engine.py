@@ -13,7 +13,7 @@ except ModuleNotFoundError:
 
 STOCKS=(("twse","6213"),("tpex","8937"),("twse","4919"),("twse","7827"))
 HOLD_DAYS={"short":5,"swing":20,"long":60}
-ENTRY_SCORE=60.0
+ENTRY_SCORE=float(os.getenv("BACKTEST_ENTRY_SCORE","60"))
 EXIT_SCORE=45.0
 RISK_FRACTION=0.01
 ATR_MULTIPLE=2.0
