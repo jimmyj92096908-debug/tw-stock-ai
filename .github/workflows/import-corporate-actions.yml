@@ -1,0 +1,51 @@
+name: Import Official Corporate Actions
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/corporate_actions_data.py"
+      - "tests/test_corporate_actions_data.py"
+      - "sql/corporate_actions_schema.sql"
+      - ".github/workflows/import-corporate-actions.yml"
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "上市市場歷史查詢起日"
+        required: true
+        default: "2021-01-01"
+      end_date:
+        description: "上市市場歷史查詢迄日"
+        required: true
+        default: "2026-11-18"
+permissions:
+  contents: read
+concurrency:
+  group: official-corporate-actions
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - name: Test official feed parsers
+        run: pytest -q tests/test_corporate_actions_data.py
+      - name: Apply schema and import official events
+        env:
+          START_DATE: ${{ inputs.start_date || '2021-01-01' }}
+          END_DATE: ${{ inputs.end_date || '2026-11-18' }}
+        run: |
+          python - <<'PY'
+          import os, psycopg
+          sql=open("sql/corporate_actions_schema.sql",encoding="utf-8").read()
+          with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+              conn.execute(sql)
+          PY
+          python src/corporate_actions_data.py --market both --start-date "$START_DATE" --end-date "$END_DATE"
