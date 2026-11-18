@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tw-stock-margin-import
+  group: tw-stock-margin-import-v2
   cancel-in-progress: false
 jobs:
   import-margin:
