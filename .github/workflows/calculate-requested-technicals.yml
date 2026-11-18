@@ -1,0 +1,69 @@
+name: Calculate Requested Stock Technicals
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Calculate requested stocks
+        run: |
+          python src/calculate_technicals.py --market twse --stock-id 6213
+          python src/calculate_technicals.py --market twse --stock-id 4919
+          python src/calculate_technicals.py --market twse --stock-id 7827
+          python src/calculate_technicals.py --market tpex --stock-id 8937
+
+      - name: Verify Neon technical rows
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+
+          expected = [("twse", "6213"), ("twse", "4919"), ("twse", "7827"), ("tpex", "8937")]
+          with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=20) as conn:
+              with conn.cursor() as cur:
+                  for market, stock_id in expected:
+                      cur.execute(
+                          """
+                          SELECT COUNT(*), COUNT(ma240), COUNT(rsi14), COUNT(atr14),
+                                 MIN(trade_date), MAX(trade_date)
+                          FROM daily_technicals
+                          WHERE market=%s AND stock_id=%s
+                          """,
+                          (market, stock_id),
+                      )
+                      count, ma240, rsi14, atr14, first_date, last_date = cur.fetchone()
+                      if count <= 0:
+                          raise SystemExit(f"No technical rows for {market} {stock_id}")
+                      print(
+                          f"{market} {stock_id}: rows={count}, MA240={ma240}, "
+                          f"RSI14={rsi14}, ATR14={atr14}, range={first_date}..{last_date}"
+                      )
+          PY
