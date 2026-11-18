@@ -1,0 +1,35 @@
+name: Trading Calendar Tests
+
+on:
+  push:
+    branches:
+      - "feature/twse-trading-calendar"
+    paths:
+      - "src/trading_calendar.py"
+      - "tests/test_trading_calendar.py"
+      - ".github/workflows/test-trading-calendar.yml"
+  pull_request:
+    branches:
+      - "main"
+    paths:
+      - "src/trading_calendar.py"
+      - "tests/test_trading_calendar.py"
+      - ".github/workflows/test-trading-calendar.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install requests
+      - name: Run trading calendar tests
+        run: python -m unittest tests.test_trading_calendar -v
+      - name: Verify official TWSE calendar endpoint
+        run: python -m src.trading_calendar
