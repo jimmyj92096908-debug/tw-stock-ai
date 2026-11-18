@@ -6,6 +6,8 @@ import sys
 from datetime import date
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 sys.path.insert(0, os.path.dirname(__file__))
 from institutional_data import TPEX_URL as INSTITUTIONAL_TPEX_URL, ad_date as institutional_date
@@ -13,11 +15,21 @@ from institutional_data import fetch_records as fetch_institutional, save_record
 from margin_data import fetch_records as fetch_margin, save_records as save_margin
 
 
+def retry_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(total=4, connect=4, read=4, backoff_factor=2,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=frozenset({"GET"}),
+                  respect_retry_after_header=True)
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
+
+
 def latest_tpex_trade_date() -> str:
-    response = requests.get(
+    response = retry_session().get(
         INSTITUTIONAL_TPEX_URL,
         headers={"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockResearch/1.0)"},
-        timeout=(15, 45),
+        timeout=(15, 60),
     )
     response.raise_for_status()
     rows = response.json()
