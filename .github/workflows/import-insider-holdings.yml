@@ -1,0 +1,54 @@
+name: Import Official Insider Holdings
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tw-stock-insider-holdings
+  cancel-in-progress: false
+jobs:
+  import-insider:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check database secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: pip install requests "psycopg[binary]>=3.2,<4"
+      - name: Run parser tests
+        run: python -m unittest tests.test_insider_holdings_data -v
+      - name: Fetch official data and import to Neon
+        run: python src/insider_holdings_data.py
+      - name: Verify Neon records
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          sys.path.insert(0, "src")
+          from tdcc_data import normalize_database_url
+          import psycopg
+          expected = [("twse", "6213"), ("twse", "4919"), ("twse", "7827"), ("tpex", "8937")]
+          with psycopg.connect(normalize_database_url(os.environ["DATABASE_URL"])) as conn:
+              with conn.cursor() as cur:
+                  for market, code in expected:
+                      cur.execute("""
+                        SELECT count(*), max(as_of_date),
+                               sum(share_count), sum(coalesce(pledged_shares, 0))
+                        FROM insider_holdings
+                        WHERE market=%s AND stock_id=%s
+                      """, (market, code))
+                      row = cur.fetchone()
+                      print(market, code, row)
+                      if row[0] < 1 or row[1] is None:
+                          raise SystemExit(f"Missing insider holdings for {market} {code}")
+          PY
