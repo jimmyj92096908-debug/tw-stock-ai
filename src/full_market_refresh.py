@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 import market_data
 import stock_list
 import tpex_market_data
+from build_adjusted_prices import build as build_adjusted_stock
 from calculate_smc import calculate_stock as calculate_smc_stock
 from calculate_technicals import calculate_stock as calculate_technical_stock
 
@@ -156,7 +157,6 @@ def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> None:
         csv_path = history_dir / f"{stock_id}.csv"
         if not csv_path.exists():
             raise RuntimeError("下載器未產生預期 CSV 檔案")
-        # Import this stock only; never re-import every CSV in a rotating batch.
         from db_storage import upsert_csv
         # upsert_csv manages its own transaction. Do not use "with conn" here:
         # psycopg closes the connection when that context exits.
@@ -194,7 +194,6 @@ def main() -> None:
         for market in ("twse", "tpex"):
             batch = select_batch(conn, market, batch_size)
             logger.info("%s 本次輪替選取 %s 檔", market.upper(), len(batch))
-            module = market_data if market == "twse" else tpex_market_data
             for index, stock in enumerate(batch):
                 try:
                     refresh_one(conn, stock, today)
@@ -204,14 +203,25 @@ def main() -> None:
                 if index < len(batch) - 1:
                     time.sleep(REQUEST_INTERVAL[market])
 
-        # Recalculate only stocks refreshed successfully in this workflow run.
+        # Build adjusted bars first; both technical and SMC calculations read them.
         for stock in refreshed_this_run:
             try:
-                calculate_technical_stock(conn, stock["market"], stock["stock_id"])
-                calculate_smc_stock(conn, stock["market"], stock["stock_id"])
+                adjusted_count = build_adjusted_stock(conn, stock["market"], stock["stock_id"])
+                if adjusted_count <= 0:
+                    raise RuntimeError("還原行情建立筆數為 0")
+                logger.info(
+                    "%s %s 還原行情建立完成：%s 筆",
+                    stock["market"].upper(), stock["stock_id"], adjusted_count,
+                )
+                technical_count = calculate_technical_stock(conn, stock["market"], stock["stock_id"])
+                smc_count = calculate_smc_stock(conn, stock["market"], stock["stock_id"])
+                if technical_count <= 0 or smc_count <= 0:
+                    raise RuntimeError(
+                        f"指標資料不足：technicals={technical_count}, smc={smc_count}"
+                    )
             except Exception as exc:
-                failures.append(f"indicator {stock['market']} {stock['stock_id']}: {exc}")
-                logger.exception("指標重算失敗：%s %s", stock["market"], stock["stock_id"])
+                failures.append(f"indicators {stock['market']} {stock['stock_id']}: {exc}")
+                logger.exception("還原行情或指標重算失敗：%s %s", stock["market"], stock["stock_id"])
 
     logger.info("本次行情更新成功 %s 檔；失敗 %s 檔", len(refreshed_this_run), len(failures))
     if failures:
