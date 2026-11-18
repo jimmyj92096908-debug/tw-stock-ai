@@ -33,6 +33,6 @@ class SMCTests(unittest.TestCase):
         data=bars([10,11,10,11,10,10], highs=[11,12,11,13,11,11],
                   lows=[9,10,9,10,9,9])
         result=compute_smc(data,swing_left=1,swing_right=1)
-        self.assertTrue(result[4]["liquidity_sweep_high"])
+        self.assertTrue(result[3]["liquidity_sweep_high"])
 
 if __name__=="__main__": unittest.main()
