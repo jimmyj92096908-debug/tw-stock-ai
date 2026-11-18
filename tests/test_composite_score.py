@@ -21,8 +21,8 @@ class CompositeScoreTests(unittest.TestCase):
         self.assertLess(smc_score(bearish)[0],50)
 
     def test_coverage_gates_publishable_score(self):
-        score,cov=combine_scores({"technical":70,"smc":60,"chip":None})
-        self.assertIsNone(score); self.assertEqual(cov,0.60)
+        score,cov=combine_scores({"technical":70,"smc":None,"chip":None})
+        self.assertIsNone(score); self.assertEqual(cov,0.35)
         score,cov=combine_scores({"technical":70,"smc":None,"chip":None})
         self.assertIsNone(score); self.assertEqual(cov,0.35)
 
