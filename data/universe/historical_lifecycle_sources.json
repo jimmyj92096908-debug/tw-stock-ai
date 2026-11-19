@@ -49,7 +49,7 @@
       "source_id": "tpex_delisted_company_query",
       "url": "https://www.tpex.org.tw/zh-tw/mainboard/listed/delisted.html",
       "data_scope": "terminated OTC company query, with code, termination-year and termination-reason filters",
-      "status": "official_query_page_confirmed_bulk_endpoint_unverified",
+      "status": "official_page_confirmed_frontend_discovery_audit_added_endpoint_unverified",
       "observed_fields": [
         "security code query",
         "termination year filter",
@@ -57,7 +57,8 @@
       ],
       "evidence": "Official page exposes the stated query controls; response schema and machine-readable endpoint not established.",
       "limitations": [
-        "Bulk downloadable response, exact date fields, pagination behavior, historical coverage, and automated access not yet verified."
+        "Bulk downloadable response, exact date fields, pagination behavior, historical coverage, and automated access not yet verified.",
+        "Added bounded read-only GitHub Actions diagnostic to capture the page HTML, form metadata, linked JavaScript, and endpoint hints as an artifact; diagnostic results pending CI run."
       ]
     },
     {
