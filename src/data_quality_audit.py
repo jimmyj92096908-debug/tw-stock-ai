@@ -43,7 +43,7 @@ QUERIES = {
     """,
     "history_coverage": """
         SELECT market,
-          COUNT(*) FILTER (WHERE first_date <= DATE '2021-01-01') AS five_year_symbols,
+          COUNT(*) FILTER (WHERE first_date <= CURRENT_DATE - INTERVAL '5 years') AS five_year_symbols,
           COUNT(*) AS symbols_with_data,
           MIN(first_date) AS earliest_start
         FROM (SELECT market, stock_id, MIN(trade_date) AS first_date
@@ -112,7 +112,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"- Stock master symbols: **{summary['master_symbols']}**",
         f"- Symbols with daily bars: **{summary['symbols_with_prices']}**",
         f"- Universe coverage: **{summary['coverage_pct']}%**",
-        f"- Symbols with >= 5-year history (start <= 2021-01-01): **{summary['symbols_with_five_year_history']}**",
+        f"- Symbols with >= 5-year history (start date is at least 5 years old): **{summary['symbols_with_five_year_history']}**",
         f"- Integrity issue counts (may overlap): **{summary['bad_price_rows_counted']}**",
         f"- Duplicate (market, symbol, date) groups: **{summary['duplicate_key_groups']}**",
         f"- Stale symbol rows listed (>10 calendar days): **{summary['stale_symbols_listed']}**",
