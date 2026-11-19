@@ -14,6 +14,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+# Explicit operator decision recorded on 2026-11-19; not an inferred classification.
+MANUAL_EXCLUSIONS = {
+    "1808": "user_directed_exclusion: conflicting TDCC status; excluded at user request",
+}
+
 
 def read_csv(path: str | Path) -> list[dict[str, str]]:
     with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
@@ -69,7 +74,9 @@ def reconcile_records(
         tdcc_status = tdcc_matches[0].get("證券狀態", "") if len(tdcc_matches) == 1 else ""
         expected_market = {"TWSE": "上市", "TPEX": "上櫃"}.get(source.get("market", ""))
 
-        if not tdcc_matches:
+        if code in MANUAL_EXCLUSIONS:
+            bucket, reason = "excluded", MANUAL_EXCLUSIONS[code]
+        elif not tdcc_matches:
             bucket, reason = "review", "missing_in_tdcc_master"
         elif len(tdcc_matches) > 1:
             bucket, reason = "review", "duplicate_code_in_tdcc_master"
@@ -117,16 +124,17 @@ def reconcile_records(
         "bucket_counts": {
             "candidate": counts["candidate"],
             "review": counts["review"],
-            "excluded": 0,
+            "excluded": counts["excluded"],
         },
         "tdcc_active_instruments_not_in_exchange_company_snapshots_count": tdcc_only_count,
         "tdcc_only_samples": tdcc_only_samples,
         "records": reconciled,
+        "manual_exclusions": MANUAL_EXCLUSIONS,
         "interpretation": [
             "Candidate means the exchange snapshot and TDCC market/status fields agree; it is not confirmation of common-stock instrument subtype.",
             "Review records have missing or conflicting cross-source evidence and must not be silently included or excluded.",
             "TDCC-only active instruments are not automatically classified as ETFs, bonds, warrants, or common stocks by this report.",
-            "No records are placed in the final excluded bucket because the available source fields do not establish instrument subtype.",
+            "Manual exclusions are explicit operator decisions and are kept separate from source-inferred instrument classification.",
         ],
         "historical_universe_accepted": False,
         "common_stock_classification_confirmed": False,
