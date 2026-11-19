@@ -8,6 +8,7 @@ export const HELP_TEXT = [
   '請輸入 4 位數股票代碼，例如：2330',
   '也可輸入：分析 2330、股票 6488',
   '輸入「清單」看最新可用評分前 10 名；傳送 1～10 或「編號 1」可查詢序號。',
+  '輸入「資料狀態」查看資料覆蓋率與最新日期。',
   '輸入「說明」可查看使用方式。',
   '目前僅查詢資料庫已有資料；不提供即時報價或交易指令。'
 ].join('\n');
@@ -16,6 +17,7 @@ export function parseStockCode(input) {
   if (typeof input !== 'string') return { kind: 'help' };
   const normalized = input.replace(/\u3000/g, ' ').trim();
   if (/^(說明|幫助|help|\?|使用方式)$/iu.test(normalized)) return { kind: 'help' };
+  if (/^(資料狀態|資料庫狀態|更新狀態|資料更新)$/u.test(normalized)) return { kind: 'status' };
   if (/^(清單|排行|排名|觀察清單)$/u.test(normalized)) return { kind: 'list' };
   const rank = /^(?:編號\s*|第\s*)?([1-9]|10)(?:\s*名)?$/u.exec(normalized);
   if (rank) return { kind: 'rank', rank: Number(rank[1]) };
@@ -35,6 +37,24 @@ export function verifyLineSignature(rawBody, signature, channelSecret) {
 
 // All lookups use a bound stock code. LATERAL joins fetch the most recent
 // available date per component instead of pretending every source is current.
+// Read-only summary shown by the LINE 「資料狀態」 command.
+export const DATA_STATUS_SQL = [
+  'SELECT',
+  ' (SELECT COUNT(*)::int FROM public.stock_master) AS universe,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id FROM public.daily_prices',
+  '  WHERE close IS NOT NULL GROUP BY market,stock_id',
+  ' ) z) AS priced,',
+  ' (SELECT MAX(trade_date) FROM public.daily_prices',
+  '  WHERE close IS NOT NULL) AS price_date,',
+  ' (SELECT MAX(as_of_date) FROM public.daily_composite_scores',
+  '  WHERE total_score IS NOT NULL) AS score_date,',
+  ' (SELECT COUNT(*)::int FROM public.daily_composite_scores',
+  '  WHERE total_score IS NOT NULL AND as_of_date=(',
+  '   SELECT MAX(as_of_date) FROM public.daily_composite_scores',
+  '   WHERE total_score IS NOT NULL)) AS scored_latest'
+].join('\n');
+
 export const ANALYSIS_SQL = [
   'SELECT sm.market, sm.stock_id, sm.stock_name,',
   ' p.trade_date AS price_date, p.close, p.price_change, p.volume,',
@@ -200,11 +220,39 @@ export function formatStockAnalysis(row) {
   return lines.join('\n').slice(0, 4900);
 }
 
+export function formatDataStatus(row) {
+  if (!row) return '目前無法讀取資料庫更新狀態，請稍後再試。';
+  const universe = Number(row.universe);
+  const priced = Number(row.priced);
+  const scored = Number(row.scored_latest);
+  if (![universe, priced, scored].every(Number.isFinite) ||
+      universe < 0 || priced < 0 || scored < 0 || priced > universe) {
+    return '目前無法讀取有效的資料庫統計，請稍後再試。';
+  }
+  const coverage = universe ? (100 * priced / universe).toFixed(1) : '0.0';
+  const lines = [
+    '台股資料庫更新狀態',
+    '最新收盤行情：' + displayDate(row.price_date),
+    '最新綜合評分：' + displayDate(row.score_date),
+    '候選股票：' + number(universe, 0) + ' 檔',
+    '已有行情：' + number(priced, 0) + ' 檔（' + coverage + '%）',
+    '尚無行情：' + number(universe - priced, 0) + ' 檔',
+    '最新評分資料筆數：' + number(scored, 0),
+    '注意：資料覆蓋率不是交易所完整股票數；不提供即時報價。',
+    '未覆蓋或資料過期的股票，不應視為當日有效分析。'
+  ];
+  return lines.join('\n');
+}
+
 export async function buildReplyText(text, query) {
   const parsed = parseStockCode(text);
   if (parsed.kind === 'help') return HELP_TEXT;
   if (parsed.kind === 'invalid') return '無法辨識股票代碼或清單編號。\n' + HELP_TEXT;
   if (parsed.kind === 'excluded') return '代碼 1808 已依設定排除，不提供分析。';
+  if (parsed.kind === 'status') {
+    const result = await query(DATA_STATUS_SQL, []);
+    return formatDataStatus(Array.isArray(result?.rows) ? result.rows[0] : null);
+  }
 
   let code = parsed.code;
   let selectedMarket = null;
