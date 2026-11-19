@@ -30,6 +30,12 @@ def main() -> None:
         raw, payload = request_payload(session, market, trade_date)
         rows = parse_all_market_daily(payload, market, trade_date.isoformat())
         statuses = Counter(row["ohlc_status"] for row in rows)
+        missing_rows = [row for row in rows if row["ohlc_status"] != "complete"]
+        missing_volume = Counter(
+            "positive" if row["volume"] is not None and row["volume"] > 0 else
+            "zero" if row["volume"] == 0 else "unknown"
+            for row in missing_rows
+        )
         results.append({
             "market": market,
             "requested_date": trade_date.isoformat(),
@@ -43,6 +49,11 @@ def main() -> None:
                 else "TPEx OTC daily quotes excluding fixed-price transactions"
             ),
             "sample_stock_ids": [row["stock_id"] for row in rows[:5]],
+            "missing_ohlc_volume_class": dict(sorted(missing_volume.items())),
+            "sample_missing_rows": [
+                {"stock_id": row["stock_id"], "name": row["name"], "volume": row["volume"], "transactions": row["transactions"]}
+                for row in missing_rows[:8]
+            ],
         })
         time.sleep(0.5)
 
