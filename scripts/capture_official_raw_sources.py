@@ -294,14 +294,23 @@ def main() -> None:
                 target["trade_date"],
             )
         report["targets"].append(target_report)
+    request_errors = [
+        observation
+        for target in report["targets"]
+        for observation in target["observations"]
+        if "request_error" in observation
+    ]
+    required_errors = [item for item in request_errors if not item.get("optional", False)]
+    report["optional_request_error_count"] = len(request_errors) - len(required_errors)
+    report["required_request_error_count"] = len(required_errors)
+    report["capture_complete"] = not required_errors
     (OUT / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    if any(
-        "request_error" in obs and not obs.get("optional", False)
-        for target in report["targets"]
-        for obs in target["observations"]
-    ):
-        raise SystemExit("One or more required official source requests failed; inspect the partial artifact.")
+    if required_errors:
+        print(
+            f"WARNING: {len(required_errors)} required source request(s) failed; "
+            "the partial artifact is retained and capture_complete=false."
+        )
 
 
 if __name__ == "__main__":
