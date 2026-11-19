@@ -118,6 +118,24 @@ def reconcile_exact_codes(
     }
 
 
+
+def write_audit_csv(records: list[dict[str, Any]], output_path: Path) -> None:
+    """Write all exclusion records, including operator-directed reasons, to CSV."""
+    fields = [
+        "stock_id", "name", "market", "bucket",
+        "instrument_subtype_confirmed", "exclusion_evidence",
+        "manual_exclusion_reason",
+    ]
+    with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="raise")
+        writer.writeheader()
+        for row in records:
+            csv_row = {
+                **row,
+                "exclusion_evidence": json.dumps(row["exclusion_evidence"], ensure_ascii=False),
+            }
+            writer.writerow(csv_row)
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit-root", required=True)
@@ -180,22 +198,7 @@ def main() -> None:
     (output / "exact-instrument-exclusion-audit.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    with (output / "exact-instrument-exclusion-audit.csv").open(
-        "w", encoding="utf-8-sig", newline=""
-    ) as handle:
-        fields = [
-            "stock_id", "name", "market", "bucket",
-            "instrument_subtype_confirmed", "exclusion_evidence",
-            "manual_exclusion_reason",
-        ]
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="raise")
-        writer.writeheader()
-        for row in report["records"]:
-            csv_row = {
-                **row,
-                "exclusion_evidence": json.dumps(row["exclusion_evidence"], ensure_ascii=False),
-            }
-            writer.writerow(csv_row)
+    write_audit_csv(report["records"], output / "exact-instrument-exclusion-audit.csv")
     print(json.dumps({
         "record_count": report["record_count"],
         "review_record_count": report["review_record_count"],
