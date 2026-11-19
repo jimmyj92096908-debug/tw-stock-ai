@@ -98,26 +98,6 @@ def find_tpex_monthly_row(payload: dict | None, trade_date: str) -> list | None:
     return None
 
 
-def find_tpex_openapi_row(payload: Any, stock_id: str, trade_date: str) -> dict | None:
-    """Find a TPEx OpenAPI snapshot row only when its declared date matches."""
-    if not isinstance(payload, list):
-        return None
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        code = str(row.get("SecuritiesCompanyCode", "")).strip()
-        raw_date = re.sub(r"\D", "", str(row.get("Date", "")))
-        normalized_date = None
-        if len(raw_date) == 7 and raw_date.isdigit():
-            try:
-                normalized_date = date(int(raw_date[:3]) + 1911, int(raw_date[3:5]), int(raw_date[5:7])).isoformat()
-            except ValueError:
-                normalized_date = None
-        if code == stock_id and normalized_date == trade_date:
-            return row
-    return None
-
-
 def find_twse_row(payload: dict | None, trade_date: str) -> list | None:
     if not isinstance(payload, dict):
         return None
