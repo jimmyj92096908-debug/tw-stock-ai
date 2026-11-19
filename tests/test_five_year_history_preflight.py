@@ -116,12 +116,14 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
 
         class Session:
             def get(self, url, params, **kwargs):
+                self.url = url
                 self.params = params
                 return Response()
 
         session = Session()
         with self.assertRaisesRegex(ValueError, "instead of requested 2024"):
             fetch_closed_dates(2024, session)
+        self.assertEqual(session.url, "https://www.twse.com.tw/holidaySchedule/holidaySchedule")
         self.assertEqual(session.params["queryYear"], "113")
         self.assertTrue(session.params["_"])
 
