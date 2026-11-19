@@ -47,7 +47,7 @@ test('signed LINE 資料狀態 flows through the gateway and preserves old messa
       assert.equal(sql,DATA_STATUS_SQL);
       assert.deepEqual(params,[]);
       return {rows:[{
-        universe:1991,priced:40,price_date:'2026-11-19',
+        universe:1991,priced:40,priced_latest:25,stale_over_7_days:10,price_date:'2026-11-19',
         score_date:'2026-11-18',scored_latest:18
       }]};
     },
@@ -68,6 +68,7 @@ test('signed LINE 資料狀態 flows through the gateway and preserves old messa
   assert.equal(replies[0].replyToken,'fake-evt-status');
   assert.match(replies[0].text,/台股資料庫更新狀態/u);
   assert.match(replies[0].text,/尚無行情：1,951 檔/u);
+  assert.match(replies[0].text,/最新行情交易日有資料：25 檔/u);
   assert.equal(calls.length,1);
   assert.equal(calls[0].row.message_type,'text');
   assert.deepEqual(legacy[0].map(e=>e.webhookEventId),['evt-old']);
