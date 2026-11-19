@@ -68,6 +68,25 @@ def main():
             })
         except Exception as exc:
             result["errors"].append({"url":asset,"error":str(exc)[:300]})
+
+    # Probe the exact form API using its actual "date" field, not queryYear.
+    api = "https://www.twse.com.tw/holidaySchedule/holidaySchedule"
+    result["api_probes"] = []
+    for year in ("2021", "2022", "2026", "115"):
+        for response in ("json", "csv"):
+            query = urllib.parse.urlencode({"response": response, "date": year})
+            target = api + "?" + query
+            try:
+                final_url, content_type, payload = fetch(target)
+                sample = payload[:1200].decode("utf-8-sig", "replace")
+                item = {"year_value": year, "response": response, "url": final_url,
+                        "content_type": content_type, "bytes": len(payload),
+                        "sample": sample}
+            except Exception as exc:
+                item = {"year_value": year, "response": response, "url": target,
+                        "error": str(exc)[:300]}
+            result["api_probes"].append(item)
+
     print(json.dumps(result,ensure_ascii=False,indent=2))
 
 if __name__ == "__main__":
