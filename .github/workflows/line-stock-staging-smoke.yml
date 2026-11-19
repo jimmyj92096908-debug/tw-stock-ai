@@ -1,0 +1,38 @@
+name: LINE Staging Endpoint HTTP Smoke
+
+on:
+  push:
+    branches:
+      - "feature/line-stock-code-analysis"
+    paths:
+      - ".github/workflows/line-stock-staging-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-http-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify staging endpoint health and unsigned rejection
+        env:
+          BASE_URL: "https://br-purple-smoke-a1t9dmzz-linestockanalysis.compute.c-1.ap-southeast-1.aws.neon.tech"
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Testing the separate staging function only."
+          echo "No LINE credentials, channel updates, or DB writes are performed."
+          health=$(curl --silent --show-error --location --max-time 25 --output /tmp/health-body --write-out "%{http_code}" "$BASE_URL/health")
+          echo "GET /health HTTP $health"
+          test "$health" = "200"
+          grep -qx 'ok' /tmp/health-body
+          unsigned=$(curl --silent --show-error --location --max-time 25 --output /dev/null --write-out "%{http_code}" \
+            --header "content-type: application/json" \
+            --data '{"events":[]}' "$BASE_URL/webhook")
+          echo "POST /webhook without signature HTTP $unsigned"
+          case "$unsigned" in
+            401|503) echo "Unsigned event rejected as expected." ;;
+            *) echo "::error::Unsigned LINE webhook was not safely rejected"; exit 1 ;;
+          esac
