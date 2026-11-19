@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -23,9 +24,22 @@ MARKETS = ("twse", "tpex")
 def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
     if payload.get("stat") != "ok":
         raise ValueError(f"TWSE calendar status is not ok for {year}")
-    expected_roc_year = year - 1911
-    if payload.get("queryYear") not in (None, year, expected_roc_year, str(year), str(expected_roc_year)):
-        raise ValueError(f"TWSE returned a different calendar year for {year}: {payload.get('queryYear')!r}")
+    # queryYear may be ignored by the public endpoint. Validate the year
+    # actually represented by the response, not the requested query parameter.
+    actual_years: set[int] = set()
+    title = str(payload.get("title", ""))
+    title_match = re.search(r"(?<!\\d)(\\d{2,4})\\s*年", title)
+    if title_match:
+        value = int(title_match.group(1))
+        actual_years.add(value + 1911 if value < 1911 else value)
+    response_date = str(payload.get("date", "")).strip()
+    if re.fullmatch(r"\\d{8}", response_date):
+        actual_years.add(int(response_date[:4]))
+    if actual_years != {year}:
+        raise ValueError(
+            f"TWSE returned calendar year(s) {sorted(actual_years)} "
+            f"instead of requested {year}"
+        )
     rows = payload.get("data")
     if not isinstance(rows, list):
         raise ValueError(f"TWSE calendar data is missing for {year}")
