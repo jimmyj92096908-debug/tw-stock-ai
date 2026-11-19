@@ -29,6 +29,7 @@ jobs:
           python -m unittest discover -s tests -p "test_tdcc_universe_candidates.py" -v
           python -m unittest discover -s tests -p "test_twse_current_list.py" -v
           python -m unittest discover -s tests -p "test_tpex_current_list.py" -v
+          python -m unittest discover -s tests -p "test_current_market_universe_reconciliation.py" -v
           python -m unittest discover -s tests -p "test_security_lifecycle_candidates.py" -v
           python -m unittest discover -s tests -p "test_lifecycle_source_inventory.py" -v
           python -m unittest discover -s tests -p "test_tpex_delisted_discovery.py" -v
@@ -49,6 +50,14 @@ jobs:
             --input audit-output/market-scope/tdcc-securities-master.csv \
             --output audit-output/market-scope/tdcc-universe-candidates.json \
             --candidates-csv audit-output/market-scope/tdcc-current-listed-otc-candidates.csv
+          python scripts/reconcile_current_market_universe.py \
+            --twse-csv audit-output/market-scope/twse-current/twse-current-listed-candidates.csv \
+            --tpex-csv audit-output/market-scope/tpex-current/tpex-current-otc-candidates.csv \
+            --tdcc-master-csv audit-output/market-scope/tdcc-securities-master.csv \
+            --tdcc-active-candidates-csv audit-output/market-scope/tdcc-current-listed-otc-candidates.csv \
+            --twse-audit-json audit-output/market-scope/twse-current/twse-current-listed-audit.json \
+            --tpex-audit-json audit-output/market-scope/tpex-current/tpex-current-otc-audit.json \
+            --output-dir audit-output/market-scope/reconciliation
       - name: Upload raw official sources and audit report
         uses: actions/upload-artifact@v4
         with:
