@@ -27,7 +27,6 @@ SOURCE_SPECS = {
 PARTIAL_COVERAGE_SOURCES = {"tpex_etn_partial"}
 
 # The ETN source is an official current ESG showcase page, not a complete ETN master.
-}
 
 
 def sha256_file(path: Path) -> str:
