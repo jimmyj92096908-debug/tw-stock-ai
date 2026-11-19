@@ -104,7 +104,7 @@ def tpex_legacy_response_date(payload: dict | None) -> str | None:
         return None
     dates: set[str] = set()
     raw_date = str(payload.get("date") or "").strip()
-    if re.fullmatch(r"\\d{8}", raw_date):
+    if re.fullmatch(r"\d{8}", raw_date):
         try:
             dates.add(date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:8])).isoformat())
         except ValueError:
