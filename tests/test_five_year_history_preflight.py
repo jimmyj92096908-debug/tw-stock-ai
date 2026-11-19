@@ -16,7 +16,7 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
     def test_calendar_closed_days_are_parsed_from_official_payload(self):
         payload = {
             "stat": "ok",
-            "queryYear": 2026,
+            "queryYear": 115,
             "data": [
                 ["2026-01-01", "開國紀念日", "放假一天"],
                 ["2026-01-02", "市場交易日", "正常交易"],
@@ -87,7 +87,7 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
 
     def test_reject_calendar_wrong_year(self):
         with self.assertRaisesRegex(ValueError, "different calendar year"):
-            closed_dates_from_payload({"stat": "ok", "queryYear": 2025, "data": []}, 2026)
+            closed_dates_from_payload({"stat": "ok", "queryYear": 114, "data": []}, 2026)
 
 
 if __name__ == "__main__":
