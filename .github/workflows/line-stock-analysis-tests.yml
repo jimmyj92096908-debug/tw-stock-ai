@@ -1,0 +1,36 @@
+name: LINE Stock Code Analysis Tests
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+    paths:
+      - "line-stock-analysis/**"
+      - ".github/workflows/line-stock-analysis-tests.yml"
+  pull_request:
+    paths:
+      - "line-stock-analysis/**"
+      - ".github/workflows/line-stock-analysis-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install LINE function dependencies
+        working-directory: line-stock-analysis
+        run: npm install --no-audit --no-fund
+      - name: Test LINE stock command and signed webhook
+        working-directory: line-stock-analysis
+        run: npm test
+      - name: Check syntax of runtime entrypoint
+        run: node --check line-stock-analysis/index.mjs
