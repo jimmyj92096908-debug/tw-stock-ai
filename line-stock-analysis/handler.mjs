@@ -15,8 +15,8 @@ export function parseStockCode(input) {
   if (typeof input !== 'string') return { kind: 'help' };
   const normalized = input.replace(/\u3000/g, ' ').trim();
   if (/^(說明|幫助|help|\?|使用方式)$/iu.test(normalized)) return { kind: 'help' };
-  const match = /^(?:(?:分析|查詢|查股票|股票|查)\s*)?([0-9]{4})$/u.exec(normalized);
-  if (!match) return { kind: 'invalid' };
+  const match = /^(?:(?:分析|查詢|查股票|股票|代碼|編號|查股|查)\s*)?([0-9]{4})$/u.exec(normalized);
+  if (!match || match[1][0] === '0') return { kind: 'invalid' };
   if (EXCLUDED_CODES.has(match[1])) return { kind: 'excluded', code: match[1] };
   return { kind: 'stock', code: match[1] };
 }
