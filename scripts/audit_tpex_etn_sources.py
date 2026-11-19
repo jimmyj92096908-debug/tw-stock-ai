@@ -49,7 +49,7 @@ def extract_etn_codes(html: str) -> list[str]:
     parser = EtnSectionParser()
     parser.feed(html)
     section = " ".join(parser.etn_parts)
-    codes = re.findall(r"(?:代號|證券代號)\\s*[:：]\\s*[“\"']?([0-9A-Z]{6})", section, flags=re.I)
+    codes = re.findall(r"(?:代號|證券代號)\s*[:：]\s*[“\"']?([0-9A-Z]{6})", section, flags=re.I)
     return sorted(set(code.upper() for code in codes))
 
 
