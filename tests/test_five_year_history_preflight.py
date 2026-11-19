@@ -18,6 +18,8 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
         payload = {
             "stat": "ok",
             "queryYear": 115,
+            "title": "115 年市場開休市日期",
+            "date": "20260101",
             "data": [
                 ["2026-01-01", "開國紀念日", "放假一天"],
                 ["2026-01-02", "市場交易日", "正常交易"],
@@ -88,7 +90,7 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
 
     def test_reject_calendar_wrong_year(self):
         with self.assertRaisesRegex(ValueError, "different calendar year"):
-            closed_dates_from_payload({"stat": "ok", "queryYear": 114, "data": []}, 2026)
+            closed_dates_from_payload({"stat": "ok", "queryYear": 115, "title": "116 年市場開休市日期", "date": "20270101", "data": []}, 2026)
 
     def test_missing_historical_calendar_blocks_expected_and_pending_counts(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -105,12 +107,12 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             self.assertIsNone(report["market_counts"]["twse"]["pending"])
             self.assertFalse(report["pending_count_is_authoritative"])
 
-    def test_calendar_fetch_uses_roc_year_and_cache_buster(self):
+    def test_calendar_fetch_rejects_endpoint_that_ignores_requested_year(self):
         class Response:
             def raise_for_status(self):
                 pass
             def json(self):
-                return {"stat": "ok", "queryYear": 113, "data": []}
+                return {"stat": "ok", "queryYear": 113, "title": "116 年市場開休市日期", "date": "20270101", "data": []}
 
         class Session:
             def get(self, url, params, **kwargs):
@@ -118,7 +120,8 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
                 return Response()
 
         session = Session()
-        self.assertEqual(fetch_closed_dates(2024, session), set())
+        with self.assertRaisesRegex(ValueError, "instead of requested 2024"):
+            fetch_closed_dates(2024, session)
         self.assertEqual(session.params["queryYear"], "113")
         self.assertTrue(session.params["_"])
 
