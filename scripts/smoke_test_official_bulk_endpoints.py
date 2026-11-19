@@ -20,13 +20,19 @@ from src.market_data_bulk import parse_all_market_daily
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--date", default="2026-11-19", help="YYYY-MM-DD")
+    parser.add_argument(
+        "--dates", default="2026-11-19,2026-11-18,2026-11-17,2025-11-19",
+        help="Comma-separated YYYY-MM-DD dates; each response date is strictly validated",
+    )
     args = parser.parse_args()
-    trade_date = date.fromisoformat(args.date)
+    trade_dates = [date.fromisoformat(value.strip()) for value in args.dates.split(",") if value.strip()]
+    if not trade_dates or len(set(trade_dates)) != len(trade_dates):
+        parser.error("provide one or more unique dates")
 
     session = requests.Session()
     results = []
-    for market in ("twse", "tpex"):
+    for trade_date in trade_dates:
+      for market in ("twse", "tpex"):
         raw, payload = request_payload(session, market, trade_date)
         rows = parse_all_market_daily(payload, market, trade_date.isoformat())
         statuses = Counter(row["ohlc_status"] for row in rows)
@@ -36,6 +42,10 @@ def main() -> None:
             "zero" if row["volume"] == 0 else "unknown"
             for row in missing_rows
         )
+        positive_volume_missing = [
+            row for row in missing_rows
+            if row["volume"] is not None and row["volume"] > 0
+        ]
         results.append({
             "market": market,
             "requested_date": trade_date.isoformat(),
@@ -50,9 +60,9 @@ def main() -> None:
             ),
             "sample_stock_ids": [row["stock_id"] for row in rows[:5]],
             "missing_ohlc_volume_class": dict(sorted(missing_volume.items())),
-            "sample_missing_rows": [
+            "positive_volume_missing_ohlc": [
                 {"stock_id": row["stock_id"], "name": row["name"], "volume": row["volume"], "transactions": row["transactions"]}
-                for row in missing_rows[:8]
+                for row in positive_volume_missing
             ],
         })
         time.sleep(0.5)
@@ -61,6 +71,12 @@ def main() -> None:
         "read_only": True,
         "database_accessed": False,
         "filesystem_written": False,
+        "requested_dates": [value.isoformat() for value in trade_dates],
+        "date_count": len(trade_dates),
+        "endpoint_response_hashes_differ_by_date": {
+            market: len({item["raw_sha256"] for item in results if item["market"] == market}) > 1
+            for market in ("twse", "tpex")
+        },
         "results": results,
     }, ensure_ascii=False, sort_keys=True))
 
