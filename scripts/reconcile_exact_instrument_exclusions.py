@@ -21,6 +21,12 @@ SOURCE_SPECS = {
     "tpex_warrants": ("instrument-sources/tpex_warrants-raw.json", "權證代號", "TPEX", "warrant"),
     "tpex_etf": ("tpex-etf/tpex-etf-infohub-raw.json", "stockNo", "TPEX", "etf"),
     "tpex_bonds": ("tpex-bonds/tpex-bond-codes-raw.json", "BondCode", "TPEX", "bond"),
+    "tpex_etn_partial": ("tpex-etn/tpex-etn-codes-raw.json", "security_code", "TPEX", "etn"),
+}
+
+PARTIAL_COVERAGE_SOURCES = {"tpex_etn_partial"}
+
+# The ETN source is an official current ESG showcase page, not a complete ETN master.
 }
 
 
@@ -140,6 +146,7 @@ def main() -> None:
             "market": market, "category": category, "codes": codes,
             "path": str(path), "sha256": source_sha256, "code_field": field,
             "schema_validated": schema_validated, "source_error": source_error,
+            "coverage_status": "partial" if source_id in PARTIAL_COVERAGE_SOURCES else "audited_feed",
         }
 
     reconciliation = json.loads(Path(args.reconciliation_json).read_text(encoding="utf-8-sig"))
@@ -156,7 +163,8 @@ def main() -> None:
     report["review_records"] = review_records
     report["coverage"] = {
         "unavailable_source_count": sum(not item["schema_validated"] for item in source_codes.values()),
-        "classification_coverage_complete": all(item["schema_validated"] for item in source_codes.values()),
+        "partial_source_count": sum(item["coverage_status"] == "partial" for item in source_codes.values()),
+        "classification_coverage_complete": all(item["schema_validated"] and item["coverage_status"] != "partial" for item in source_codes.values()),
     }
     report["sources"] = {
         source_id: {
