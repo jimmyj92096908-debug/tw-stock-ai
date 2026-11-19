@@ -35,14 +35,19 @@ def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
             continue
         day_text, name, description = row[0], str(row[1]), str(row[2])
         if any(word in name or word in description for word in CLOSED_WORDS):
-            closed.add(date.fromisoformat(str(day_text)))
+            text = str(day_text).strip().replace("/", "-")
+            parts = text.split("-")
+            if len(parts) == 3 and len(parts[0]) <= 3:
+                text = f"{int(parts[0]) + 1911:04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+            closed.add(date.fromisoformat(text))
     return closed
 
 
 def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
+    roc_year = year - 1911
     response = session.get(
         CALENDAR_URL,
-        params={"queryYear": str(year), "response": "json", "_": str(time.time_ns())},
+        params={"queryYear": str(roc_year), "response": "json", "_": str(time.time_ns())},
         timeout=(8, 20),
         headers={"User-Agent": "tw-stock-ai-history-preflight/1.0"},
     )
