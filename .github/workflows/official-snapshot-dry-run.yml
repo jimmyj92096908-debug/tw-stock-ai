@@ -1,0 +1,32 @@
+name: Official Market Snapshot Real Source Dry Run
+on:
+  push:
+    branches: ["feature/line-stock-code-analysis"]
+    paths:
+      - ".github/workflows/official-snapshot-dry-run.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Dependencies
+        run: pip install "psycopg[binary]>=3.2,<4" requests
+      - name: Check credentials and run official parsing unit tests
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL is unavailable"
+            exit 1
+          fi
+          python -m unittest tests.test_official_market_feed -v
+      - name: Check exchange quotes against production candidates WITHOUT WRITES
+        run: python src/official_snapshot_ingest.py
