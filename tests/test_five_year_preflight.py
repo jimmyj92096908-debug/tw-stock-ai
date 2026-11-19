@@ -45,7 +45,7 @@ class CalendarParserTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "manifest.jsonl").write_text(
-                '{"market":"twse","trade_date":"2026-11-19","status":"no_data_unverified"}\\n',
+                '{"market":"twse","trade_date":"2026-11-19","status":"no_data_unverified"}\n',
                 encoding="utf-8",
             )
             report = build_preflight(
