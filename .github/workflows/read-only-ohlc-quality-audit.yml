@@ -1,6 +1,9 @@
 name: Read-only OHLC Data Quality Audit
 
 on:
+  push:
+    branches:
+      - feature/ohlc-quality-classification
   workflow_dispatch:
 
 permissions:
