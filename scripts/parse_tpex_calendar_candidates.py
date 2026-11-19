@@ -14,9 +14,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-CHINESE_DATE = re.compile(r"(?<!\\d)(1[0-2]|0?[1-9])\\s*月\\s*(3[01]|[12]\\d|0?[1-9])\\s*日")
+CHINESE_DATE = re.compile(r"(?<!\d)(1[0-2]|0?[1-9])\s*月\s*(3[01]|[12]\d|0?[1-9])\s*日")
 ENGLISH_DATE = re.compile(
-    r"\\b(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(3[01]|[12]\\d|0?[1-9])\\b",
+    r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(3[01]|[12]\d|0?[1-9])\b",
     re.IGNORECASE,
 )
 ENGLISH_MONTH = {name.lower(): i for i, name in enumerate(
@@ -41,7 +41,7 @@ def classify_context(context: str) -> str:
 def extract_candidates(text: str, roc_year: int, source_sha256: str) -> list[dict[str, Any]]:
     """Extract date tokens with nearby context; never infer closure from a token."""
     gregorian_year = roc_year + 1911
-    lines = text.replace("\\r", "\\n").splitlines()
+    lines = text.replace("\r", "\n").splitlines()
     found: dict[tuple[int, int], dict[str, Any]] = {}
     for index, line in enumerate(lines):
         matches: list[tuple[int, int]] = []
@@ -73,7 +73,7 @@ def parse_directory(input_dir: Path) -> dict[str, Any]:
     records = []
     errors = []
     for path in sorted(input_dir.glob("*.txt")):
-        match = re.fullmatch(r"(\\d{3})\\.txt", path.name)
+        match = re.fullmatch(r"(\d{3})\.txt", path.name)
         if not match:
             continue
         roc_year = int(match.group(1))
@@ -107,7 +107,7 @@ def main() -> None:
     result = parse_directory(Path(args.input_dir))
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({
         "record_count": result["record_count"],
         "calendar_days_accepted": False,
