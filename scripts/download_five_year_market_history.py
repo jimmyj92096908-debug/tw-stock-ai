@@ -27,8 +27,8 @@ HEADERS = {
     "Accept": "application/json,text/plain,*/*",
     "Referer": "https://www.twse.com.tw/",
 }
-TIMEOUT = (10, 30)
-MAX_ATTEMPTS = 4
+TIMEOUT = (8, 20)
+MAX_ATTEMPTS = 3
 
 
 def trading_weekdays(start: date, end: date):
