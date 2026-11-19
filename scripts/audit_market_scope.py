@@ -40,6 +40,9 @@ def decode_csv(raw: bytes) -> tuple[str, str]:
 
 def inspect_tdcc_csv(raw: bytes) -> dict[str, Any]:
     text, encoding = decode_csv(raw)
+    # Normalize escaped newline sequences found in some test fixtures/export wrappers.
+    if "\\n" in text and "\n" not in text:
+        text = text.replace("\\r", "\r").replace("\\n", "\n")
     sample = text[:8192]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\\t")
