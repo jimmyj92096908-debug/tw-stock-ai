@@ -43,9 +43,13 @@ npm test
 4. 經人工同意後，再決定讓既有 webhook 轉呼叫此功能，或在 LINE Developers 控制台更新 Webhook URL。LINE 一個 channel 僅有一個 webhook URL，**不能以新增函式就假設它已自動接通 LINE**。
 5. 以 2330、6488、1808、未知代碼，以及「清單」、「1」、「編號 2」進行端到端測試，確認資料日期、排行編號與缺漏提示。
 
-## 狀態
+## 狀態（2026-11-19）
 
-- GitHub 程式碼、單元測試和 CI：此功能分支開發中。
-- 正式 webhook 切換：**尚未執行**。
-- Neon 現有 `linewebhook`：**保留、不覆寫**。
-- 五年大量下載、Neon 資料寫入、PR 合併：**未授權，本功能不執行**。
+- GitHub LINE 自動測試及 Python 自動測試已通過；功能分支仍是 draft PR #10，尚未合併。
+- **獨立 Neon 函式 `linestockanalysis` 已部署**；Neon deployment status 為 `completed`。
+- 新函式網址：`https://br-purple-smoke-a1t9dmzz-linestockanalysis.compute.c-1.ap-southeast-1.aws.neon.tech/`；健康檢查路徑：`/health`。
+- 外部 HTTP 健康檢查尚未完成：目前執行環境無法連線到此網域；不要將 Neon 的 `completed` 視為 LINE 可用。
+- **未配置或轉移 LINE Channel Secret / Access Token**，部署時沒有提交任何自訂環境憑證；因此文字訊息回覆仍未啟用。
+- 正式 LINE Developers Webhook URL **未切換**。原本 Neon `linewebhook` **保留、不覆寫**。
+- 下一步：由授權管理者在 Neon Function 的安全設定中加入 `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`，先驗證 `/health`、簽章與資料庫唯讀查詢；確認後再經人工同意切換 LINE Developers Webhook URL。
+- 五年大量行情下載、Neon 行情資料寫入、PR 合併：仍未執行。
