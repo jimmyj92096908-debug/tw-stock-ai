@@ -134,6 +134,10 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
 
     def test_calendar_fetch_uses_official_historical_json_endpoint(self):
         class Response:
+            content = b'{"stat":"ok","title":"113 \\u5e74\\u5e02\\u5834\\u958b\\u4f11\\u5e02\\u65e5\\u671f","date":"20240101","data":[["2024-02-06","\\u5e02\\u5834\\u7121\\u4ea4\\u6613","\\u50c5\\u8fa6\\u7406\\u7d50\\u7b97\\u4ea4\\u5272"]]}'
+            url = "https://www.twse.com.tw/holidaySchedule/holidaySchedule?date=2024&response=json"
+            status_code = 200
+            headers = {"Content-Type": "application/json"}
             def json(self):
                 return {
                     "stat": "ok",
