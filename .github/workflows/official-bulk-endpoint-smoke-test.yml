@@ -23,8 +23,8 @@ jobs:
           python-version: "3.12"
       - name: Install HTTP dependency
         run: python -m pip install requests
-      - name: Query one known trading date from each official endpoint
+      - name: Query four historical trading dates from each official endpoint
         env:
           PYTHONPATH: .
         run: |
-          python scripts/smoke_test_official_bulk_endpoints.py --date 2026-11-19
+          python scripts/smoke_test_official_bulk_endpoints.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
