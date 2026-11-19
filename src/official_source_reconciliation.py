@@ -86,6 +86,7 @@ def reconcile_tpex_payloads(
     if not monthly or not monthly.get("row_found"):
         return {
             "classification": "pending_review",
+            "evidence_confidence": "insufficient",
             "reason": "monthly_endpoint_target_row_not_found",
             "monthly_row_found": False,
             "bulk_row_found": bool(bulk and bulk.get("row_found")),
@@ -104,6 +105,7 @@ def reconcile_tpex_payloads(
         if monthly_positive_volume and count == 0:
             return {
                 "classification": "source_conflict",
+                "evidence_confidence": "insufficient",
                 "reason": "monthly_individual_positive_volume_but_bulk_table_total_count_zero",
                 "monthly_row_found": True,
                 "monthly_volume_lots": monthly_volume_lots,
@@ -115,6 +117,7 @@ def reconcile_tpex_payloads(
             }
         return {
             "classification": "pending_review",
+            "evidence_confidence": "insufficient",
             "reason": "bulk_target_row_absent_without_confirmed_zero_count",
             "monthly_row_found": True,
             "monthly_volume_lots": monthly_volume_lots,
@@ -130,6 +133,7 @@ def reconcile_tpex_payloads(
     }
     return {
         "classification": "pending_review",
+        "evidence_confidence": "insufficient",
         "reason": "bulk_row_found_field_level_unit_and_value_validation_required",
         "monthly_row_found": True,
         "monthly_volume_lots": monthly_volume_lots,
@@ -198,6 +202,7 @@ def reconcile_twse_payloads(
     if monthly is None or not daily or not daily.get("row_found"):
         return {
             "classification": "pending_review",
+            "evidence_confidence": "insufficient",
             "reason": "one_or_both_twse_source_rows_missing_or_malformed",
             "monthly_row_found": monthly_row is not None,
             "daily_row_found": bool(daily and daily.get("row_found")),
@@ -220,6 +225,7 @@ def reconcile_twse_payloads(
     if not _valid_ohlc(monthly_ohlc) or not _valid_ohlc(daily_ohlc):
         return {
             "classification": "pending_review",
+            "evidence_confidence": "insufficient",
             "reason": "ohlc_missing_or_invalid_in_at_least_one_source",
             "monthly_ohlc": monthly_ohlc,
             "daily_ohlc": daily_ohlc,
@@ -237,6 +243,7 @@ def reconcile_twse_payloads(
         classification, reason = "source_conflict", "twse_monthly_and_daily_market_fields_disagree"
     return {
         "classification": classification,
+        "evidence_confidence": "corroborated_two_official_endpoints" if classification == "corroborated" else "insufficient",
         "reason": reason,
         "monthly_ohlc": monthly_ohlc,
         "daily_ohlc": daily_ohlc,
