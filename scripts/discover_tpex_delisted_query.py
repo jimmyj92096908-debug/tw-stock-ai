@@ -59,14 +59,14 @@ def run(output: Path):
         parser.feed(raw.decode(response.encoding or "utf-8", errors="replace"))
         report["forms"] = parser.forms
         report["script_assets"] = [urljoin(PAGE, src) for src in parser.scripts[:MAX_ASSETS]]
-        for asset in report["script_assets"]:
+        for asset_index, asset in enumerate(report["script_assets"], start=1):
             try:
                 _, js = bounded_get(session, asset)
                 text = js.decode("utf-8", errors="replace")
                 hints = inspect_asset(text, asset)
                 if hints:
                     report["endpoint_hints"].append({"asset": asset, "hints": hints})
-                (output / ("asset_" + str(len(report["endpoint_hints"])) + ".js")).write_bytes(js)
+                (output / ("asset_" + str(asset_index) + ".js")).write_bytes(js)
             except Exception as e:
                 report["limitations"].append(f"asset_fetch_failed: {asset}: {type(e).__name__}")
     except Exception as e:
