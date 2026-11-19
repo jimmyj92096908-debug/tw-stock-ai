@@ -4,7 +4,7 @@
 import { createHmac } from 'node:crypto';
 import { parseStockCode, verifyLineSignature } from './handler.mjs';
 
-const STOCK_KINDS=new Set(['stock','rank','list','excluded']);
+const STOCK_KINDS=new Set(['stock','rank','list','excluded','status','help']);
 const MAX_BYTES=256000;
 
 export function isStockCommandEvent(event) {
