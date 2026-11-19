@@ -38,7 +38,7 @@ def analyze_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         market_counts[market or "(blank)"] += 1
         status_counts[status or "(blank)"] += 1
         market_status_counts[f"{market or '(blank)'} | {status or '(blank)'}"] += 1
-        bucket = MARKET_BUCKETS.get(market, "unknown_market_review")
+        bucket = MARKET_BUCKETS.get(market, "unknown_market_review")\n        if market in ("上市", "上櫃") and status != "正常":\n            bucket = "listed_otc_inactive_or_nonstandard_status_review"
         if market in ("上市", "上櫃") and status == "正常":
             candidate_rows.append({"stock_id": code, "name": name, "market": market, "status": status})
             buckets["current_listed_otc_active_candidates"] += 1
