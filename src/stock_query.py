@@ -1,18 +1,7 @@
 """LINE stock lookup and analysis response helpers (read-only, parameterized)."""
 from __future__ import annotations
 
-import re
-from typing import Any
-
-QUERY_PREFIX = re.compile(r"^(?:分析|查詢|股票)\\s*", re.IGNORECASE)
-
-
-def normalize_query(text: str) -> str:
-    value = QUERY_PREFIX.sub("", (text or "").strip()).strip()
-    return value
-
-
-def resolve_stock(conn: Any, user_text: str, limit: int = 6) -> list[dict[str, Any]]:
+from typing import Any\n\n\ndef normalize_query(text: str) -> str:\n    value = (text or \"\").strip()\n    for prefix in (\"分析\", \"查詢\", \"股票\"):\n        if value.startswith(prefix):\n            value = value[len(prefix):].strip()\n            break\n    return value\n\n\ndef resolve_stock(conn: Any, user_text: str, limit: int = 6) -> list[dict[str, Any]]:
     """Resolve exact code/name first, then partial name; return candidates."""
     query = normalize_query(user_text)
     if not query or len(query) > 30:
