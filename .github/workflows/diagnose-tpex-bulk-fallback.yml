@@ -33,5 +33,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tpex-bulk-fallback-diagnostic
-          path: artifacts/tpex-bulk-fallback/\n            artifacts/tpex-mi-pricing-discovery/\n          if-no-files-found: error
+          path: |\n            artifacts/tpex-bulk-fallback/\n            artifacts/tpex-mi-pricing-discovery/\n          if-no-files-found: error
           retention-days: 14
