@@ -72,8 +72,8 @@ def main():
     # Probe the exact form API using its actual "date" field, not queryYear.
     api = "https://www.twse.com.tw/holidaySchedule/holidaySchedule"
     result["api_probes"] = []
-    for year in ("2021", "2022", "2026", "115"):
-        for response in ("json", "csv"):
+    for year in ("2021", "2022", "2023", "2024", "2025", "2026"):
+        for response in ("json",):
             query = urllib.parse.urlencode({"response": response, "date": year})
             target = api + "?" + query
             try:
