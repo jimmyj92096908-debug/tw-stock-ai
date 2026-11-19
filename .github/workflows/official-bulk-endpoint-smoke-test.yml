@@ -28,3 +28,15 @@ jobs:
           PYTHONPATH: .
         run: |
           python scripts/smoke_test_official_bulk_endpoints.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Build read-only TWSE positive-volume missing-OHLC audit
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/audit_twse_positive_volume_missing_ohlc.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: twse-positive-volume-missing-ohlc-audit
+          path: audit-output/twse-positive-volume-missing-ohlc.json
+          if-no-files-found: error
+          retention-days: 30
