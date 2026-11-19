@@ -220,9 +220,15 @@ def main() -> None:
                  {"response": "json", "date": date(y, m, 1).strftime("%Y/%m/%d"), "code": target["stock_id"]}),
                 ("bulk_daily", "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc",
                  build_tpex_bulk_params(target["trade_date"])),
-                ("legacy_public_daily_close", "https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php",
-                 {"l": "zh-tw", "o": "json", "d": f"{y - 1911}/{m:02d}/{int(target['trade_date'].split('-')[2]):02d}"}),
             ]
+            # This legacy endpoint has already been observed to ignore historical
+            # dates. Probe it once per run only; it is optional diagnostic evidence.
+            if target["stock_id"] == "1259" and target["trade_date"] == "2026-10-05":
+                sources.append((
+                    "legacy_public_daily_close",
+                    "https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php",
+                    {"l": "zh-tw", "o": "json", "d": f"{y - 1911}/{m:02d}/{int(target['trade_date'].split('-')[2]):02d}"},
+                ))
         else:
             sources = [
                 ("twse_monthly_individual", "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY",
@@ -270,6 +276,7 @@ def main() -> None:
                     "request_error": type(exc).__name__,
                     "http_status": response.status_code if response is not None else None,
                     "requested_url": getattr(response, "url", None),
+                    "optional": name == "legacy_public_daily_close",
                 })
         target_report = {**target, "observations": observations}
         if target["market"] == "tpex":
@@ -289,8 +296,12 @@ def main() -> None:
         report["targets"].append(target_report)
     (OUT / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    if any("request_error" in obs for t in report["targets"] for obs in t["observations"]):
-        raise SystemExit("One or more official source requests failed; inspect the partial artifact.")
+    if any(
+        "request_error" in obs and not obs.get("optional", False)
+        for target in report["targets"]
+        for obs in target["observations"]
+    ):
+        raise SystemExit("One or more required official source requests failed; inspect the partial artifact.")
 
 
 if __name__ == "__main__":
