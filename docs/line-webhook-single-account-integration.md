@@ -68,7 +68,51 @@ AI 台股投資系統正在建置中。
 ## 依舊版實證建立的候選整合（尚未部署）
 
 - `line-stock-analysis/single-account-candidate.mjs` 採用原本可觀察的文字回覆作為不識別指令的後備文字，股票指令轉入現有 `buildReplyText`。
-- 先驗證 LINE HMAC，再處理一對一文字事件；透過注入的 `recordMessage` 介面草擬與原本每日報告相容的收件者紀錄。**沒有正式資料庫 writer，沒有任何部署入口引入此檔**。
+- 先驗證 LINE HMAC，再處理一對一文字事件；透過注入的 `recordMessage` 介面草擬與原本每日報告相容的收件者紀錄。後續已另新增參數化 SQL writer 與預設停用的候選入口；**兩者均未部署到正式 Neon，亦未在正式資料庫執行寫入**。
 - `line-stock-analysis/tests/single-account-candidate.test.mjs` 使用假 Channel Secret、假使用者 ID、假資料庫與假 LINE Reply API，測試文字、排行榜、封鎖代碼、無效簽章、重送、記錄失敗及非文字事件。
 - **仍有上線阻擋事項**：原版完整功能未知；實際 DB 記錄的交易與重送策略尚未完成。特別是「先記錄、再回覆」在 LINE Reply API 失敗後，若重送被唯一事件 ID 去重，可能造成漏回覆；正式實作前需處理。
 - 因此 GitHub 測試成功仍不是 LINE 正式端到端成功。沒有取得使用者切換授權，絕不更改 `linewebhook`、正式 Webhook URL 或每日報告排程。
+
+## 第二階段：訊息收件與 LINE Reply 重送的修正（2026-11-20）
+
+### 已實作但未部署的程式
+
+- `line-stock-analysis/delivery-state.mjs`：可注入的 PostgreSQL SQL adapter。先用 `INSERT ... ON CONFLICT DO NOTHING` 記錄既有 `line_messages` 收件欄位，再獨立申請 reply lease；**重複的訊息紀錄不代表回覆成功**。
+- `sql/line_reply_delivery_schema.sql`：提議新增 `public.line_reply_delivery`。僅記錄 `webhookEventId`、回覆狀態、嘗試次數、租約識別碼與有效期限，沒有使用者 ID 或訊息全文；**尚未套用正式資料庫**。
+- `line-stock-analysis/single-account-candidate.mjs`：原本的 HMAC 驗證先行，只處理已知一對一文字情境，將股票指令導向既有查詢；未知文字暫按截圖中觀察到的固定提示處理，但舊版完整功能仍未知。
+- `line-stock-analysis/single-account-entry.mjs`：與目前 `index.mjs` 分離、**預設停用且未打包部署**的候選執行入口。僅在 `LINE_SINGLE_ACCOUNT_ENABLED=true` 且所有必要環境變數齊全時處理 Webhook。使用兩條不同的最小權限 PostgreSQL 連線：`LINE_STOCK_READ_DATABASE_URL` 和 `LINE_LOG_WRITE_DATABASE_URL`。
+- 每日 LINE 報告 `src/send_line_report.py` 保持不變。
+
+### 已驗證
+
+`line-stock-analysis/tests/delivery-postgres.integration.test.mjs` 與 GitHub Actions 使用**一次性本機 PostgreSQL 17 容器**，資料庫固定為 `line_ci_test`，且測試程式拒絕連到非 `127.0.0.1/localhost` 的資料庫；絕不連線到正式 Neon。確認：
+
+- 重複收件事件只寫入一次 `line_messages`，不會阻斷後續 reply 重試。
+- 多個並行請求只能申領同一個 `webhookEventId` 一次。
+- Reply 成功後標記 `sent`；狀態為 `sent` 時不再重送。
+- Reply 明確失敗時可回到 `retryable`；30 秒逾期租約可由下一個請求重領；最多 3 次。
+- 先前租約的呼叫者不能替目前新租約標記完成。
+- 無效簽章、不合法事件、找不到資料庫與暫停模式均安全拒絕或跳過。
+
+### 仍不代表完全可靠
+
+- LINE 官方文件說重送 Webhook 沿用相同 `webhookEventId` 與 reply token，且有時限；重送也需要在 LINE Developers 開啟「Webhook redelivery」，本專案**尚未更改該設定**。
+- Reply API 可能已接受訊息，但 HTTP 回應途中遺失。這時資料庫與 LINE 的結果無法以一般 PostgreSQL 交易做到真正 exactly-once；候選程式回傳 502 並標記不確定，最多有限次數重試，同一個 reply token 已使用時 LINE 可能拒絕重試。
+- 若重送關閉、時間已過、三次均失敗或發生不確定的網路錯誤，仍可能漏回覆。必須加入監控、異常處理流程並在正式上線前測試。
+- 新候選入口目前只支援可觀察的一對一文字行為；原本可能還有 `follow`、`unsend`、其他類型訊息。因原始 `linewebhook` 程式不可得，**不可視為功能完全相容，也不得正式切換**。
+- 原始 `line_messages` 可能包含使用者文字及 LINE User ID；需要確認告知、留存與取消傳送訊息（unsend）處理，再授權正式寫入。
+
+### 權限設計（尚未建立帳號或授權）
+
+讀取角色只需對 `public.stock_master`、`public.daily_prices`、`public.daily_technicals`、`public.daily_smc`、`public.daily_composite_scores` 的 `SELECT` 權限。寫入角色只需對 `public.line_messages` 指定的訊息欄位有 `INSERT`、對 `event_id` 有 `SELECT`，以及對新 `public.line_reply_delivery` 具必要的 `SELECT/INSERT/UPDATE` 權限。憑證必須在受保護的部署環境建立、設定，不得寫進 GitHub。
+
+### 上線前仍需的人工核准
+
+1. 取得舊版程式或完成足以涵蓋正式使用情境的黑箱測試（至少每日報告收件者維持、私人訊息、群組、追蹤/封鎖、非文字、unsend）。
+2. 在非正式環境驗證新表與最小權限角色，審核使用者訊息留存；確認 LINE Webhook redelivery 設定、觀測與重試策略。
+3. 由使用者**明確授權**正式資料庫遷移、正式部署及 Webhook URL 變更；每項均與本次開發分開核准。
+4. 保存完整原始 Webhook URL 與部署版本，準備實際回復步驟；切換後在原本 LINE 帳號驗證並監控。
+
+官方依據：
+- https://developers.line.biz/en/docs/messaging-api/receiving-messages/
+- https://developers.line.biz/en/reference/messaging-api/#send-reply-message
