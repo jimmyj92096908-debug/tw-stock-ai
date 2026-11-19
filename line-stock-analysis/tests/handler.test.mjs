@@ -40,7 +40,7 @@ function stock(overrides = {}) {
 }
 
 test('support bare 4-digit codes and Chinese command prefixes', () => {
-  for (const input of ['2330', '分析 2330', '股票2330', '查詢 2330', '　2330　']) {
+  for (const input of ['2330', '分析 2330', '股票2330', '代碼 2330', '編號 2330', '查詢 2330', '　2330　']) {
     assert.deepEqual(parseStockCode(input), { kind: 'stock', code: '2330' });
   }
   assert.equal(parseStockCode('help').kind, 'help');
@@ -48,7 +48,7 @@ test('support bare 4-digit codes and Chinese command prefixes', () => {
 });
 
 test('reject arbitrary SQL, multi-code messages and unsupported instruments', () => {
-  for (const input of ['2330 OR 1=1', '2330; DROP TABLE', '2330 6488', '0050ETF', '123', '12345']) {
+  for (const input of ['2330 OR 1=1', '2330; DROP TABLE', '2330 6488', '0050ETF', '0050', '123', '12345']) {
     assert.equal(parseStockCode(input).kind, 'invalid');
   }
   assert.ok(EXCLUDED_CODES.has('1808'));
