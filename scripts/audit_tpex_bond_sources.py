@@ -84,6 +84,7 @@ def main():
                 result["error"] = f"{type(exc).__name__}: {exc}"
                 result["fetch_status"] = "schema_review_required"
         results[source_id] = result
+    (out / "tpex-bond-codes-raw.json").write_text(\n        json.dumps([{"BondCode": code} for code in sorted(all_codes)], ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
     report = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "base_url": BASE_URL, "source_count": len(results),
