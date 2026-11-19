@@ -47,6 +47,20 @@ export const DATA_STATUS_SQL = [
   ' ) z) AS priced,',
   ' (SELECT MAX(trade_date) FROM public.daily_prices',
   '  WHERE close IS NOT NULL) AS price_date,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id,MAX(trade_date) AS last_date',
+  '  FROM public.daily_prices WHERE close IS NOT NULL',
+  '  GROUP BY market,stock_id',
+  ' ) s WHERE s.last_date=(',
+  '  SELECT MAX(trade_date) FROM public.daily_prices',
+  '  WHERE close IS NOT NULL)) AS priced_latest,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id,MAX(trade_date) AS last_date',
+  '  FROM public.daily_prices WHERE close IS NOT NULL',
+  '  GROUP BY market,stock_id',
+  ' ) s WHERE s.last_date < (',
+  '  SELECT MAX(trade_date) FROM public.daily_prices',
+  '  WHERE close IS NOT NULL) - INTERVAL \'7 days\') AS stale_over_7_days,',
   ' (SELECT MAX(as_of_date) FROM public.daily_composite_scores',
   '  WHERE total_score IS NOT NULL) AS score_date,',
   ' (SELECT COUNT(*)::int FROM public.daily_composite_scores',
@@ -229,6 +243,12 @@ export function formatDataStatus(row) {
       universe < 0 || priced < 0 || scored < 0 || priced > universe) {
     return '目前無法讀取有效的資料庫統計，請稍後再試。';
   }
+  const fresh = row.priced_latest == null ? null : Number(row.priced_latest);
+  const stale = row.stale_over_7_days == null ? null : Number(row.stale_over_7_days);
+  if ((fresh !== null && (!Number.isInteger(fresh) || fresh < 0 || fresh > priced)) ||
+      (stale !== null && (!Number.isInteger(stale) || stale < 0 || stale > priced))) {
+    return '目前無法讀取有效的資料庫統計，請稍後再試。';
+  }
   const coverage = universe ? (100 * priced / universe).toFixed(1) : '0.0';
   const lines = [
     '台股資料庫更新狀態',
@@ -241,6 +261,13 @@ export function formatDataStatus(row) {
     '注意：資料覆蓋率不是交易所完整股票數；不提供即時報價。',
     '未覆蓋或資料過期的股票，不應視為當日有效分析。'
   ];
+  if (fresh !== null) {
+    lines.splice(5, 0, '最新行情交易日有資料：' + number(fresh, 0) + ' 檔');
+  }
+  if (stale !== null) {
+    lines.splice(fresh !== null ? 6 : 5, 0,
+      '最後行情落後超過 7 日：' + number(stale, 0) + ' 檔');
+  }
   return lines.join('\n');
 }
 
