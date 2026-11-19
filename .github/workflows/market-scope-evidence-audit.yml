@@ -33,6 +33,7 @@ jobs:
           python -m unittest discover -s tests -p "test_instrument_classification_source_registry.py" -v
           python -m unittest discover -s tests -p "test_official_instrument_source_audit.py" -v
           python -m unittest discover -s tests -p "test_tpex_etf_infohub.py" -v
+          python -m unittest discover -s tests -p "test_exact_instrument_exclusion_reconciliation.py" -v
           python -m unittest discover -s tests -p "test_security_lifecycle_candidates.py" -v
           python -m unittest discover -s tests -p "test_lifecycle_source_inventory.py" -v
           python -m unittest discover -s tests -p "test_tpex_delisted_discovery.py" -v
@@ -63,6 +64,11 @@ jobs:
             --twse-audit-json audit-output/market-scope/twse-current/twse-current-listed-audit.json \
             --tpex-audit-json audit-output/market-scope/tpex-current/tpex-current-otc-audit.json \
             --output-dir audit-output/market-scope/reconciliation
+          python scripts/reconcile_exact_instrument_exclusions.py \\
+            --audit-root audit-output/market-scope \\
+            --twse-csv audit-output/market-scope/twse-current/twse-current-listed-candidates.csv \\
+            --tpex-csv audit-output/market-scope/tpex-current/tpex-current-otc-candidates.csv \\
+            --output-dir audit-output/market-scope/exact-exclusions
       - name: Upload raw official sources and audit report
         if: always()
         uses: actions/upload-artifact@v4
