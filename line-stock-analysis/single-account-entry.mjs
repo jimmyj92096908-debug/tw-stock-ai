@@ -5,7 +5,7 @@ import pg from 'pg';
 import { createSingleAccountCandidate } from './single-account-candidate.mjs';
 import { createSingleAccountGateway } from './single-account-gateway.mjs';
 import { createDeliveryStore } from './delivery-state.mjs';
-import { ANALYSIS_SQL, RANKING_SQL } from './handler.mjs';
+import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL } from './handler.mjs';
 
 const { Pool } = pg;
 let readerPool;
@@ -46,8 +46,12 @@ function writer() {
   return writerPool;
 }
 
+export function isApprovedStockReadQuery(sql) {
+  return sql===ANALYSIS_SQL || sql===RANKING_SQL || sql===DATA_STATUS_SQL;
+}
+
 async function queryStock(sql,params) {
-  if (sql!==ANALYSIS_SQL && sql!==RANKING_SQL) {
+  if (!isApprovedStockReadQuery(sql)) {
     throw new Error('Only vetted stock SELECT queries are permitted');
   }
   return reader().query(sql,params);
