@@ -41,6 +41,45 @@ class LineReportTests(unittest.TestCase):
         self.assertIn("目前沒有符合條件", message)
         self.assertLessEqual(len(message), 4900)
 
+    def test_price_and_score_dates_are_distinct_and_not_mislabeled(self):
+        data = {
+            "trade_date": date(2026, 11, 19),
+            "score_date": date(2026, 11, 18),
+            "universe": {"twse": 1093, "tpex": 898},
+            "prices": {"twse": 14, "tpex": 11},
+            "scores": {"scored": 18, "chip_integrated": 0, "avg_coverage": 0.73},
+            "institutional": {"latest_date": None, "rows": 0},
+            "margin": {"latest_date": None, "rows": 0},
+            "top": [{
+                "market": "twse", "stock_id": "6213", "stock_name": "聯茂",
+                "close": 438.5, "price_change": -3,
+                "total_score": 45.96, "short_term_score": 49,
+                "swing_score": 47, "long_term_score": 43,
+            }],
+            "recipients": [],
+        }
+        message = format_report(data)
+        self.assertIn("行情交易日：2026-11-19", message)
+        self.assertIn("綜合評分資料日：2026-11-18", message)
+        self.assertIn("6213 聯茂", message)
+        self.assertIn("清單收盤價採評分當日資料", message)
+        self.assertIn("已評分：18 檔", message)
+
+    def test_no_scoring_history_is_explicit(self):
+        data = {
+            "trade_date": date(2026, 11, 19), "score_date": None,
+            "universe": {"twse": 1, "tpex": 0},
+            "prices": {"twse": 1, "tpex": 0},
+            "scores": {"scored": 0, "chip_integrated": 0, "avg_coverage": None},
+            "institutional": {"latest_date": None, "rows": 0},
+            "margin": {"latest_date": None, "rows": 0},
+            "top": [], "recipients": [],
+        }
+        message = format_report(data)
+        self.assertIn("綜合評分資料日：尚無可用評分", message)
+        self.assertIn("目前沒有符合條件", message)
+
+
 
 if __name__ == "__main__":
     unittest.main()
