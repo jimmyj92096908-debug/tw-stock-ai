@@ -53,6 +53,7 @@ def main():
         result = {"url": url, "route": route, "code_field": field,
                   "fetch_status": "unavailable", "schema_validated": False,
                   "source_row_count": 0, "security_code_count": 0,
+                  "blank_code_row_count": 0, "duplicate_code_count": 0,
                   "security_codes": [], "http_status": None, "content_type": "",
                   "bytes": 0, "sha256": None, "error": None}
         response = None
@@ -75,10 +76,13 @@ def main():
             try:
                 payload = json.loads(raw.decode("utf-8-sig"))
                 codes = inspect_rows(payload, field)
+                unique_codes = sorted(set(codes))
                 result.update({"fetch_status": "schema_validated", "schema_validated": True,
-                    "source_row_count": len(payload), "security_code_count": len(codes),
-                    "security_codes": codes, "error": None})
-                all_codes.update(codes)
+                    "source_row_count": len(payload), "security_code_count": len(unique_codes),
+                    "blank_code_row_count": len(payload) - len(codes),
+                    "duplicate_code_count": len(codes) - len(unique_codes),
+                    "security_codes": unique_codes, "error": None})
+                all_codes.update(unique_codes)
             except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 result["error"] = f"{type(exc).__name__}: {exc}"
                 result["fetch_status"] = "schema_review_required"
