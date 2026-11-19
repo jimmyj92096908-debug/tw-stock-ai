@@ -15,6 +15,8 @@ class CalendarParserTests(unittest.TestCase):
         payload = {
             "stat": "ok",
             "queryYear": "115",
+            "title": "115 年市場開休市日期",
+            "date": "20260101",
             "data": [
                 ["115/01/01", "中華民國開國紀念日", "依規定放假1日。"],
                 ["115/01/02", "國曆新年開始交易日", "國曆新年開始交易。"],
@@ -27,7 +29,7 @@ class CalendarParserTests(unittest.TestCase):
         )
 
     def test_rejects_wrong_year_response(self):
-        payload = {"stat": "ok", "queryYear": "114", "data": []}
+        payload = {"stat": "ok", "queryYear": "115", "title": "116 年市場開休市日期", "date": "20270101", "data": []}
         with self.assertRaises(ValueError):
             closed_dates_from_payload(payload, 2026)
 
