@@ -21,7 +21,7 @@ from src.official_source_reconciliation import reconcile_tpex_payloads, reconcil
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get("RAW_SOURCE_OUTPUT", ROOT / "artifacts" / "official-raw-source"))
-TIMEOUT = 45
+TIMEOUT = (8, 15)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; tw-stock-ai-readonly-audit/1.0)",
     "Accept": "application/json,text/plain,*/*",
@@ -162,11 +162,11 @@ def main() -> None:
     session = requests.Session()
     session.headers.update(HEADERS)
     retry = Retry(
-        total=3,
-        connect=3,
-        read=3,
-        status=3,
-        backoff_factor=1.0,
+        total=1,
+        connect=1,
+        read=0,
+        status=1,
+        backoff_factor=0.25,
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
         raise_on_status=False,
@@ -201,7 +201,7 @@ def main() -> None:
             try:
                 item = capture(session, name, url, params, target)
                 source_payloads[name] = item["payload"]
-                time.sleep(0.5)
+                time.sleep(0.15)
                 if name == "monthly_individual":
                     row = find_tpex_monthly_row(item["payload"], target["trade_date"])
                 elif name == "twse_monthly_individual":
