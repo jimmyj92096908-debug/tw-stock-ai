@@ -171,7 +171,7 @@ def _find_table_row_by_code(payload: dict | None, stock_id: str) -> dict | None:
 
 def _valid_ohlc(values: dict) -> bool:
     prices = [values.get(k) for k in ("open", "high", "low", "close")]
-    if any(v is None or v <= 0 for v in prices):
+    if any(v is None or not math.isfinite(v) or v <= 0 for v in prices):
         return False
     open_, high, low, close = prices
     return low <= min(open_, close) and max(open_, close) <= high
