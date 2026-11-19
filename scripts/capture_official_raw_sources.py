@@ -30,7 +30,11 @@ HEADERS = {
 TARGETS = [
     {"market": "tpex", "stock_id": "1259", "trade_date": "2026-10-05"},
     {"market": "tpex", "stock_id": "1264", "trade_date": "2025-09-08"},
+    {"market": "tpex", "stock_id": "1259", "trade_date": "2026-10-06"},
+    {"market": "tpex", "stock_id": "1264", "trade_date": "2025-09-09"},
     {"market": "twse", "stock_id": "1101", "trade_date": "2026-11-18"},
+    {"market": "twse", "stock_id": "1101", "trade_date": "2026-11-17"},
+    {"market": "twse", "stock_id": "2330", "trade_date": "2026-11-18"},
 ]
 
 
