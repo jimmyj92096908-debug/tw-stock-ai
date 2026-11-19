@@ -81,6 +81,24 @@ def inspect_asset(text):
     return list(dict.fromkeys(str(hit) for hit in hits))[:100]
 
 
+def summarize_json(payload):
+    summary = {"top_level_type": type(payload).__name__}
+    if isinstance(payload, dict):
+        summary["top_level_keys"] = list(payload.keys())[:50]
+        for key in ("fields", "data", "tables", "records", "result"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                summary[f"{key}_count"] = len(value)
+                if value and isinstance(value[0], list):
+                    summary[f"{key}_first_row_width"] = len(value[0])
+                    summary[f"{key}_first_row_sample"] = value[0][:12]
+                elif value and isinstance(value[0], dict):
+                    summary[f"{key}_first_record_keys"] = list(value[0].keys())[:50]
+            elif isinstance(value, dict):
+                summary[f"{key}_keys"] = list(value.keys())[:50]
+    return summary
+
+
 def run(output: Path):
     import requests
 
@@ -93,8 +111,8 @@ def run(output: Path):
         "request_schema_confirmed": False,
         "response_schema_confirmed": False,
         "limitations": [
-            "Discovery performs bounded HTTP GET requests only; it never submits search forms or calls candidate data endpoints.",
-            "Frontend strings are hints only. Endpoint and schema require a separately observed successful request/response.",
+            "Discovery performs bounded HTTP GET requests only; it never submits search forms.",
+            "ETN action and type values are extracted from the official page or tested as page-specific read-only filters; a response alone does not prove full historical coverage.",
         ],
     }
     for source_id, page_url in PAGES.items():
@@ -105,6 +123,7 @@ def run(output: Path):
             "script_assets": [],
             "inline_script_hints": [],
             "asset_hints": [],
+            "api_probe": None,
             "limitations": [],
         }
         report["sources"][source_id] = item
@@ -133,6 +152,48 @@ def run(output: Path):
                     item["inline_script_hints"].append(
                         {"inline_script_index": index, "hints": hints}
                     )
+            inline_text = "\\n".join(parser.inline_scripts)
+            action_match = re.search(r"""action\\s*:\\s*["']([^"']+)["']""", inline_text)
+            action = action_match.group(1) if action_match else None
+            if action:
+                page_type = "listed" if source_id == "current_listing" else "delisted"
+                endpoint = f"https://www.tpex.org.tw/www/zh-tw/{action}"
+                try:
+                    api_response = session.get(
+                        endpoint,
+                        params={"response": "json", "type": page_type},
+                        timeout=TIMEOUT,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (compatible; tw-stock-ai-readonly-audit/1.0)",
+                            "Accept": "application/json,text/plain,*/*",
+                            "Referer": page_url,
+                        },
+                    )
+                    probe = {
+                        "endpoint": endpoint,
+                        "query_params": {"response": "json", "type": page_type},
+                        "http_status": api_response.status_code,
+                        "content_type": api_response.headers.get("Content-Type", ""),
+                    }
+                    try:
+                        payload = api_response.json()
+                        probe["json_summary"] = summarize_json(payload)
+                        (output / f"{source_id}_api_response.json").write_text(
+                            json.dumps(payload, ensure_ascii=False, indent=2) + "\\n",
+                            encoding="utf-8",
+                        )
+                        probe["json_parse_success"] = True
+                    except Exception as exc:
+                        probe["json_parse_success"] = False
+                        probe["json_parse_error"] = type(exc).__name__
+                        probe["body_prefix"] = api_response.text[:500]
+                    item["api_probe"] = probe
+                except Exception as exc:
+                    item["limitations"].append(
+                        f"api_probe_failed:{type(exc).__name__}:{str(exc)[:250]}"
+                    )
+            else:
+                item["limitations"].append("official_page_action_not_found_in_inline_scripts")
             for index, asset_url in enumerate(item["script_assets"], start=1):
                 try:
                     asset_response = session.get(
@@ -166,6 +227,7 @@ def run(output: Path):
             "script_count": len(value["script_assets"]),
             "inline_hint_count": len(value["inline_script_hints"]),
             "asset_hint_count": len(value["asset_hints"]),
+            "api_probe": value["api_probe"],
         }
         for key, value in report["sources"].items()
     }, ensure_ascii=False, sort_keys=True))
