@@ -25,6 +25,7 @@ jobs:
         run: python -m pip install requests
       - name: Run downloader and parser tests
         run: |
-          python -m unittest tests.test_market_data_bulk tests.test_five_year_downloader -v
+          python tests/test_market_data_bulk.py
+          python tests/test_five_year_downloader.py
       - name: Compile sources
         run: python -m compileall -q src scripts tests
