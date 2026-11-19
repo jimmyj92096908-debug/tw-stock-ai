@@ -1,0 +1,31 @@
+name: TPEx Free Monthly Endpoint Comparison
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependency
+        run: python -m pip install requests
+      - name: Compare free official TPEx monthly endpoints
+        run: python scripts/diagnose_tpex_monthly_endpoints.py
+      - name: Upload raw responses and summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-free-monthly-endpoint-comparison
+          path: artifacts/tpex-monthly-endpoint-comparison/
+          if-no-files-found: warn
+          retention-days: 14
