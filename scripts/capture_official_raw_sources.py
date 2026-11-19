@@ -32,6 +32,8 @@ TARGETS = [
     {"market": "tpex", "stock_id": "1264", "trade_date": "2025-09-08"},
     {"market": "tpex", "stock_id": "1259", "trade_date": "2026-10-06"},
     {"market": "tpex", "stock_id": "1264", "trade_date": "2025-09-09"},
+    {"market": "tpex", "stock_id": "1259", "trade_date": "2026-11-19"},
+    {"market": "tpex", "stock_id": "1264", "trade_date": "2026-11-19"},
     {"market": "twse", "stock_id": "1101", "trade_date": "2026-11-18"},
     {"market": "twse", "stock_id": "1101", "trade_date": "2026-11-17"},
     {"market": "twse", "stock_id": "2330", "trade_date": "2026-11-18"},
@@ -84,6 +86,26 @@ def find_tpex_monthly_row(payload: dict | None, trade_date: str) -> list | None:
         for row in table.get("data") or []:
             if row and roc_date(row[0]) == trade_date:
                 return row
+    return None
+
+
+def find_tpex_openapi_row(payload: Any, stock_id: str, trade_date: str) -> dict | None:
+    """Find a TPEx OpenAPI snapshot row only when its declared date matches."""
+    if not isinstance(payload, list):
+        return None
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("SecuritiesCompanyCode", "")).strip()
+        raw_date = re.sub(r"\D", "", str(row.get("Date", "")))
+        normalized_date = None
+        if len(raw_date) == 7 and raw_date.isdigit():
+            try:
+                normalized_date = date(int(raw_date[:3]) + 1911, int(raw_date[3:5]), int(raw_date[5:7])).isoformat()
+            except ValueError:
+                normalized_date = None
+        if code == stock_id and normalized_date == trade_date:
+            return row
     return None
 
 
@@ -176,6 +198,7 @@ def main() -> None:
                  {"response": "json", "date": date(y, m, 1).strftime("%Y/%m/%d"), "code": target["stock_id"]}),
                 ("bulk_daily", "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc",
                  {"response": "json", "date": target["trade_date"].replace("-", "/")}),
+                ("openapi_daily_snapshot", "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes", {}),
             ]
         else:
             sources = [
@@ -197,12 +220,16 @@ def main() -> None:
                     row = find_twse_row(item["payload"], target["trade_date"])
                 elif name == "twse_daily_market":
                     row = find_twse_daily_market_row(item["payload"], target["stock_id"])
+                elif name == "openapi_daily_snapshot":
+                    row = find_tpex_openapi_row(item["payload"], target["stock_id"], target["trade_date"])
                 else:
                     # Keep bulk payload verbatim; do not guess its row schema.
                     row = None
                 item["matching_raw_row"] = row
                 if name == "twse_daily_market":
                     item["normalized_row"] = normalized_twse_daily_row(item["payload"], row)
+                elif name == "openapi_daily_snapshot":
+                    item["normalized_row"] = row
                 else:
                     item["normalized_row"] = normalized_row(row)
                 item.pop("payload", None)
