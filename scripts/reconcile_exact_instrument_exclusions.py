@@ -19,7 +19,8 @@ SOURCE_SPECS = {
     "twse_warrants": ("instrument-sources/twse_warrants-raw.json", "權證代號", "TWSE", "warrant"),
     "twse_fund_basic": ("instrument-sources/twse_fund_basic-raw.json", "基金代號", "TWSE", "fund_or_etf"),
     "tpex_warrants": ("instrument-sources/tpex_warrants-raw.json", "權證代號", "TPEX", "warrant"),
-    "tpex_etf": ("tpex-etf/tpex-etf-infohub-raw.json", "stockNo", "TPEX", "etf"),\n    "tpex_bonds": ("tpex-bonds/tpex-bond-codes-raw.json", "BondCode", "TPEX", "bond"),
+    "tpex_etf": ("tpex-etf/tpex-etf-infohub-raw.json", "stockNo", "TPEX", "etf"),
+    "tpex_bonds": ("tpex-bonds/tpex-bond-codes-raw.json", "BondCode", "TPEX", "bond"),
 }
 
 
