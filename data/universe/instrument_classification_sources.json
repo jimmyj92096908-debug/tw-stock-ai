@@ -56,9 +56,10 @@
       "url": "https://info.tpex.org.tw/ETF/zh/filter.html",
       "documentation_url": "https://www.tpex.org.tw/zh-tw/product/etf/overview/categories.html",
       "documented_title": "ETF訊息中心－ETF篩選器",
-      "purpose": "Authoritative ETF security-code list and subtype information.",
-      "fetch_status": "official_page_found_download_or_api_contract_not_yet_verified",
-      "automatic_exclusion_eligible_after_schema_validation": true
+      "purpose": "Authoritative ETF security-code list and subtype information; probe the InfoHub page's observed JSON data endpoint before accepting exact-code matching.",
+      "fetch_status": "runtime_api_candidate_discovered_live_schema_probe_pending",
+      "automatic_exclusion_eligible_after_schema_validation": true,
+      "runtime_api_candidate_url": "https://info.tpex.org.tw/api/etfFilter"
     },
     {
       "id": "tpex_etn_product_definition",
@@ -85,9 +86,9 @@
     }
   ],
   "next_steps": [
+    "Probe the observed TPEx ETF InfoHub JSON endpoint, preserve raw response, and validate the exact security-code field before matching.",
     "Fetch and archive the three documented TWSE/TPEx OpenAPI category datasets without database access.",
     "Validate actual response schemas and identify exact security-code fields before matching.",
-    "Discover and verify the TPEx ETF InfoHub download/API contract; do not guess an undocumented endpoint.",
     "Add exact-code exclusion evidence with source hash, snapshot time, category, and source record.",
     "Keep unresolved instruments in review; do not infer category from code suffix, company name, or TDCC custodian fields."
   ]
