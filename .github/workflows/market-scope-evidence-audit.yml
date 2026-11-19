@@ -64,9 +64,9 @@ jobs:
             --twse-audit-json audit-output/market-scope/twse-current/twse-current-listed-audit.json \
             --tpex-audit-json audit-output/market-scope/tpex-current/tpex-current-otc-audit.json \
             --output-dir audit-output/market-scope/reconciliation
-          python scripts/reconcile_exact_instrument_exclusions.py \\
-            --audit-root audit-output/market-scope \\
-            --reconciliation-json audit-output/market-scope/reconciliation/current-market-universe-reconciliation.json \\
+          python scripts/reconcile_exact_instrument_exclusions.py \
+            --audit-root audit-output/market-scope \
+            --reconciliation-json audit-output/market-scope/reconciliation/current-market-universe-reconciliation.json \
             --output-dir audit-output/market-scope/exact-exclusions
       - name: Upload raw official sources and audit report
         if: always()
