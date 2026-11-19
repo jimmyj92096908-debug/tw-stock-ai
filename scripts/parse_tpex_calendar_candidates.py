@@ -41,7 +41,7 @@ def classify_context(context: str) -> str:
 def extract_candidates(text: str, roc_year: int, source_sha256: str) -> list[dict[str, Any]]:
     """Extract date tokens with nearby context; never infer closure from a token."""
     gregorian_year = roc_year + 1911
-    lines = text.replace("\r", "\n").splitlines()
+    lines = text.replace("\\r", "\r").replace("\\n", "\n").replace("\r", "\n").splitlines()
     found: dict[tuple[int, int], dict[str, Any]] = {}
     for index, line in enumerate(lines):
         matches: list[tuple[int, int]] = []
