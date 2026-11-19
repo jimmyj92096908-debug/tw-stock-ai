@@ -20,7 +20,8 @@ HEADERS = {
     "Accept": "application/json,text/plain,*/*",
     "Referer": "https://www.twse.com.tw/",
 }
-TIMEOUT = (10, 30)
+TIMEOUT = (8, 20)
+MAX_ATTEMPTS = 3
 
 
 def parse_roc_date(value: Any) -> str | None:
@@ -105,18 +106,27 @@ def main() -> None:
     for stock_id in stocks:
         for month in sorted({day.strftime("%Y%m") for day in dates}):
             url_date = month + "01"
-            try:
-                response = session.get(
-                    URL, params={"response": "json", "date": url_date, "stockNo": stock_id},
-                    timeout=TIMEOUT,
-                )
-                response.raise_for_status()
-                raw = response.content
-                payload = response.json()
-                hashes[f"{stock_id}:{month}"] = hashlib.sha256(raw).hexdigest()
-                monthly[(stock_id, month)] = parse_individual_month(payload, stock_id, month[:4] + "-" + month[4:])
-            except (requests.RequestException, ValueError) as exc:
-                errors.append({"stock_id": stock_id, "month": month, "error": str(exc)[:300]})
+            last_error = None
+            for attempt in range(MAX_ATTEMPTS):
+                try:
+                    response = session.get(
+                        URL, params={"response": "json", "date": url_date, "stockNo": stock_id},
+                        timeout=TIMEOUT,
+                    )
+                    response.raise_for_status()
+                    raw = response.content
+                    payload = response.json()
+                    parsed = parse_individual_month(payload, stock_id, month[:4] + "-" + month[4:])
+                    hashes[f"{stock_id}:{month}"] = hashlib.sha256(raw).hexdigest()
+                    monthly[(stock_id, month)] = parsed
+                    last_error = None
+                    break
+                except (requests.RequestException, ValueError) as exc:
+                    last_error = exc
+                    if attempt + 1 < MAX_ATTEMPTS:
+                        time.sleep(min(2 ** attempt, 4))
+            if last_error is not None:
+                errors.append({"stock_id": stock_id, "month": month, "error": str(last_error)[:300]})
             time.sleep(args.delay_seconds)
 
     comparisons = []
