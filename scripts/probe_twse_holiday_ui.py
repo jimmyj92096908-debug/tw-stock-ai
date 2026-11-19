@@ -64,7 +64,7 @@ def main():
             js = js_body.decode("utf-8","replace")
             result["report_scripts"].append({
                 "url":js_url,"content_type":js_type,"bytes":len(js_body),
-                "query_logic":snippets(js,[r"Form API:",r"\$\.getJSON",r"data\(['"]argv['"]\)",r"\.csv",r"cfg\.rwd",r"r\.api"],700,1800,40)
+                "query_logic":snippets(js,[r"Form API:",r"\$\.getJSON",r"data.{0,20}argv",r"\.csv",r"cfg\.rwd",r"r\.api"],700,1800,40)
             })
         except Exception as exc:
             result["errors"].append({"url":asset,"error":str(exc)[:300]})
