@@ -47,11 +47,13 @@ class TechnicalIndicatorsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compute_indicators(rows)
 
-    def test_invalid_ohlc_is_rejected(self):
-        rows = sample_rows(3)
-        rows[1]["close"] = rows[1]["high"] + 1
-        with self.assertRaises(ValueError):
-            compute_indicators(rows)
+    def test_invalid_ohlc_row_is_excluded_without_aborting_series(self):
+        rows = sample_rows(20)
+        rows[5]["close"] = rows[5]["high"] + 1
+        result = compute_indicators(rows)
+        for field in ("ma5", "ma240", "rsi14", "volume_ma5", "volume_ma20", "atr14"):
+            self.assertIsNone(result[5][field])
+        self.assertIsNotNone(result[6]["ma5"])
 
     def test_empty_input(self):
         self.assertEqual(compute_indicators([]), [])
