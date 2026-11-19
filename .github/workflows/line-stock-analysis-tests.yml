@@ -61,6 +61,14 @@ jobs:
         run: npm run bundle
       - name: Verify bundled function has valid syntax
         run: node --check line-stock-analysis/dist/index.mjs
+      - name: Build disabled single-account candidate (never deployed or uploaded)
+        working-directory: line-stock-analysis
+        run: npm run bundle:candidate
+      - name: Check disabled candidate bundle and fail-closed behavior
+        working-directory: line-stock-analysis
+        run: |
+          node --check candidate-dist/index.mjs
+          node --input-type=module -e "import candidate from './candidate-dist/index.mjs'; const r = await candidate.fetch(new Request('https://example.invalid/webhook', {method: 'POST', body: '{\"events\":[]}'})); if (r.status !== 503) process.exit(1);"
       - name: Package deployment artifact (does not deploy)
         run: |
           cd line-stock-analysis/dist
