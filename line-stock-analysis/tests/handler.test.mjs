@@ -86,6 +86,14 @@ test('format includes dates, nine averages, SMC, score, coverage and stale warni
   assert.ok(result.length < 5000);
 });
 
+test('stale historical price is labelled even when all component dates agree', () => {
+  const output = formatStockAnalysis(stock({
+    price_date: '2020-01-02', technical_date: '2020-01-02',
+    smc_date: '2020-01-02', score_date: '2020-01-02'
+  }));
+  assert.match(output, /最新可用行情距今已超過 7 日/u);
+});
+
 test('missing price or technical data never become fabricated scores', () => {
   assert.match(formatStockAnalysis(stock({close: null})), /無法產生分析/u);
   const incomplete = formatStockAnalysis(stock({
