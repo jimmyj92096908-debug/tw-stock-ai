@@ -8,7 +8,7 @@ def bars(closes, opens=None, highs=None, lows=None):
     lows=lows or [x-1 for x in closes]
     for i,c in enumerate(closes):
         rows.append({"market":"twse","stock_id":"2330","trade_date":f"2026-01-{i+1:02d}",
-                     "open":opens[i],"high":highs[i],"low":lows[i],"close":c})
+                     "open":opens[i],"high":highs[i],"low":lows[i],"close":c,"volume":1000})
     return rows
 
 class SMCTests(unittest.TestCase):
