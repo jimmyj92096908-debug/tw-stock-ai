@@ -36,6 +36,8 @@ class ScoreAfterRefreshTests(unittest.TestCase):
         workflow = path.read_text(encoding="utf-8")
         self.assertIn("vars.ENABLE_AUTOMATIC_COMPOSITE_SCORES == 'true'", workflow)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'", workflow)
+        self.assertIn("github.event.workflow_run.repository.full_name == github.repository", workflow)
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.apply == true", workflow)
         self.assertIn("default: false", workflow)
         self.assertNotIn("schedule:", workflow)
