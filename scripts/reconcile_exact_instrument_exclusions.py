@@ -183,11 +183,19 @@ def main() -> None:
     with (output / "exact-instrument-exclusion-audit.csv").open(
         "w", encoding="utf-8-sig", newline=""
     ) as handle:
-        fields = ["stock_id", "name", "market", "bucket", "instrument_subtype_confirmed", "exclusion_evidence"]
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        fields = [
+            "stock_id", "name", "market", "bucket",
+            "instrument_subtype_confirmed", "exclusion_evidence",
+            "manual_exclusion_reason",
+        ]
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="raise")
         writer.writeheader()
         for row in report["records"]:
-            writer.writerow({**row, "exclusion_evidence": json.dumps(row["exclusion_evidence"], ensure_ascii=False)})
+            csv_row = {
+                **row,
+                "exclusion_evidence": json.dumps(row["exclusion_evidence"], ensure_ascii=False),
+            }
+            writer.writerow(csv_row)
     print(json.dumps({
         "record_count": report["record_count"],
         "review_record_count": report["review_record_count"],
