@@ -1,15 +1,24 @@
 import unittest
 from scripts.capture_official_raw_sources import (
-    TARGETS, find_tpex_monthly_row, find_twse_row, normalized_row, roc_date,
+    TARGETS, find_tpex_monthly_row, find_tpex_openapi_row, find_twse_row, normalized_row, roc_date,
 )
 
 
 class OfficialRawCaptureTests(unittest.TestCase):
     def test_expanded_sample_targets_are_unique_and_cover_both_markets(self):
         keys = [(x["market"], x["stock_id"], x["trade_date"]) for x in TARGETS]
-        self.assertEqual(len(keys), 7)
+        self.assertEqual(len(keys), 9)
         self.assertEqual(len(keys), len(set(keys)))
         self.assertEqual({x["market"] for x in TARGETS}, {"twse", "tpex"})
+
+    def test_tpex_openapi_snapshot_requires_exact_stock_and_date(self):
+        payload = [
+            {"Date": "1151118", "SecuritiesCompanyCode": "1259", "Open": "10"},
+            {"Date": "1151119", "SecuritiesCompanyCode": "1264", "Open": "20"},
+        ]
+        self.assertEqual(find_tpex_openapi_row(payload, "1264", "2026-11-19")["Open"], "20")
+        self.assertIsNone(find_tpex_openapi_row(payload, "1259", "2026-11-19"))
+        self.assertIsNone(find_tpex_openapi_row(payload, "1264", "2026-11-18"))
 
     def test_roc_date(self):
         self.assertEqual(roc_date("115/10/05"), "2026-10-05")
