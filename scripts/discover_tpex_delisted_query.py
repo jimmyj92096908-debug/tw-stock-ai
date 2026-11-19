@@ -5,7 +5,6 @@ import argparse, json, re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin
-import requests
 
 PAGE = "https://www.tpex.org.tw/zh-tw/mainboard/listed/delisted.html"
 MAX_ASSETS = 20
@@ -48,6 +47,7 @@ def inspect_asset(text, url):
     return list(dict.fromkeys(hits))[:100]
 
 def run(output: Path):
+    import requests
     output.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
     report = {"source_url": PAGE, "access_status": None, "page_title_hint": None, "forms": [], "script_assets": [], "endpoint_hints": [], "limitations": [], "automated_data_endpoint_confirmed": False}
