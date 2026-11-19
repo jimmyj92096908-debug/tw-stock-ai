@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 
 SOURCE_SPECS = {
@@ -55,7 +56,13 @@ def load_codes(path: Path, field: str, container: str | None = None) -> set[str]
 
 
 def load_tpex_etn_table_codes(path: Path, field: str) -> set[str]:
-    """Validate TPEx's nested tables/fields/data response without guessing columns."""
+    """Validate TPEx's nested table and its optional per-row detail-link column.
+
+    The official response declares six table fields but currently appends a
+    seventh detail URL to each data row. Accept that extra value only when it
+    is a detail.html link whose query contains exactly one type and one code,
+    and the linked code exactly equals the row's declared security code.
+    """
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict):
         raise ValueError(f"{path}: expected JSON object")
@@ -70,13 +77,35 @@ def load_tpex_etn_table_codes(path: Path, field: str) -> set[str]:
     if not isinstance(rows, list) or not rows:
         raise ValueError(f"{path}: expected non-empty table data")
     index = fields.index(field)
+    expected_width = len(fields)
+    observed_widths = {len(row) for row in rows if isinstance(row, list)}
+    if any(not isinstance(row, list) for row in rows):
+        raise ValueError(f"{path}: every table row must be an array")
+    if len(observed_widths) != 1 or not observed_widths.issubset({expected_width, expected_width + 1}):
+        raise ValueError(f"{path}: inconsistent or unsupported table row widths")
+    has_detail_link = observed_widths == {expected_width + 1}
     codes = []
     for row_number, row in enumerate(rows, start=1):
-        if not isinstance(row, list) or len(row) != len(fields):
-            raise ValueError(f"{path}: row {row_number} width does not match fields")
+        if len(row) != expected_width + (1 if has_detail_link else 0):
+            raise ValueError(f"{path}: row {row_number} width does not match validated table shape")
         code = str(row[index] or "").strip()
         if not code:
             raise ValueError(f"{path}: missing {field!r} at row {row_number}")
+        if has_detail_link:
+            detail_url = str(row[expected_width] or "").strip()
+            parsed = urlsplit(detail_url)
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if (
+                parsed.path != "detail.html"
+                or set(query) != {"type", "code"}
+                or len(query["type"]) != 1
+                or not query["type"][0]
+                or len(query["code"]) != 1
+                or query["code"][0] != code
+            ):
+                raise ValueError(
+                    f"{path}: row {row_number} detail link is invalid or does not match its security code"
+                )
         codes.append(code)
     if len(codes) != len(set(codes)):
         raise ValueError(f"{path}: duplicate values in {field!r}")
