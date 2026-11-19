@@ -4,7 +4,7 @@
 // and sends NO LINE replies. Legacy behaviors must be audited before cutover.
 import { parseStockCode } from './handler.mjs';
 
-const STOCK_KINDS = new Set(['stock', 'rank', 'list', 'excluded']);
+const STOCK_KINDS = new Set(['stock', 'rank', 'list', 'excluded', 'status', 'help']);
 
 export function planLineEvent(event) {
   if (!event || event.type !== 'message' || event.message?.type !== 'text') {
