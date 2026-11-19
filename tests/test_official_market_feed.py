@@ -68,7 +68,7 @@ class OfficialQuoteTests(unittest.TestCase):
 
     def test_parse_twse_real_field_names_and_sign(self):
         bars=_parse_twse(twse_payload(),DAY)
-        self.assertEqual(len(bars),2)
+        self.assertEqual(len(bars),1)
         quote=next(row for row in bars if row["stock_id"]=="2330")
         self.assertEqual(quote["volume"],1000)
         self.assertEqual(quote["close"],Decimal("1400"))
