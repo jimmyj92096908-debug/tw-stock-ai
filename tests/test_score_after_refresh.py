@@ -3,6 +3,7 @@ import io
 import os
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 from scripts import score_after_refresh
@@ -29,6 +30,15 @@ class ScoreAfterRefreshTests(unittest.TestCase):
         with patch.dict(os.environ, {"DATABASE_URL": ""}):
             with self.assertRaisesRegex(RuntimeError, "DATABASE_URL"):
                 score_after_refresh.main()
+
+    def test_workflow_cannot_auto_write_without_explicit_opt_in(self):
+        path = Path(__file__).resolve().parents[1] / ".github/workflows/composite-after-market-refresh.yml"
+        workflow = path.read_text(encoding="utf-8")
+        self.assertIn("vars.ENABLE_AUTOMATIC_COMPOSITE_SCORES == 'true'", workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.apply == true", workflow)
+        self.assertIn("default: false", workflow)
+        self.assertNotIn("schedule:", workflow)
 
     def test_logs_only_processed_count_not_db_credentials(self):
         buf = io.StringIO()
