@@ -1,0 +1,52 @@
+name: Automatic Five-Year History Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "每次回補股票數（建議 2，最多 10）"
+        required: true
+        type: number
+        default: 2
+      market:
+        description: "市場範圍"
+        required: true
+        type: choice
+        options: [both, twse, tpex]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automatic-five-year-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Verify secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is missing"
+            exit 1
+          fi
+      - name: Test selection logic
+        run: pytest -q tests/test_five_year_backfill.py
+      - name: Run selected historical backfill
+        run: python src/five_year_backfill.py --batch-size "${{ inputs.batch_size }}" --market "${{ inputs.market }}"
