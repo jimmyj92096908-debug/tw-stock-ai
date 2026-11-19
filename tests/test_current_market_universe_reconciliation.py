@@ -18,16 +18,17 @@ class CurrentMarketUniverseReconciliationTests(unittest.TestCase):
         self.assertFalse(result["common_stock_classification_confirmed"])
         self.assertFalse(result["quote_download_authorized"])
 
-    def test_tdcc_terminated_status_creates_review_not_silent_exclusion(self):
+    def test_user_directed_exclusion_overrides_tdcc_review_for_1808(self):
         result = reconcile_records(
             [{"stock_id": "1808", "name": "潤隆建設股份有限公司", "market": "TWSE", "listing_date_raw": "19941026"}],
             [],
             [{"證券代號": "1808", "證券名稱": "潤隆", "市場別": "終止上市櫃", "證券狀態": "減資/停止帳簿劃撥"}],
         )
         record = result["records"][0]
-        self.assertEqual(record["bucket"], "review")
-        self.assertEqual(record["review_reason"], "tdcc_status_conflicts_with_current_exchange_snapshot")
-        self.assertEqual(result["bucket_counts"]["excluded"], 0)
+        self.assertEqual(record["bucket"], "excluded")
+        self.assertIn("user_directed_exclusion", record["review_reason"])
+        self.assertEqual(result["bucket_counts"]["excluded"], 1)
+        self.assertEqual(result["bucket_counts"]["review"], 0)
 
     def test_tdcc_only_active_instruments_are_not_mislabeled_as_excluded(self):
         result = reconcile_records(
