@@ -156,9 +156,9 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
         self.assertEqual(fetch_closed_dates(2024, session), {date(2024, 2, 6)})
         self.assertEqual(
             session.calls[0][0],
-            "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule",
+            "https://www.twse.com.tw/holidaySchedule/holidaySchedule",
         )
-        self.assertEqual(session.calls[0][1], {"queryYear": "113", "response": "json"})
+        self.assertEqual(session.calls[0][1], {"date": "2024", "response": "json"})
         self.assertEqual(session.calls[0][2]["timeout"], (8, 20))
 
 
