@@ -35,21 +35,14 @@ npm test
 
 測試使用假資料庫與假 LINE 回覆傳輸，不需要任何 Neon 或 LINE 憑證，也不會傳送真實訊息。GitHub Actions 工作流程 `LINE Stock Code Analysis Tests` 會執行這些測試，並透過 `npm run bundle` 產生包含 Postgres driver 的獨立 `dist/index.mjs`，封裝成 `deployment.zip` 作為 CI artifact（**僅打包、不部署**）。
 
-## 未來安全部署步驟（尚未執行）
+## 部署與整合狀態（2026-11-20）
 
-1. 先在測試 Neon branch 以新 slug 部署 `linestockanalysis`，勿覆蓋現有 `linewebhook`。
-2. 在安全的部署工具中設定 LINE channel secret 與 channel access token，**不要將值輸入 Git 版本庫、CI 日誌或聊天紀錄**。
-3. 先對新函式執行 `GET /health`、無效簽章拒絕測試、合法簽章 LINE 開發者驗證。測試中勿發送未經授權的公開推播。
-4. 經人工同意後，再決定讓既有 webhook 轉呼叫此功能，或在 LINE Developers 控制台更新 Webhook URL。LINE 一個 channel 僅有一個 webhook URL，**不能以新增函式就假設它已自動接通 LINE**。
-5. 以 2330、6488、1808、未知代碼，以及「清單」、「1」、「編號 2」進行端到端測試，確認資料日期、排行編號與缺漏提示。
-
-## 狀態（2026-11-19）
-
-- GitHub LINE 自動測試及 Python 自動測試已通過；功能分支仍是 draft PR #10，尚未合併。
-- **獨立 Neon 函式 `linestockanalysis` 已部署**；Neon deployment status 為 `completed`。
-- 新函式網址：`https://br-purple-smoke-a1t9dmzz-linestockanalysis.compute.c-1.ap-southeast-1.aws.neon.tech/`；健康檢查路徑：`/health`。
-- **外部 HTTP 健康檢查已通過**：GitHub Actions run `44557209200` 已實際取得 `GET /health = HTTP 200`、未簽章 `POST /webhook = HTTP 503`（服務未配置完整 LINE 憑證時的安全拒絕）。報告：https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44557209200。這不是 LINE 官方端到端回覆測試。
-- **未配置或轉移 LINE Channel Secret / Access Token**，部署時沒有提交任何自訂環境憑證；因此文字訊息回覆仍未啟用。
-- 正式 LINE Developers Webhook URL **未切換**。原本 Neon `linewebhook` **保留、不覆寫**。
-- 下一步：由授權管理者在 Neon Function 的安全設定中加入 `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`，先驗證 `/health`、簽章與資料庫唯讀查詢；確認後再經人工同意切換 LINE Developers Webhook URL。
-- 五年大量行情下載、Neon 行情資料寫入、PR 合併：仍未執行。
+- 原 LINE 頻道仍使用原本 `linewebhook`；**尚未切換** Webhook URL。
+- Neon `linestockanalysis` 的 Deployment ID **3** 狀態 `completed`，環境已配置 `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`；未將憑證提交 GitHub。
+- 外部檢查已取得 `GET /health = HTTP 200`、無簽章 `POST /webhook = HTTP 401`；使用者在自己的電腦送合法簽章空事件取得 HTTP 200，對 LINE Bot Info API 驗證 Token 取得 HTTP 200。**真實 LINE 使用者訊息回覆與資料庫端到端路徑尚未驗證**。
+- 另外有沒有 LINE 憑證的 `linestocktest` 測試函式；它不是 LINE 新帳號，亦未被 LINE 正式頻道指向。
+- 已針對 `twstock` 執行唯讀 SQL 查詢，測試單筆股票及排行。資料有缺漏，且部分股票（例如 2330）最新可用行情仍是 2026-10-30，不是即時價格。
+- 在 draft PR #10 新增 `legacy-compatibility.mjs` 純函式整合草案及 mock 測試；**此檔未引入正式部署入口，也未執行資料庫寫入**。
+- 因原 `linewebhook` 原始碼不可得，尚無法保證舊版所有行為與報告收件者紀錄可被新函式取代。
+- 使用者決定沿用原本 LINE 帳號，不建立第二個帳號。詳細保留方案及切換門檻參閱 [單一 LINE 帳號整合方案](line-webhook-single-account-integration.md)。
+- GitHub PR 仍是草稿、未合併。未修改舊函式、沒有改 Webhook URL、沒有發出真實 LINE 訊息或改寫資料庫。
