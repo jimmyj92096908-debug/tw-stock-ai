@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "purpose": "Official evidence inventory for classifying current TWSE and TPEx company-list candidates as common stocks or non-common-stock instruments.",
+  "policy": {
+    "automatic_exclusion_without_exact_security_code_match": false,
+    "common_stock_classification_confirmed": false,
+    "historical_universe_accepted": false,
+    "quote_download_authorized": false,
+    "database_accessed": false,
+    "database_modified": false,
+    "five_year_quotes_downloaded": false,
+    "rule": "An instrument is excluded only when an authoritative source returns the exact security code and explicitly identifies its instrument category. Company-level records and name/code heuristics are not sufficient."
+  },
+  "sources": [
+    {
+      "id": "twse_warrants",
+      "market": "TWSE",
+      "category": "warrant",
+      "source_type": "official_openapi",
+      "url": "https://openapi.twse.com.tw/v1/opendata/t187ap37_L",
+      "documentation_url": "https://openapi.twse.com.tw/",
+      "documented_title": "上市權證基本資料彙總表",
+      "purpose": "Exact-code identification of listed warrants.",
+      "fetch_status": "endpoint_documented_not_yet_schema_validated",
+      "automatic_exclusion_eligible_after_schema_validation": true
+    },
+    {
+      "id": "twse_fund_basic",
+      "market": "TWSE",
+      "category": "fund_or_etf",
+      "source_type": "official_openapi",
+      "url": "https://openapi.twse.com.tw/v1/opendata/t187ap47_L",
+      "documentation_url": "https://openapi.twse.com.tw/",
+      "documented_title": "基金基本資料彙總表",
+      "purpose": "Exact-code identification of listed fund products; each record still requires explicit instrument subtype validation.",
+      "fetch_status": "endpoint_documented_not_yet_schema_validated",
+      "automatic_exclusion_eligible_after_schema_validation": true
+    },
+    {
+      "id": "tpex_warrants",
+      "market": "TPEX",
+      "category": "warrant",
+      "source_type": "official_openapi",
+      "url": "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap37_O",
+      "documentation_url": "https://www.tpex.org.tw/openapi/",
+      "documented_title": "上櫃權證基本資料彙總表",
+      "purpose": "Exact-code identification of OTC warrants.",
+      "fetch_status": "endpoint_documented_not_yet_schema_validated",
+      "automatic_exclusion_eligible_after_schema_validation": true
+    },
+    {
+      "id": "tpex_etf_infohub",
+      "market": "TPEX",
+      "category": "etf",
+      "source_type": "official_web_dataset",
+      "url": "https://info.tpex.org.tw/ETF/zh/filter.html",
+      "documentation_url": "https://www.tpex.org.tw/zh-tw/product/etf/overview/categories.html",
+      "documented_title": "ETF訊息中心－ETF篩選器",
+      "purpose": "Authoritative ETF security-code list and subtype information.",
+      "fetch_status": "official_page_found_download_or_api_contract_not_yet_verified",
+      "automatic_exclusion_eligible_after_schema_validation": true
+    },
+    {
+      "id": "tpex_etn_product_definition",
+      "market": "TPEX",
+      "category": "etn",
+      "source_type": "official_reference",
+      "url": "https://www.tpex.org.tw/zh-tw/product/etn/overview/categories.html",
+      "documentation_url": "https://www.tpex.org.tw/zh-tw/product/etn/overview/introduction.html",
+      "documented_title": "ETN商品分類與商品概述",
+      "purpose": "Defines ETN as a separate listed instrument class; a current exact-code listing source is still required before exclusion.",
+      "fetch_status": "definition_verified_listing_feed_not_yet_verified",
+      "automatic_exclusion_eligible_after_schema_validation": false
+    },
+    {
+      "id": "tdcc_current_securities_master",
+      "market": "TWSE_AND_TPEX",
+      "category": "market_and_status_crosscheck",
+      "source_type": "official_open_data_csv",
+      "url": "https://opendata.tdcc.com.tw/getOD.ashx?id=1-1",
+      "documented_title": "TDCC securities master",
+      "purpose": "Cross-check market/status fields; not a reliable instrument-subtype classifier by itself.",
+      "fetch_status": "already_fetched_schema_review_required",
+      "automatic_exclusion_eligible_after_schema_validation": false
+    }
+  ],
+  "next_steps": [
+    "Fetch and archive the three documented TWSE/TPEx OpenAPI category datasets without database access.",
+    "Validate actual response schemas and identify exact security-code fields before matching.",
+    "Discover and verify the TPEx ETF InfoHub download/API contract; do not guess an undocumented endpoint.",
+    "Add exact-code exclusion evidence with source hash, snapshot time, category, and source record.",
+    "Keep unresolved instruments in review; do not infer category from code suffix, company name, or TDCC custodian fields."
+  ]
+}
