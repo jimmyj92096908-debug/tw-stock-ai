@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,7 @@ def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
 def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
     response = session.get(
         CALENDAR_URL,
-        params={"queryYear": str(year - 1911), "response": "json"},
+        params={"queryYear": str(year), "response": "json", "_": str(time.time_ns())},
         timeout=(8, 20),
         headers={"User-Agent": "tw-stock-ai-history-preflight/1.0"},
     )
