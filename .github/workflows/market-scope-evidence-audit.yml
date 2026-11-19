@@ -27,19 +27,17 @@ jobs:
         run: |
           python -m unittest discover -s tests -p "test_tpex_calendar_candidates.py" -v
           python -m unittest discover -s tests -p "test_tdcc_universe_candidates.py" -v
+          python -m unittest discover -s tests -p "test_twse_current_list.py" -v
           python -m unittest discover -s tests -p "test_security_lifecycle_candidates.py" -v
           python -m unittest discover -s tests -p "test_lifecycle_source_inventory.py" -v
           python -m unittest discover -s tests -p "test_tpex_delisted_discovery.py" -v
       - name: Install audit dependencies
         run: python -m pip install requests pypdf
-      - name: Discover TPEx delisted query frontend
-        env:
-          PYTHONPATH: .
-        run: python scripts/discover_tpex_delisted_query.py --output-dir audit-output/market-scope/tpex-delisted-discovery
       - name: Run read-only official market scope audit
         env:
           PYTHONPATH: .
         run: |
+          python scripts/audit_twse_current_list.py --output-dir audit-output/market-scope/twse-current
           python scripts/audit_market_scope.py \
             --registry data/calendars/source_registry.json \
             --output-dir audit-output/market-scope \
