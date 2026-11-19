@@ -237,6 +237,7 @@ def main() -> None:
         "range": report["range"],
         "calendar_status": report["calendar_status"],
         "calendar_unavailable_years": report["calendar_unavailable_years"],
+        "calendar_errors": calendar_errors,
         "official_trading_session_count": report["official_trading_session_count"],
         "expected_market_date_tasks": report["expected_market_date_tasks"],
         "market_counts": report["market_counts"],
