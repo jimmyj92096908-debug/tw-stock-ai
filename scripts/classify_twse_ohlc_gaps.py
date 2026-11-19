@@ -118,7 +118,7 @@ def main() -> None:
     report = build_report(bulk, individual)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + chr(10), encoding="utf-8")
     print(json.dumps({
         "output": str(output),
         "record_count": report["record_count"],
