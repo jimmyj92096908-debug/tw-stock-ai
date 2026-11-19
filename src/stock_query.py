@@ -164,4 +164,4 @@ def format_analysis_message(row: dict[str, Any]) -> str:
         f"總分：{_fmt(row.get('total_score'))}｜覆蓋率：{_fmt(float(row.get('coverage_weight') or 0)*100,1)}%",
         "註：僅供研究參考，不構成買賣建議；缺值代表資料尚未提供。",
     ]
-    return "\\n".join(lines)
+    return chr(10).join(lines)
