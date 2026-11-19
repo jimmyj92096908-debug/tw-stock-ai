@@ -3,6 +3,7 @@
 ## 目前功能
 
 - LINE 傳送「2330」、「分析 2330」或「股票 6488」後，查詢現有 Neon `twstock` 的資料。
+- LINE 傳送「清單」可顯示最近一次有評分的前 10 檔候選股票；傳送「1」～「10」、「編號 1」或「第 2 名」會分析對應序號。清單每天可能變動，請先查詢當前清單。
 - 回覆股票代碼、候選公司名稱、市場、最新可用收盤行情、九均線、RSI14、ATR14、SMC 和綜合/短波長評分。
 - 各個資料來源都有自己的日期；若技術指標、SMC 或評分比收盤行情舊，明確標示，避免誤用。
 - 不從交易所下載任何完整歷史行情、不更新任何資料表、不下單。
@@ -32,7 +33,7 @@ npm install
 npm test
 ```
 
-測試使用假資料庫與假 LINE 回覆傳輸，不需要任何 Neon 或 LINE 憑證，也不會傳送真實訊息。GitHub Actions 工作流程 `LINE Stock Code Analysis Tests` 會執行這些測試。
+測試使用假資料庫與假 LINE 回覆傳輸，不需要任何 Neon 或 LINE 憑證，也不會傳送真實訊息。GitHub Actions 工作流程 `LINE Stock Code Analysis Tests` 會執行這些測試，並透過 `npm run bundle` 產生包含 Postgres driver 的獨立 `dist/index.mjs`，封裝成 `deployment.zip` 作為 CI artifact（**僅打包、不部署**）。
 
 ## 未來安全部署步驟（尚未執行）
 
@@ -40,7 +41,7 @@ npm test
 2. 在安全的部署工具中設定 LINE channel secret 與 channel access token，**不要將值輸入 Git 版本庫、CI 日誌或聊天紀錄**。
 3. 先對新函式執行 `GET /health`、無效簽章拒絕測試、合法簽章 LINE 開發者驗證。測試中勿發送未經授權的公開推播。
 4. 經人工同意後，再決定讓既有 webhook 轉呼叫此功能，或在 LINE Developers 控制台更新 Webhook URL。LINE 一個 channel 僅有一個 webhook URL，**不能以新增函式就假設它已自動接通 LINE**。
-5. 以 2330、6488、1808、未知代碼進行端到端測試，確認資料日期與缺漏提示。
+5. 以 2330、6488、1808、未知代碼，以及「清單」、「1」、「編號 2」進行端到端測試，確認資料日期、排行編號與缺漏提示。
 
 ## 狀態
 
