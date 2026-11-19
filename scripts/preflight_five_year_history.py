@@ -106,8 +106,12 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
 
     closed: set[date] = set()
     date_patterns = (
-        re.compile(r"(?:(\d{2,4})\s*年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日"),
-        re.compile(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})"),
+        re.compile(
+            r"(?:(?P<prefix_year>\d{2,4})\s*年)?\s*"
+            r"(?P<month>\d{1,2})\s*月\s*(?P<day>\d{1,2})\s*日"
+            r"(?:\s*[（(]\s*(?P<suffix_year>\d{2,4})\s*年\s*[）)])?"
+        ),
+        re.compile(r"(?P<iso_year>\d{4})[-/](?P<iso_month>\d{1,2})[-/](?P<iso_day>\d{1,2})"),
     )
     for row in parser.rows:
         if len(row) < 2:
@@ -115,20 +119,23 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
         date_cell = next((cell for cell in row[:2] if any(p.search(cell) for p in date_patterns)), "")
         if not date_cell:
             continue
-        label_text = " ".join(row[0:1] + row[2:])
+        label_text = " ".join(cell for cell in row if cell != date_cell)
         if not any(word in label_text for word in CLOSED_WORDS):
             continue
         for pattern in date_patterns:
             for match in pattern.finditer(date_cell):
-                groups = match.groups()
-                if len(groups) == 3 and groups[0] is not None and len(groups[0]) == 4:
-                    item_year, month, day = map(int, groups)
-                elif len(groups) == 3 and groups[0] is not None:
-                    item_year, month, day = map(int, groups)
-                    item_year = item_year + 1911 if item_year < 1911 else item_year
+                values = match.groupdict()
+                if values.get("iso_year"):
+                    item_year = int(values["iso_year"])
+                    month = int(values["iso_month"])
+                    day = int(values["iso_day"])
                 else:
-                    item_year = year
-                    month, day = map(int, groups[-2:])
+                    raw_year = values.get("suffix_year") or values.get("prefix_year")
+                    item_year = int(raw_year) if raw_year else year
+                    if item_year < 1911:
+                        item_year += 1911
+                    month = int(values["month"])
+                    day = int(values["day"])
                 if item_year == year:
                     closed.add(date(item_year, month, day))
     if not parser.rows:
