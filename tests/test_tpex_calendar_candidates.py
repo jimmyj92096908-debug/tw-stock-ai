@@ -25,7 +25,7 @@ class TpexCalendarCandidateTests(unittest.TestCase):
         self.assertEqual(rows[0]["date"], "2021-02-05")
         self.assertEqual(rows[0]["occurrences"][0]["scope_classification"], "explicit_equity_scope_candidate")
 
-    def test_directory_output_never_accepts_calendar(self):
+    def test_escaped_newline_english_calendar_text_is_normalized(self):\n        text = "February\\\\n5 (Friday)\\\\nLast Trading Day before holiday (Listed Stock)"\n        rows = extract_candidates(text, 110, "xyz")\n        self.assertEqual(rows[0]["date"], "2021-02-05")\n        self.assertEqual(rows[0]["occurrences"][0]["scope_classification"], "explicit_equity_scope_candidate")\n\n    def test_directory_output_never_accepts_calendar(self):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "112.txt").write_text("1 月 1 日", encoding="utf-8")
             result = parse_directory(Path(tmp))
