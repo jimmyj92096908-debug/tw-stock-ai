@@ -1,6 +1,12 @@
+import csv
+import tempfile
 import unittest
+from pathlib import Path
 
-from scripts.reconcile_exact_instrument_exclusions import reconcile_exact_codes
+from scripts.reconcile_exact_instrument_exclusions import (
+    reconcile_exact_codes,
+    write_audit_csv,
+)
 
 
 class ExactInstrumentExclusionTests(unittest.TestCase):
@@ -37,6 +43,26 @@ class ExactInstrumentExclusionTests(unittest.TestCase):
         self.assertEqual(result["records"][1]["stock_id"], "1808")
         self.assertEqual(result["records"][1]["bucket"], "excluded")
         self.assertEqual(result["records"][1]["manual_exclusion_reason"], "user_directed_exclusion")
+
+
+    def test_csv_preserves_manual_exclusion_reason(self):
+        rows = [{
+            "stock_id": "1808",
+            "name": "潤隆建設",
+            "market": "TWSE",
+            "bucket": "excluded",
+            "instrument_subtype_confirmed": False,
+            "exclusion_evidence": [],
+            "manual_exclusion_reason": "user_directed_exclusion",
+        }]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "audit.csv"
+            write_audit_csv(rows, output)
+            with output.open(encoding="utf-8-sig", newline="") as handle:
+                saved = next(csv.DictReader(handle))
+        self.assertEqual(saved["stock_id"], "1808")
+        self.assertEqual(saved["bucket"], "excluded")
+        self.assertEqual(saved["manual_exclusion_reason"], "user_directed_exclusion")
 
     def test_duplicate_exchange_codes_rejected(self):
         rows = [
