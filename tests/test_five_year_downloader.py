@@ -77,6 +77,30 @@ class FiveYearDownloaderTests(unittest.TestCase):
             }) + "\\n", encoding="utf-8")
             self.assertNotIn(("twse", "2026-11-19"), load_completed(manifest))
 
+
+    def test_download_records_explicit_no_data_as_unverified(self):
+        payload = {"stat": "很抱歉，沒有符合條件的資料!"}
+        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+        class FakeResponse:
+            content = raw
+            def raise_for_status(self): pass
+            def json(self): return payload
+
+        class FakeSession:
+            headers = {}
+            def get(self, *args, **kwargs): return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as temp:
+            with patch("scripts.download_five_year_market_history.requests.Session", return_value=FakeSession()):
+                with patch("scripts.download_five_year_market_history.time.sleep"):
+                    counts = download_range(date(2026, 11, 19), date(2026, 11, 19), Path(temp), ["twse"], 0.25)
+            self.assertEqual(counts["no_data_unverified"], 1)
+            self.assertEqual(counts["failed"], 0)
+            record = json.loads((Path(temp) / "manifest.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(record["status"], "no_data_unverified")
+            self.assertFalse((Path(temp) / "raw" / "twse" / "2026-11-19.json.gz").exists())
+
     def test_reject_too_fast_request_rate(self):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "at least 0.25"):
