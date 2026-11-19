@@ -31,6 +31,9 @@ jobs:
             --registry data/calendars/source_registry.json \
             --output-dir audit-output/market-scope \
             --report audit-output/market-scope/market-scope-audit.json
+          python scripts/parse_tpex_calendar_candidates.py \\
+            --input-dir audit-output/market-scope/tpex-calendar \\
+            --output audit-output/market-scope/tpex-calendar-candidates.json
       - name: Upload raw official sources and audit report
         uses: actions/upload-artifact@v4
         with:
