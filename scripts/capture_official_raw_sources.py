@@ -98,6 +98,16 @@ def find_tpex_monthly_row(payload: dict | None, trade_date: str) -> list | None:
     return None
 
 
+def find_tpex_legacy_daily_row(payload: dict | None, stock_id: str) -> list | None:
+    """Find a stock row in TPEx's public historical daily-close JSON response."""
+    if not isinstance(payload, dict):
+        return None
+    for row in payload.get("aaData") or []:
+        if row and str(row[0]).strip() == stock_id:
+            return row
+    return None
+
+
 def find_twse_row(payload: dict | None, trade_date: str) -> list | None:
     if not isinstance(payload, dict):
         return None
@@ -187,6 +197,8 @@ def main() -> None:
                  {"response": "json", "date": date(y, m, 1).strftime("%Y/%m/%d"), "code": target["stock_id"]}),
                 ("bulk_daily", "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc",
                  build_tpex_bulk_params(target["trade_date"])),
+                ("legacy_public_daily_close", "https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php",
+                 {"l": "zh-tw", "o": "json", "d": f"{y - 1911}/{m:02d}/{int(target['trade_date'].split('-')[2]):02d}"}),
             ]
         else:
             sources = [
@@ -204,6 +216,8 @@ def main() -> None:
                 time.sleep(0.15)
                 if name == "monthly_individual":
                     row = find_tpex_monthly_row(item["payload"], target["trade_date"])
+                elif name == "legacy_public_daily_close":
+                    row = find_tpex_legacy_daily_row(item["payload"], target["stock_id"])
                 elif name == "twse_monthly_individual":
                     row = find_twse_row(item["payload"], target["trade_date"])
                 elif name == "twse_daily_market":
@@ -214,6 +228,8 @@ def main() -> None:
                 item["matching_raw_row"] = row
                 if name == "twse_daily_market":
                     item["normalized_row"] = normalized_twse_daily_row(item["payload"], row)
+                elif name == "legacy_public_daily_close":
+                    item["normalized_row"] = None  # Preserve row until the endpoint's field schema is verified.
                 else:
                     item["normalized_row"] = normalized_row(row)
                 item.pop("payload", None)
