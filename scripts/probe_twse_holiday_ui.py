@@ -4,7 +4,7 @@ from __future__ import annotations
 import json, re, urllib.parse, urllib.request
 from html.parser import HTMLParser
 
-URL = "https://accessibility.twse.com.tw/zh/trading/holiday.html"
+URL = "https://www.twse.com.tw/zh/trading/holiday.html"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TWStockCalendarResearch/1.0)",
            "Accept": "text/html,application/xhtml+xml,application/javascript,*/*"}
 
