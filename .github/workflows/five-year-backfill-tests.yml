@@ -1,0 +1,34 @@
+name: Five-Year Backfill Unit Tests
+
+on:
+  push:
+    branches: [feature/automatic-five-year-backfill]
+    paths:
+      - "src/five_year_backfill.py"
+      - "tests/test_five_year_backfill.py"
+      - ".github/workflows/automatic-five-year-backfill.yml"
+      - ".github/workflows/five-year-backfill-tests.yml"
+  pull_request:
+    paths:
+      - "src/five_year_backfill.py"
+      - "tests/test_five_year_backfill.py"
+      - ".github/workflows/automatic-five-year-backfill.yml"
+      - ".github/workflows/five-year-backfill-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q tests/test_five_year_backfill.py
+      - run: python -m py_compile src/five_year_backfill.py
