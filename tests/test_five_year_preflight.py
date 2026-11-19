@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import Mock
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +8,7 @@ from scripts.preflight_five_year_history import (
     build_preflight,
     closed_dates_from_payload,
     expected_sessions,
+    fetch_closed_dates,
 )
 
 
@@ -27,6 +29,25 @@ class CalendarParserTests(unittest.TestCase):
             closed_dates_from_payload(payload, 2026),
             {date(2026, 1, 1), date(2026, 2, 12)},
         )
+
+    def test_fetch_uses_official_historical_json_endpoint_and_roc_year(self):
+        response = Mock()
+        response.json.return_value = {
+            "stat": "ok",
+            "queryYear": "113",
+            "title": "113 年市場開休市日期",
+            "date": "20240101",
+            "data": [["2024-01-01", "中華民國開國紀念日", "依規定放假1日。"]],
+        }
+        response.raise_for_status.return_value = None
+        session = Mock()
+        session.get.return_value = response
+
+        self.assertEqual(fetch_closed_dates(2024, session), {date(2024, 1, 1)})
+        args, kwargs = session.get.call_args
+        self.assertIn("/rwd/zh/holidaySchedule/holidaySchedule", args[0])
+        self.assertEqual(kwargs["params"], {"queryYear": "113", "response": "json"})
+        self.assertEqual(kwargs["timeout"], (8, 20))
 
     def test_rejects_wrong_year_response(self):
         payload = {"stat": "ok", "queryYear": "115", "title": "116 年市場開休市日期", "date": "20270101", "data": []}
