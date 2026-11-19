@@ -105,6 +105,9 @@ def main() -> None:
         writer.writerows(report["current_listed_otc_active_candidates"])
     print(json.dumps({
         "row_count": report["row_count"],
+        "market_counts": report["market_counts"],
+        "status_counts": report["status_counts"],
+        "market_status_counts": report["market_status_counts"],
         "candidate_count": report["current_listed_otc_active_candidate_count"],
         "emerging_separate_count": report["emerging_active_candidate_count"],
         "historical_universe_accepted": False,
