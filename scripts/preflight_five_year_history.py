@@ -7,6 +7,7 @@ downloads daily quote payloads, or fills missing OHLC.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import time
@@ -152,7 +153,9 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
     return closed
 
 
-def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
+def fetch_calendar_snapshot(
+    year: int, session: requests.Session, archive_dir: Path
+) -> tuple[set[date], dict[str, Any]]:
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; tw-stock-ai-history-preflight/1.0)",
         "Referer": "https://www.twse.com.tw/zh/trading/holiday.html",
@@ -165,13 +168,39 @@ def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
         headers=headers,
     )
     response.raise_for_status()
+    raw = response.content
     try:
         payload = response.json()
     except ValueError as exc:
         raise ValueError(f"TWSE calendar response is not valid JSON for {year}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"TWSE calendar JSON has unexpected shape for {year}")
-    return closed_dates_from_payload(payload, year)
+    closed = closed_dates_from_payload(payload, year)
+    archive_path = archive_dir / "twse" / f"{year}.json"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_path.write_bytes(raw)
+    metadata = {
+        "year": year,
+        "source": "TWSE official holidaySchedule JSON",
+        "url": response.url,
+        "http_status": response.status_code,
+        "content_type": response.headers.get("Content-Type", ""),
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "raw_path": str(archive_path),
+        "calendar_title": str(payload.get("title", "")),
+        "row_count": len(payload.get("data", [])) if isinstance(payload.get("data"), list) else None,
+        "closed_date_count": len(closed),
+    }
+    return closed, metadata
+
+
+def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
+    # Compatibility wrapper for callers that only need parsed dates.
+    import tempfile
+    with tempfile.TemporaryDirectory() as temp:
+        closed, _ = fetch_calendar_snapshot(year, session, Path(temp))
+        return closed
 
 
 def expected_sessions(start: date, end: date, closed_by_year: dict[int, set[date]]) -> list[date]:
@@ -327,13 +356,24 @@ def main() -> None:
     session = requests.Session()
     closed_by_year: dict[int, set[date]] = {}
     calendar_errors: dict[str, str] = {}
+    calendar_snapshots: list[dict[str, Any]] = []
+    archive_dir = Path(args.report).parent / "calendar-archive"
     for year in range(start.year, end.year + 1):
         try:
-            closed_by_year[year] = fetch_closed_dates(year, session)
+            closed, metadata = fetch_calendar_snapshot(year, session, archive_dir)
+            closed_by_year[year] = closed
+            calendar_snapshots.append(metadata)
         except Exception as exc:
             calendar_errors[str(year)] = f"{type(exc).__name__}: {str(exc)[:300]}"
     report = build_preflight(start, end, closed_by_year, Path(args.output_dir))
     report["calendar_errors"] = calendar_errors
+    report["calendar_snapshots"] = calendar_snapshots
+    report["calendar_archive_directory"] = str(archive_dir)
+    report["tpex_calendar_independently_verified"] = False
+    report["tpex_calendar_note"] = (
+        "Expected TPEx dates currently reuse TWSE official calendar dates; "
+        "TPEx-specific historical calendar endpoint has not yet been independently verified."
+    )
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + chr(10), encoding="utf-8")
