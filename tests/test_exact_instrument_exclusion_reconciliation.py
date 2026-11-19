@@ -81,6 +81,55 @@ class ExactInstrumentExclusionTests(unittest.TestCase):
             path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
             self.assertEqual(load_tpex_etn_table_codes(path, "證券代號"), {"020041", "020042"})
 
+    def test_loads_official_etn_rows_with_validated_trailing_detail_links(self):
+        payload = {
+            "tables": [{
+                "fields": ["證券代號", "ETN簡稱", "發行人"],
+                "data": [
+                    ["020041", "兆豐半導體氣候N", "發行人甲",
+                     "detail.html?type=domestic&code=020041"],
+                    ["020042", "測試ETN", "發行人乙",
+                     "detail.html?type=domestic&code=020042"],
+                ],
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "etn-with-links.json"
+            import json
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            self.assertEqual(load_tpex_etn_table_codes(path, "證券代號"), {"020041", "020042"})
+
+    def test_etn_detail_link_must_match_row_code(self):
+        import json
+        payload = {
+            "tables": [{
+                "fields": ["證券代號", "ETN簡稱"],
+                "data": [["020041", "測試ETN", "detail.html?type=domestic&code=020099"]],
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "etn-mismatched-link.json"
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_tpex_etn_table_codes(path, "證券代號")
+
+    def test_etn_rows_cannot_mix_detail_link_and_no_link_shapes(self):
+        import json
+        payload = {
+            "tables": [{
+                "fields": ["證券代號", "ETN簡稱"],
+                "data": [
+                    ["020041", "測試ETN", "detail.html?type=domestic&code=020041"],
+                    ["020042", "測試ETN"],
+                ],
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "etn-mixed-widths.json"
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_tpex_etn_table_codes(path, "證券代號")
+
     def test_etn_table_rejects_ambiguous_or_malformed_columns(self):
         import json
         cases = [
