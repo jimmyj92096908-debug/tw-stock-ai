@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+try:
+    from .ohlc_quality import classify_ohlc_row
+except ImportError:  # 支援以 src/ 作為 PYTHONPATH 的 GitHub Actions 執行方式
+    from ohlc_quality import classify_ohlc_row
+
 def _valid_number(value: Any) -> float | None:
     if value is None or value == "":
         return None
@@ -45,7 +50,11 @@ def compute_smc(
         if dates and date <= dates[-1]:
             raise ValueError("日 K 必須依 trade_date 嚴格遞增且不可重複")
         dates.append(date)
-        o, h, l, c = (_valid_number(row.get(k)) for k in ("open","high","low","close"))
+        quality = classify_ohlc_row(row)
+        if quality.eligible_for_indicators:
+            o, h, l, c = (_valid_number(row.get(k)) for k in ("open","high","low","close"))
+        else:
+            o = h = l = c = None
         if None not in (o,h,l,c) and (h < l or h < max(o,c) or l > min(o,c)):
             raise ValueError(f"{date} OHLC 價格關係不合理")
         opens.append(o); highs.append(h); lows.append(l); closes.append(c)
@@ -57,6 +66,22 @@ def compute_smc(
     trend = 0  # 1 bullish, -1 bearish, 0 not established
     for i, row in enumerate(source):
         confirmed_high = confirmed_low = None
+        # 缺價／無效 OHLC 是結構斷點：不跨越缺口產生 BOS/CHOCH、掃流動性或 FVG。
+        if None in (opens[i], highs[i], lows[i], closes[i]):
+            last_swing_high = last_swing_low = None
+            previous_close = None
+            trend = 0
+            result.append({
+                "market": row["market"], "stock_id": str(row["stock_id"]), "trade_date": row["trade_date"],
+                "swing_high": None, "swing_low": None,
+                "bos_bullish": False, "bos_bearish": False,
+                "choch_bullish": False, "choch_bearish": False,
+                "trend_direction": 0,
+                "liquidity_sweep_high": False, "liquidity_sweep_low": False,
+                "order_block_type": None, "order_block_high": None, "order_block_low": None,
+                "fvg_type": None, "fvg_high": None, "fvg_low": None,
+            })
+            continue
         candidate = i - swing_right
         if candidate >= swing_left:
             if _pivot(highs, candidate, swing_left, swing_right, True):
