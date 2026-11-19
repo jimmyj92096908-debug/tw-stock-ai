@@ -178,8 +178,8 @@ def run(output: Path):
                     try:
                         payload = api_response.json()
                         probe["json_summary"] = summarize_json(payload)
+                        (output / f"{source_id}_api_response.json").write_text(
                             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                            json.dumps(payload, ensure_ascii=False, indent=2) + "\\n",
                             encoding="utf-8",
                         )
                         probe["json_parse_success"] = True
