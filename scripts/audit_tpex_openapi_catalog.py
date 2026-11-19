@@ -66,7 +66,7 @@ def main():
         "quote_download_authorized": False,
     }
     (out / "tpex-openapi-catalog-audit.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"http_status": response.status_code, "path_count": report["path_count"],
         "matching_routes": report["matching_routes"], "database_modified": False,
         "five_year_quotes_downloaded": False}, ensure_ascii=False, sort_keys=True))
