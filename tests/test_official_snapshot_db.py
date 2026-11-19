@@ -34,8 +34,8 @@ class StockSnapshotDBTests(unittest.TestCase):
             raise RuntimeError("Refusing non-disposable database for integration test")
         cls.conn=psycopg.connect(TEST_URL)
         with cls.conn.transaction():
-            cls.conn.execute("CREATE TEMP TABLE daily_prices (market text NOT NULL,stock_id text NOT NULL,trade_date date NOT NULL,open numeric,high numeric,low numeric,close numeric,volume bigint,turnover numeric,price_change numeric,transactions bigint,source text NOT NULL,PRIMARY KEY(market,stock_id,trade_date)) ON COMMIT PRESERVE ROWS")
-            cls.conn.execute("CREATE TEMP TABLE stock_master (market text NOT NULL,stock_id text NOT NULL,PRIMARY KEY(market,stock_id)) ON COMMIT PRESERVE ROWS")
+            cls.conn.execute("CREATE TABLE public.daily_prices (market text NOT NULL,stock_id text NOT NULL,trade_date date NOT NULL,open numeric,high numeric,low numeric,close numeric,volume bigint,turnover numeric,price_change numeric,transactions bigint,source text NOT NULL,PRIMARY KEY(market,stock_id,trade_date))")
+            cls.conn.execute("CREATE TABLE public.stock_master (market text NOT NULL,stock_id text NOT NULL,PRIMARY KEY(market,stock_id)) ON COMMIT PRESERVE ROWS")
             cls.conn.execute("INSERT INTO stock_master VALUES ('twse','2330'),('twse','6213')")
             cls.conn.execute("INSERT INTO daily_prices (market,stock_id,trade_date,close,source) VALUES ('twse','2330','2026-11-19',99,'ORIGINAL_MONTHLY_SOURCE')")
 
