@@ -98,9 +98,25 @@
       "purpose": "Cross-check market/status fields; not a reliable instrument-subtype classifier by itself.",
       "fetch_status": "already_fetched_schema_review_required",
       "automatic_exclusion_eligible_after_schema_validation": false
+    },
+    {
+      "id": "tpex_etn_maturity_termination_listing",
+      "market": "TPEX",
+      "category": "etn_lifecycle",
+      "source_type": "official_dynamic_lifecycle_page",
+      "url": "https://www.tpex.org.tw/zh-tw/product/etn/product/delisted.html",
+      "documentation_url": "https://www.tpex.org.tw/zh-tw/product/etn/overview/introduction.html",
+      "documented_title": "ETN到期或終止上櫃資訊",
+      "purpose": "Official historical ETN maturity or termination query page. The page states that information has been provided since ROC 110-06 (2021-06); the dynamic query request, response schema, exact security-code field, and lifecycle status semantics still require runtime validation. Use as lifecycle evidence, not as the current ETN master.",
+      "fetch_status": "official_lifecycle_page_discovered_dynamic_query_schema_pending",
+      "coverage_start": "2021-06",
+      "historical_coverage_confirmed": false,
+      "complete_historical_etn_lifecycle_confirmed": false,
+      "automatic_exclusion_eligible_after_schema_validation": false
     }
   ],
   "next_steps": [
+    "Inspect the official TPEx ETN maturity/termination page dynamic query request and response schema; validate its exact security-code and lifecycle-status fields before using it as historical lifecycle evidence.",
     "Inspect the official TPEx ETN listing page's dynamic query request and response schema; verify the exact security-code field before matching.",
     "Probe the observed TPEx ETF InfoHub JSON endpoint, preserve raw response, and validate the exact security-code field before accepting exact-code matching.",
     "Fetch and archive the three documented TWSE/TPEx OpenAPI category datasets without database access.",
