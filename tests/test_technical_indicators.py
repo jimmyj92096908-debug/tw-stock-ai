@@ -71,6 +71,9 @@ class TechnicalIndicatorsTests(unittest.TestCase):
         self.assertIsNotNone(result[-1]["ma240"])
         self.assertIsNotNone(result[-1]["rsi14"])
         self.assertIsNotNone(result[-1]["atr14"])
+        # 成交量雖然大於 0，但缺少 OHLC 的資料不得污染量均線。
+        self.assertIsNone(result[100]["volume_ma5"])
+        self.assertIsNotNone(result[101]["volume_ma5"])
 
 
 if __name__ == "__main__":
