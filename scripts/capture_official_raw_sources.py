@@ -14,6 +14,8 @@ from typing import Any
 
 import requests
 
+from src.official_source_reconciliation import reconcile_tpex_payloads
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get("RAW_SOURCE_OUTPUT", ROOT / "artifacts" / "official-raw-source"))
 TIMEOUT = 45
@@ -119,9 +121,11 @@ def main() -> None:
                  {"response": "json", "date": date(y, m, 1).strftime("%Y%m%d"), "stockNo": target["stock_id"]}),
             ]
         observations = []
+        source_payloads = {}
         for name, url, params in sources:
             try:
                 item = capture(session, name, url, params, target)
+                source_payloads[name] = item["payload"]
                 if name == "monthly_individual":
                     row = find_tpex_monthly_row(item["payload"], target["trade_date"])
                 elif name == "twse_monthly_individual":
@@ -135,7 +139,15 @@ def main() -> None:
                 observations.append(item)
             except requests.RequestException as exc:
                 observations.append({"endpoint": name, "request_error": type(exc).__name__})
-        report["targets"].append({**target, "observations": observations})
+        target_report = {**target, "observations": observations}
+        if target["market"] == "tpex":
+            target_report["reconciliation"] = reconcile_tpex_payloads(
+                source_payloads.get("monthly_individual"),
+                source_payloads.get("bulk_daily"),
+                target["stock_id"],
+                target["trade_date"],
+            )
+        report["targets"].append(target_report)
     (OUT / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if any("request_error" in obs for t in report["targets"] for obs in t["observations"]):
