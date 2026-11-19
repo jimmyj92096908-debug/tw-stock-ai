@@ -45,8 +45,10 @@ def classify_ohlc_row(row: Mapping[str, Any]) -> OHLCQuality:
         return OHLCQuality("invalid", "negative_volume", False)
 
     missing = [key for key, value in prices.items() if value is None]
-    if len(missing) == 4 and volume == 0:
+    if volume == 0 and len(missing) == 4:
         return OHLCQuality("no_trade", "zero_volume_all_ohlc_null", False)
+    if volume == 0 and not missing:
+        return OHLCQuality("review", "zero_volume_with_prices_requires_source_validation", False)
     if missing:
         return OHLCQuality("invalid", "missing_or_non_numeric_ohlc:" + ",".join(missing), False)
 
