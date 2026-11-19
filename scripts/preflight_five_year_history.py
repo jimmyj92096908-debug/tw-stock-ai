@@ -11,6 +11,7 @@ import json
 import re
 import time
 from datetime import date, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -57,16 +58,104 @@ def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
     return closed
 
 
+class _CalendarHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[list[str]] = []
+        self.current_row: list[str] | None = None
+        self.current_cell: list[str] | None = None
+        self.page_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self.current_row = []
+        elif tag in {"td", "th"} and self.current_row is not None:
+            self.current_cell = []
+        elif tag == "br" and self.current_cell is not None:
+            self.current_cell.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        self.page_text.append(data)
+        if self.current_cell is not None:
+            self.current_cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self.current_cell is not None and self.current_row is not None:
+            self.current_row.append(" ".join("".join(self.current_cell).split()))
+            self.current_cell = None
+        elif tag == "tr" and self.current_row is not None:
+            if self.current_row:
+                self.rows.append(self.current_row)
+            self.current_row = None
+
+
+def closed_dates_from_html(html: str, year: int) -> set[date]:
+    parser = _CalendarHTMLParser()
+    parser.feed(html)
+    page_text = " ".join(parser.page_text)
+    year_matches = re.findall(r"(?<!\\d)(\\d{2,4})\\s*年", page_text)
+    actual_years = {
+        int(value) + 1911 if int(value) < 1911 else int(value)
+        for value in year_matches
+    }
+    if actual_years != {year}:
+        raise ValueError(
+            f"TWSE HTML returned calendar year(s) {sorted(actual_years)} "
+            f"instead of requested {year}"
+        )
+
+    closed: set[date] = set()
+    date_patterns = (
+        re.compile(r"(?:(\\d{2,4})\\s*年)?\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日"),
+        re.compile(r"(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})"),
+    )
+    for row in parser.rows:
+        if len(row) < 2:
+            continue
+        date_cell = next((cell for cell in row[:2] if any(p.search(cell) for p in date_patterns)), "")
+        if not date_cell:
+            continue
+        label_text = " ".join(row[0:1] + row[2:])
+        if not any(word in label_text for word in CLOSED_WORDS):
+            continue
+        for pattern in date_patterns:
+            for match in pattern.finditer(date_cell):
+                groups = match.groups()
+                if len(groups) == 3 and groups[0] is not None and len(groups[0]) == 4:
+                    item_year, month, day = map(int, groups)
+                elif len(groups) == 3 and groups[0] is not None:
+                    item_year, month, day = map(int, groups)
+                    item_year = item_year + 1911 if item_year < 1911 else item_year
+                else:
+                    item_year = year
+                    month, day = map(int, groups[-2:])
+                if item_year == year:
+                    closed.add(date(item_year, month, day))
+    if not parser.rows:
+        raise ValueError(f"TWSE historical calendar HTML has no table rows for {year}")
+    return closed
+
+
 def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
     roc_year = year - 1911
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; tw-stock-ai-history-preflight/1.0)",
+        "Referer": "https://www.twse.com.tw/zh/trading/holiday.html",
+    }
+    landing = session.get(
+        "https://www.twse.com.tw/zh/trading/holiday.html",
+        timeout=(8, 20),
+        headers=headers,
+    )
+    landing.raise_for_status()
     response = session.get(
         CALENDAR_URL,
-        params={"queryYear": str(roc_year), "response": "json", "_": str(time.time_ns())},
+        params={"queryYear": str(roc_year), "response": "html", "_": str(time.time_ns())},
         timeout=(8, 20),
-        headers={"User-Agent": "tw-stock-ai-history-preflight/1.0"},
+        headers=headers,
     )
     response.raise_for_status()
-    return closed_dates_from_payload(response.json(), year)
+    return closed_dates_from_html(response.text, year)
 
 
 def expected_sessions(start: date, end: date, closed_by_year: dict[int, set[date]]) -> list[date]:
