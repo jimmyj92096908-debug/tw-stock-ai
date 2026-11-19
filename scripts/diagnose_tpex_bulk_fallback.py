@@ -84,7 +84,7 @@ def main() -> None:
     results = []
     for target in TARGETS:
         parsed_date = date.fromisoformat(target["trade_date"])
-        form = {"date": parsed_date.strftime("%Y%m%d"), "type": "EW", "response": "json"}
+        form = {"date": parsed_date.strftime("%Y/%m/%d"), "type": "EW", "response": "json"}
         response = session.post(API_URL, data=form, timeout=60)
         record = {
             **target,
