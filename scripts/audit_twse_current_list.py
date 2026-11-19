@@ -78,7 +78,7 @@ def main() -> None:
         "five_year_quotes_downloaded": False
     })
     (out / "twse-current-listed-raw.json").write_bytes(raw)
-    (out / "twse-current-listed-audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\\n", encoding="utf-8")
+    (out / "twse-current-listed-audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     with (out / "twse-current-listed-candidates.csv").open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["stock_id","name","market","listing_date_raw"])
         writer.writeheader(); writer.writerows(report["candidates"])
