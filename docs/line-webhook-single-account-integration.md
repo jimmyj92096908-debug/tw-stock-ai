@@ -53,3 +53,22 @@
 - 對正式 `line_messages` 或其他表寫入
 - 發送真實 LINE 訊息或推播
 - 合併 draft PR #10
+
+## 已取得的舊版文字訊息實證（2026-11-20）
+
+使用者在既有 LINE 官方帳號發出 `6213`、`2330` 後，收到：
+
+```text
+收到你的訊息：6213
+AI 台股投資系統正在建置中。
+```
+
+其中 `2330` 也回覆相同格式，顯示原本 Webhook 能接收並回覆，但還沒有股票指標分析。這只證明這兩個文字情境，不能推論所有舊版指令、追蹤、圖片及群組行為。
+
+## 依舊版實證建立的候選整合（尚未部署）
+
+- `line-stock-analysis/single-account-candidate.mjs` 採用原本可觀察的文字回覆作為不識別指令的後備文字，股票指令轉入現有 `buildReplyText`。
+- 先驗證 LINE HMAC，再處理一對一文字事件；透過注入的 `recordMessage` 介面草擬與原本每日報告相容的收件者紀錄。**沒有正式資料庫 writer，沒有任何部署入口引入此檔**。
+- `line-stock-analysis/tests/single-account-candidate.test.mjs` 使用假 Channel Secret、假使用者 ID、假資料庫與假 LINE Reply API，測試文字、排行榜、封鎖代碼、無效簽章、重送、記錄失敗及非文字事件。
+- **仍有上線阻擋事項**：原版完整功能未知；實際 DB 記錄的交易與重送策略尚未完成。特別是「先記錄、再回覆」在 LINE Reply API 失敗後，若重送被唯一事件 ID 去重，可能造成漏回覆；正式實作前需處理。
+- 因此 GitHub 測試成功仍不是 LINE 正式端到端成功。沒有取得使用者切換授權，絕不更改 `linewebhook`、正式 Webhook URL 或每日報告排程。
