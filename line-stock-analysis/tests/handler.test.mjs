@@ -6,6 +6,22 @@ import {
   verifyLineSignature, formatStockAnalysis, buildReplyText, createWebhookHandler
 } from '../handler.mjs';
 
+import { stockDatabaseUrl } from '../index.mjs';
+
+test('Neon stock database URL selects twstock and preserves TLS settings', () => {
+  const input = 'postgresql://stock_reader:opaque%21secret@db.example.test/postgres?sslmode=require&application_name=test';
+  const result = new URL(stockDatabaseUrl(input));
+  assert.equal(result.pathname, '/twstock');
+  assert.equal(result.username, 'stock_reader');
+  assert.equal(result.password, 'opaque%21secret');
+  assert.equal(result.searchParams.get('sslmode'), 'require');
+  assert.equal(result.searchParams.get('application_name'), 'test');
+  assert.equal(result.host, 'db.example.test');
+  assert.throws(() => stockDatabaseUrl('https://example.com/'), /PostgreSQL/u);
+  assert.throws(() => stockDatabaseUrl(''), /unavailable/u);
+});
+
+
 function lineRequest(payload, secret = 'test-channel-secret', signatureOverride) {
   const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
   const signature = signatureOverride ??
