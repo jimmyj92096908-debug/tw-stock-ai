@@ -28,7 +28,7 @@ class TDCCUniverseCandidateTests(unittest.TestCase):
         ])
         self.assertEqual(result["current_listed_otc_active_candidate_count"], 0)
         self.assertEqual(result["scope_bucket_counts"]["terminated_out_of_scope"], 1)
-        self.assertEqual(result["scope_bucket_counts"]["listed_candidate"], 1)
+        self.assertEqual(result["scope_bucket_counts"]["listed_otc_inactive_or_nonstandard_status_review"], 1)
 
     def test_unknown_market_is_review_bucket(self):
         result = analyze_rows([
