@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import candidate, { scopedStockUrl } from '../single-account-entry.mjs';
+import candidate, { scopedStockUrl, isApprovedStockReadQuery } from '../single-account-entry.mjs';
+import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL } from '../handler.mjs';
 
 test('separate read/write database URLs are forced to twstock without dropping TLS params',()=>{
   const url=new URL(scopedStockUrl(
@@ -28,5 +29,22 @@ test('unapproved entrypoint is disabled by default, without reading DB or sendin
   }finally{
     if(original===undefined)delete process.env.LINE_SINGLE_ACCOUNT_ENABLED;
     else process.env.LINE_SINGLE_ACCOUNT_ENABLED=original;
+  }
+});
+
+test('readonly gateway accepts only three reviewed SELECT statements',()=>{
+  for (const sql of [ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL]) {
+    assert.equal(isApprovedStockReadQuery(sql),true);
+    assert.match(sql.trimStart(),/^(?:SELECT|WITH)\\s/u);
+  }
+  for (const sql of [
+    "INSERT INTO public.line_messages VALUES ('bad')",
+    "DROP TABLE public.daily_prices",
+    "SELECT * FROM public.line_messages",
+    "SELECT * FROM public.daily_prices",
+    "",
+    DATA_STATUS_SQL+";"
+  ]) {
+    assert.equal(isApprovedStockReadQuery(sql),false);
   }
 });
