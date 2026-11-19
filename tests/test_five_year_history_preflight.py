@@ -89,6 +89,21 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different calendar year"):
             closed_dates_from_payload({"stat": "ok", "queryYear": 114, "data": []}, 2026)
 
+    def test_missing_historical_calendar_blocks_expected_and_pending_counts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = build_preflight(
+                date(2025, 12, 31),
+                date(2026, 1, 5),
+                {2026: set()},
+                Path(temp),
+            )
+            self.assertEqual(report["calendar_status"], "incomplete")
+            self.assertEqual(report["calendar_unavailable_years"], [2025])
+            self.assertIsNone(report["official_trading_session_count"])
+            self.assertIsNone(report["expected_market_date_tasks"])
+            self.assertIsNone(report["market_counts"]["twse"]["pending"])
+            self.assertFalse(report["pending_count_is_authoritative"])
+
 
 if __name__ == "__main__":
     unittest.main()
