@@ -59,9 +59,10 @@ jobs:
             --tpex-audit-json audit-output/market-scope/tpex-current/tpex-current-otc-audit.json \
             --output-dir audit-output/market-scope/reconciliation
       - name: Upload raw official sources and audit report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: market-scope-evidence-audit
           path: audit-output/market-scope/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
