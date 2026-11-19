@@ -18,6 +18,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Run scope-audit unit tests
+        env:
+          PYTHONPATH: .
+        run: python -m unittest tests.test_tpex_calendar_candidates tests.test_tdcc_universe_candidates -v
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -32,6 +36,10 @@ jobs:
             --output-dir audit-output/market-scope \
             --report audit-output/market-scope/market-scope-audit.json
           python scripts/parse_tpex_calendar_candidates.py --input-dir audit-output/market-scope/tpex-calendar --output audit-output/market-scope/tpex-calendar-candidates.json
+          python scripts/analyze_tdcc_universe_candidates.py \
+            --input audit-output/market-scope/tdcc-securities-master.csv \
+            --output audit-output/market-scope/tdcc-universe-candidates.json \
+            --candidates-csv audit-output/market-scope/tdcc-current-listed-otc-candidates.csv
       - name: Upload raw official sources and audit report
         uses: actions/upload-artifact@v4
         with:
