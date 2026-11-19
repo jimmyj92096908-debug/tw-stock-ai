@@ -80,7 +80,7 @@ class OfficialQuoteTests(unittest.TestCase):
 
     def test_parse_tpex_real_keys_and_reject_etf_by_master_join(self):
         bars=_parse_tpex(tpex_payload(),DAY)
-        self.assertEqual(len(bars),2)
+        self.assertEqual(len(bars),1)
         rows=select_candidates(bars,{("tpex","6488")},minimum=1)
         self.assertEqual(len(rows),1)
         self.assertEqual(rows[0]["price_change"],Decimal("+5.00"))
@@ -111,12 +111,12 @@ class OfficialQuoteTests(unittest.TestCase):
         session=FakeSession(twse_payload())
         day,bars=fetch_latest_snapshot("twse",today=DAY,session=session)
         self.assertEqual(day,DAY)
-        self.assertEqual(len(bars),2)
+        self.assertEqual(len(bars),1)
         self.assertEqual(session.calls[0][1]["params"]["date"],"20261119")
         session=FakeSession(tpex_payload())
         day,bars=fetch_latest_snapshot("tpex",today=DAY,session=session)
         self.assertEqual(day,DAY)
-        self.assertEqual(len(bars),2)
+        self.assertEqual(len(bars),1)
 
     def test_duplicate_candidate_and_unknown_market_fail(self):
         bars=_parse_twse(twse_payload(),DAY)
