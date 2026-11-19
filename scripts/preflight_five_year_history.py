@@ -28,12 +28,12 @@ def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
     # actually represented by the response, not the requested query parameter.
     actual_years: set[int] = set()
     title = str(payload.get("title", ""))
-    title_match = re.search(r"(?<!\\d)(\\d{2,4})\\s*年", title)
+    title_match = re.search(r"(?<!\d)(\d{2,4})\s*年", title)
     if title_match:
         value = int(title_match.group(1))
         actual_years.add(value + 1911 if value < 1911 else value)
     response_date = str(payload.get("date", "")).strip()
-    if re.fullmatch(r"\\d{8}", response_date):
+    if re.fullmatch(r"\d{8}", response_date):
         actual_years.add(int(response_date[:4]))
     if actual_years != {year}:
         raise ValueError(
