@@ -17,7 +17,7 @@ from typing import Any
 
 import requests
 
-CALENDAR_URL = "https://www.twse.com.tw/holidaySchedule/holidaySchedule"
+CALENDAR_URL = "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule"
 CLOSED_WORDS = ("放假", "補假", "市場無交易", "休市")
 MARKETS = ("twse", "tpex")
 
@@ -28,6 +28,11 @@ def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
     # queryYear may be ignored by the public endpoint. Validate the year
     # actually represented by the response, not the requested query parameter.
     actual_years: set[int] = set()
+    # The official JSON endpoint returns queryYear as the ROC year.
+    query_year = str(payload.get("queryYear", "")).strip()
+    if query_year.isdigit():
+        value = int(query_year)
+        actual_years.add(value + 1911 if value < 1911 else value)
     title = str(payload.get("title", ""))
     title_match = re.search(r"(?<!\d)(\d{2,4})\s*年", title)
     if title_match:
@@ -157,21 +162,22 @@ def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; tw-stock-ai-history-preflight/1.0)",
         "Referer": "https://www.twse.com.tw/zh/trading/holiday.html",
+        "Accept": "application/json, text/plain, */*",
     }
-    landing = session.get(
-        "https://www.twse.com.tw/zh/trading/holiday.html",
-        timeout=(8, 20),
-        headers=headers,
-    )
-    landing.raise_for_status()
     response = session.get(
         CALENDAR_URL,
-        params={"queryYear": str(roc_year), "response": "html", "_": str(time.time_ns())},
+        params={"queryYear": str(roc_year), "response": "json"},
         timeout=(8, 20),
         headers=headers,
     )
     response.raise_for_status()
-    return closed_dates_from_html(response.text, year)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ValueError(f"TWSE calendar response is not valid JSON for {year}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"TWSE calendar JSON has unexpected shape for {year}")
+    return closed_dates_from_payload(payload, year)
 
 
 def expected_sessions(start: date, end: date, closed_by_year: dict[int, set[date]]) -> list[date]:
