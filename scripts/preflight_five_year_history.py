@@ -65,8 +65,12 @@ class _CalendarHTMLParser(HTMLParser):
         self.current_row: list[str] | None = None
         self.current_cell: list[str] | None = None
         self.page_text: list[str] = []
+        self.heading_text: list[str] = []
+        self.in_heading = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"title", "h1", "h2", "h3", "h4", "h5", "h6"}:
+            self.in_heading = True
         if tag == "tr":
             self.current_row = []
         elif tag in {"td", "th"} and self.current_row is not None:
@@ -76,10 +80,14 @@ class _CalendarHTMLParser(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         self.page_text.append(data)
+        if self.in_heading:
+            self.heading_text.append(data)
         if self.current_cell is not None:
             self.current_cell.append(data)
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in {"title", "h1", "h2", "h3", "h4", "h5", "h6"}:
+            self.in_heading = False
         if tag in {"td", "th"} and self.current_cell is not None and self.current_row is not None:
             self.current_row.append(" ".join("".join(self.current_cell).split()))
             self.current_cell = None
@@ -92,8 +100,8 @@ class _CalendarHTMLParser(HTMLParser):
 def closed_dates_from_html(html: str, year: int) -> set[date]:
     parser = _CalendarHTMLParser()
     parser.feed(html)
-    page_text = " ".join(parser.page_text)
-    year_matches = re.findall(r"(?<!\d)(\d{2,4})\s*年", page_text)
+    heading_text = " ".join(parser.heading_text)
+    year_matches = re.findall(r"(?<!\d)(\d{2,4})\s*年", heading_text)
     actual_years = {
         int(value) + 1911 if int(value) < 1911 else int(value)
         for value in year_matches
