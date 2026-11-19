@@ -34,7 +34,7 @@ SOURCES = {
 
 CODE_FIELDS = (
     "證券代號", "有價證券代號", "權證代號", "股票代號",
-    "代號", "SecuritiesCompanyCode", "SecurityCode", "Code", "code",
+    "代號", "基金代號", "SecuritiesCompanyCode", "SecurityCode", "Code", "code",
 )
 
 
