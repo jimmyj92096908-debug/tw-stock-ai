@@ -1,0 +1,185 @@
+"""Read-only data coverage and freshness audit for the Neon twstock database.
+
+No schema changes, writes, market-data downloads, LINE messages, or credentials
+are included in the report. Use a read-only Postgres role where available.
+"""
+from __future__ import annotations
+
+import json
+import os
+from datetime import date
+from typing import Any
+
+import psycopg
+from psycopg.rows import dict_row
+
+
+GLOBAL_DATES_SQL = """
+SELECT
+  (SELECT MAX(trade_date) FROM public.daily_prices WHERE close IS NOT NULL)
+    AS latest_price_date,
+  (SELECT MAX(trade_date) FROM public.daily_technicals)
+    AS latest_technical_date,
+  (SELECT MAX(trade_date) FROM public.daily_smc)
+    AS latest_smc_date,
+  (SELECT MAX(as_of_date) FROM public.daily_composite_scores
+    WHERE total_score IS NOT NULL) AS latest_score_date
+"""
+
+COVERAGE_SQL = """
+WITH per_stock AS (
+  SELECT sm.market, sm.stock_id,
+    MAX(p.trade_date) FILTER (WHERE p.close IS NOT NULL) AS last_price
+  FROM public.stock_master sm
+  LEFT JOIN public.daily_prices p
+    ON p.market=sm.market AND p.stock_id=sm.stock_id
+  GROUP BY sm.market, sm.stock_id
+)
+SELECT market, COUNT(*)::int AS universe,
+  COUNT(*) FILTER (WHERE last_price IS NOT NULL)::int AS priced,
+  COUNT(*) FILTER (WHERE last_price IS NULL)::int AS missing_prices,
+  COUNT(*) FILTER (
+    WHERE last_price IS NOT NULL
+      AND last_price < %s::date - INTERVAL '7 days'
+  )::int AS over_7_days_behind_latest
+FROM per_stock
+GROUP BY market ORDER BY market
+"""
+
+SCORE_MATCH_SQL = """
+WITH newest AS (
+  SELECT MAX(as_of_date) AS score_date
+  FROM public.daily_composite_scores WHERE total_score IS NOT NULL
+)
+SELECT newest.score_date,
+  COUNT(*)::int AS scored,
+  COUNT(*) FILTER (WHERE p.close IS NOT NULL)::int AS matched_price,
+  COUNT(*) FILTER (WHERE p.close IS NULL)::int AS missing_price
+FROM newest
+LEFT JOIN public.daily_composite_scores c
+  ON c.as_of_date=newest.score_date AND c.total_score IS NOT NULL
+LEFT JOIN public.daily_prices p
+  ON p.market=c.market AND p.stock_id=c.stock_id
+ AND p.trade_date=c.as_of_date
+GROUP BY newest.score_date
+"""
+
+SAMPLE_CODES = ("2330", "6488", "6213")
+SAMPLES_SQL = """
+SELECT sm.market,sm.stock_id,sm.stock_name,
+  MAX(p.trade_date) FILTER (WHERE p.close IS NOT NULL) AS last_price
+FROM public.stock_master sm
+LEFT JOIN public.daily_prices p
+  ON p.market=sm.market AND p.stock_id=sm.stock_id
+WHERE sm.stock_id=ANY(%s)
+GROUP BY sm.market,sm.stock_id,sm.stock_name
+ORDER BY sm.market,sm.stock_id
+"""
+
+REFRESH_STATUS_SQL = """
+SELECT CASE WHEN last_attempt_at IS NULL THEN 'never_attempted'
+  ELSE last_status END AS status, COUNT(*)::int AS total
+FROM public.market_data_refresh_state
+GROUP BY 1 ORDER BY 1
+"""
+
+
+def iso_date(value: date | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)[:10]
+
+
+def collect_audit(conn: Any) -> dict[str, Any]:
+    """A snapshot of coverage without changing database state."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(GLOBAL_DATES_SQL)
+        dates = cur.fetchone()
+        latest = dates["latest_price_date"]
+        # This one placeholder receives a trusted date read from the DB.
+        cur.execute(COVERAGE_SQL, (latest,))
+        coverage = [dict(row) for row in cur.fetchall()]
+        cur.execute(SCORE_MATCH_SQL)
+        score = dict(cur.fetchone())
+        cur.execute(SAMPLES_SQL, (list(SAMPLE_CODES),))
+        samples = [dict(row) for row in cur.fetchall()]
+        # Early databases may not have this optional refresh-state table.
+        cur.execute("SELECT to_regclass('public.market_data_refresh_state') AS name")
+        exists = cur.fetchone()["name"] is not None
+        refresh = []
+        if exists:
+            cur.execute(REFRESH_STATUS_SQL)
+            refresh = [dict(row) for row in cur.fetchall()]
+
+    return {
+        "latest": {name: iso_date(value) for name, value in dict(dates).items()},
+        "coverage": coverage,
+        "score": {**score, "score_date": iso_date(score["score_date"])},
+        "samples": [
+            {**row, "last_price": iso_date(row["last_price"])}
+            for row in samples
+        ],
+        "refresh_state": refresh,
+    }
+
+
+def format_audit(audit: dict[str, Any]) -> str:
+    latest = audit["latest"]
+    lines = [
+        "twstock 唯讀資料品質檢查",
+        "行情：" + (latest["latest_price_date"] or "尚無"),
+        "技術：" + (latest["latest_technical_date"] or "尚無"),
+        "SMC：" + (latest["latest_smc_date"] or "尚無"),
+        "評分：" + (latest["latest_score_date"] or "尚無"),
+    ]
+    total_universe = sum(row["universe"] for row in audit["coverage"])
+    total_priced = sum(row["priced"] for row in audit["coverage"])
+    lines.append(f"有行情股票：{total_priced}/{total_universe}")
+    for row in audit["coverage"]:
+        lines.append(
+            f"{row['market']}：{row['priced']}/{row['universe']} 有行情；"
+            f"無行情 {row['missing_prices']}；"
+            f"落後最新行情超過 7 日 {row['over_7_days_behind_latest']}"
+        )
+    score = audit["score"]
+    lines.append(
+        f"評分日 {score['score_date'] or '尚無'}："
+        f"評分 {score['scored']}；有同日收盤價 {score['matched_price']}；"
+        f"缺同日價 {score['missing_price']}"
+    )
+    for row in audit["samples"]:
+        lines.append(
+            f"{row['stock_id']} {row['stock_name']}：{row['last_price'] or '無行情'}"
+        )
+    for row in audit["refresh_state"]:
+        lines.append(f"輪替更新 {row['status']}：{row['total']}")
+    if total_universe and total_priced < total_universe:
+        lines.append("注意：資料尚未涵蓋全部候選股票，不可視為全市場分析。")
+    return "\n".join(lines)
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="唯讀檢查股票資料覆蓋率與日期")
+    parser.add_argument("--json", action="store_true", help="JSON 形式輸出")
+    args = parser.parse_args()
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL 未設定；請使用唯讀資料庫連線。")
+
+    with psycopg.connect(url, connect_timeout=20, row_factory=dict_row) as conn:
+        # All SQL statements are SELECT; read-only transaction blocks writes.
+        with conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            audit = collect_audit(conn)
+    if args.json:
+        print(json.dumps(audit, ensure_ascii=False, indent=2))
+    else:
+        print(format_audit(audit))
+
+
+if __name__ == "__main__":
+    main()
