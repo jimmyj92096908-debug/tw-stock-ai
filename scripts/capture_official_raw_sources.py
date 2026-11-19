@@ -98,13 +98,36 @@ def find_tpex_monthly_row(payload: dict | None, trade_date: str) -> list | None:
     return None
 
 
-def find_tpex_legacy_daily_row(payload: dict | None, stock_id: str) -> list | None:
-    """Find a stock row in TPEx's public historical daily-close JSON response."""
+def tpex_legacy_response_date(payload: dict | None) -> str | None:
+    """Read the actual date carried by the TPEx legacy response, not the query string."""
     if not isinstance(payload, dict):
         return None
-    for row in payload.get("aaData") or []:
-        if row and str(row[0]).strip() == stock_id:
-            return row
+    dates: set[str] = set()
+    raw_date = str(payload.get("date") or "").strip()
+    if re.fullmatch(r"\\d{8}", raw_date):
+        try:
+            dates.add(date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:8])).isoformat())
+        except ValueError:
+            return None
+    for table in payload.get("tables") or []:
+        parsed = roc_date(table.get("date"))
+        if parsed:
+            dates.add(parsed)
+    return next(iter(dates)) if len(dates) == 1 else None
+
+
+def find_tpex_legacy_daily_row(payload: dict | None, stock_id: str) -> list | None:
+    """Find a stock row using the endpoint's declared fields; supports its current tables/data schema."""
+    if not isinstance(payload, dict):
+        return None
+    for table in payload.get("tables") or []:
+        fields = [str(value).strip() for value in (table.get("fields") or [])]
+        code_index = next((i for i, field in enumerate(fields) if field in {"代號", "證券代號", "股票代號"}), None)
+        if code_index is None:
+            continue
+        for row in table.get("data") or []:
+            if len(row) > code_index and str(row[code_index]).strip() == stock_id:
+                return row
     return None
 
 
@@ -218,6 +241,12 @@ def main() -> None:
                     row = find_tpex_monthly_row(item["payload"], target["trade_date"])
                 elif name == "legacy_public_daily_close":
                     row = find_tpex_legacy_daily_row(item["payload"], target["stock_id"])
+                    response_date = tpex_legacy_response_date(item["payload"])
+                    item["response_trade_date"] = response_date
+                    item["requested_trade_date_match"] = response_date == target["trade_date"]
+                    item["candidate_raw_row"] = row
+                    if response_date != target["trade_date"]:
+                        row = None
                 elif name == "twse_monthly_individual":
                     row = find_twse_row(item["payload"], target["trade_date"])
                 elif name == "twse_daily_market":
