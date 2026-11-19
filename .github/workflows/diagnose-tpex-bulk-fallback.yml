@@ -35,5 +35,6 @@ jobs:
           name: tpex-bulk-fallback-diagnostic
           path: |
             artifacts/tpex-bulk-fallback/
-            artifacts/tpex-mi-pricing-discovery/          if-no-files-found: error
+            artifacts/tpex-mi-pricing-discovery/
+          if-no-files-found: error
           retention-days: 14
