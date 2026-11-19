@@ -115,8 +115,15 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    scope_counts: dict[str, int] = {}
+    for record in result["records"]:
+        for occurrence in record["occurrences"]:
+            label = occurrence["scope_classification"]
+            scope_counts[label] = scope_counts.get(label, 0) + 1
     print(json.dumps({
         "record_count": result["record_count"],
+        "occurrence_count": sum(len(x["occurrences"]) for x in result["records"]),
+        "scope_classification_counts": dict(sorted(scope_counts.items())),
         "calendar_days_accepted": False,
         "trading_sessions_generated": False,
         "output": str(output),
