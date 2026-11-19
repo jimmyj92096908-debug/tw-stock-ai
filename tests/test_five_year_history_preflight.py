@@ -8,6 +8,7 @@ from scripts.preflight_five_year_history import (
     build_preflight,
     closed_dates_from_payload,
     expected_sessions,
+    fetch_closed_dates,
     read_latest_manifest,
 )
 
@@ -103,6 +104,23 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             self.assertIsNone(report["expected_market_date_tasks"])
             self.assertIsNone(report["market_counts"]["twse"]["pending"])
             self.assertFalse(report["pending_count_is_authoritative"])
+
+    def test_calendar_fetch_uses_gregorian_year_and_cache_buster(self):
+        class Response:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {"stat": "ok", "queryYear": 2024, "data": []}
+
+        class Session:
+            def get(self, url, params, **kwargs):
+                self.params = params
+                return Response()
+
+        session = Session()
+        self.assertEqual(fetch_closed_dates(2024, session), set())
+        self.assertEqual(session.params["queryYear"], "2024")
+        self.assertTrue(session.params["_"])
 
 
 if __name__ == "__main__":
