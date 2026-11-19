@@ -11,6 +11,7 @@ def sample_rows(count=260):
             "market": "twse",
             "stock_id": "2330",
             "trade_date": f"2026-{(index // 28) + 1:02d}-{(index % 28) + 1:02d}",
+            "open": close + 0.5,
             "high": close + 2,
             "low": close - 2,
             "close": close,
