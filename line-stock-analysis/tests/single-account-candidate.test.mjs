@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { createSingleAccountCandidate, observedLegacyReply } from '../single-account-candidate.mjs';
+import {
+  createSingleAccountCandidate, observedLegacyReply
+} from '../single-account-candidate.mjs';
 import { ANALYSIS_SQL, RANKING_SQL } from '../handler.mjs';
 
+const TIME = Date.parse('2026-11-20T00:50:00Z');
 function message(text, id='evt-1', extras={}) {
   return {
-    type:'message', webhookEventId:id,
+    type:'message', webhookEventId:id, timestamp:TIME,
     source:{type:'user',userId:'U-test-not-a-real-user'},
     message:{type:'text',text},replyToken:'fake-reply-token',
     ...extras
@@ -32,29 +35,57 @@ const ranking = [
 ];
 
 function mock(override={}) {
-  const logs=[], replies=[], queries=[];
+  const logs=[], replies=[], queries=[], replyStates=new Map();
+  const knownLogs=new Set();
+  const store={
+    async recordInbound(record) {
+      if(!knownLogs.has(record.event_id)){
+        knownLogs.add(record.event_id);
+        logs.push(record);
+      }
+    },
+    async claimReply(id) {
+      const previous=replyStates.get(id);
+      if(previous?.state==='sent') return {acquired:false,reason:'sent'};
+      if(previous?.state==='sending') return {acquired:false,reason:'busy'};
+      if(previous?.attempts>=3) return {acquired:false,reason:'exhausted'};
+      const attempts=(previous?.attempts ?? 0)+1;
+      const attemptKey='fake-attempt-'+attempts;
+      replyStates.set(id,{attempts,state:'sending',attemptKey});
+      return {acquired:true,attemptKey};
+    },
+    async completeReply(id,key) {
+      const current=replyStates.get(id);
+      if(current.state!=='sending'||current.attemptKey!==key) throw Error('invalid attempt');
+      current.state='sent';
+    },
+    async failReply(id,key) {
+      const current=replyStates.get(id);
+      if(current.state!=='sending'||current.attemptKey!==key) throw Error('invalid attempt');
+      current.state='retryable';
+    }
+  };
   const handler = createSingleAccountCandidate({
-    channelSecret:'mock-secret',
+    channelSecret:'mock-secret', now:()=>TIME, store,
     query:async(sql,args)=>{
       queries.push({sql,args});
       if(sql===RANKING_SQL) return {rows:ranking};
       if(sql===ANALYSIS_SQL) return {rows:[{...sample,stock_id:args[0]}]};
       throw new Error('unexpected SQL');
     },
-    recordMessage:async row=>{logs.push(row);return true;},
     sendReply:async(token,body)=>{replies.push({token,body});},
     ...override
   });
-  return {handler,logs,replies,queries};
+  return {handler,store,logs,replies,queries,replyStates};
 }
 
-test('observed fallback matches screenshot and never invents stock analysis',()=>{
+test('observed fallback matches screenshot but is not a full legacy implementation',()=>{
   assert.equal(observedLegacyReply('6213'),
     '收到你的訊息：6213\nAI 台股投資系統正在建置中。');
 });
 
-test('single account direct text 2330 records report-compatible recipient and analyzes stock',async()=>{
-  const {handler,logs,replies,queries}=mock();
+test('stock 2330 records a report-compatible sender independently of reply claim',async()=>{
+  const {handler,logs,replies,queries,replyStates}=mock();
   const res=await handler(signedRequest([message('2330')]));
   assert.equal(res.status,200);
   assert.deepEqual(logs,[{
@@ -63,11 +94,11 @@ test('single account direct text 2330 records report-compatible recipient and an
   }]);
   assert.match(replies[0].body,/2330 台積電/u);
   assert.match(replies[0].body,/2026-10-30/u);
-  assert.equal(queries.length,1);
   assert.deepEqual(queries[0].args,['2330']);
+  assert.equal(replyStates.get('evt-1').state,'sent');
 });
 
-test('list, rank and excluded 1808 use new stock handling while unknown text gets observed old reply',async()=>{
+test('list, rank, excluded 1808 and old fallback are routed separately',async()=>{
   const {handler,replies,logs}=mock();
   const inputs=['清單','1','1808','你好'];
   for(let i=0;i<inputs.length;i++){
@@ -89,36 +120,99 @@ test('invalid signature cannot write records, query DB or send LINE reply',async
   assert.equal(queries.length,0);
 });
 
-test('group, follow and nontext events are not guessed or enrolled in daily report',async()=>{
+test('group, follow, nontext and standby events are not enrolled or replied',async()=>{
   const {handler,logs,replies}=mock();
   const events=[
     message('2330','evt-group',{source:{type:'group',groupId:'G-test'}}),
     {type:'follow',webhookEventId:'evt-follow',replyToken:'token',source:{type:'user',userId:'U-test'}},
-    {type:'message',webhookEventId:'evt-image',replyToken:'token',source:{type:'user',userId:'U-test'},message:{type:'image'}}
+    {type:'message',webhookEventId:'evt-image',replyToken:'token',source:{type:'user',userId:'U-test'},message:{type:'image'}},
+    message('2330','evt-standby',{mode:'standby'})
   ];
   assert.equal((await handler(signedRequest(events))).status,200);
   assert.equal(logs.length,0);
   assert.equal(replies.length,0);
 });
 
-test('duplicate event is not replied twice if database adapter reports conflict',async()=>{
-  let insertCalls=0;
-  const {handler,replies}=mock({recordMessage:async()=>++insertCalls===1});
+test('redelivered already-sent event neither duplicates recipient nor sends again',async()=>{
+  const {handler,replies,logs}=mock();
   assert.equal((await handler(signedRequest([message('2330')]))).status,200);
-  assert.equal((await handler(signedRequest([message('2330')]))).status,200);
+  const redelivered=message('2330','evt-1',{deliveryContext:{isRedelivery:true}});
+  assert.equal((await handler(signedRequest([redelivered]))).status,200);
   assert.equal(replies.length,1);
+  assert.equal(logs.length,1);
 });
 
-test('database log failures do not trigger LINE replies and are surfaced as retryable errors',async()=>{
-  const {handler,replies}=mock({recordMessage:async()=>{throw Error('private connection info');}});
+test('reply failure after inbound INSERT can retry without losing the reply',async()=>{
+  let attempts=0;
+  const {handler,logs,replyStates}=mock({
+    sendReply:async()=>{attempts++; if(attempts===1) throw Error('temporary LINE failure');}
+  });
+  assert.equal((await handler(signedRequest([message('2330')]))).status,502);
+  assert.equal(logs.length,1);
+  assert.equal(replyStates.get('evt-1').state,'retryable');
+  const redelivered=message('2330','evt-1',{deliveryContext:{isRedelivery:true}});
+  assert.equal((await handler(signedRequest([redelivered]))).status,200);
+  assert.equal(replyStates.get('evt-1').state,'sent');
+  assert.equal(logs.length,1);
+  assert.equal(attempts,2);
+});
+
+test('3 failed attempts bound retry loop even on further redelivery',async()=>{
+  let attempted=0;
+  const {handler,replyStates}=mock({
+    sendReply:async()=>{attempted++;throw Error('LINE reply fails');}
+  });
+  for(let i=0;i<3;i++){
+    assert.equal((await handler(signedRequest([message('2330')]))).status,502);
+  }
+  assert.equal(replyStates.get('evt-1').attempts,3);
+  assert.equal((await handler(signedRequest([message('2330')]))).status,200);
+  assert.equal(attempted,3);
+});
+
+test('in-progress claim prevents concurrent duplicate send and requests redelivery',async()=>{
+  const m=mock();
+  m.replyStates.set('evt-1',{state:'sending',attempts:1,attemptKey:'active'});
+  assert.equal((await m.handler(signedRequest([message('2330')]))).status,503);
+  assert.equal(m.replies.length,0);
+});
+
+test('expired original reply token is not attempted but direct user is enrolled',async()=>{
+  const m=mock();
+  const expired=message('2330','evt-1',{timestamp:TIME-21*60*1000});
+  assert.equal((await m.handler(signedRequest([expired]))).status,200);
+  assert.equal(m.logs.length,1);
+  assert.equal(m.replies.length,0);
+  assert.equal(m.replyStates.size,0);
+});
+
+test('recording errors fail closed before any LINE reply',async()=>{
+  const base=mock();
+  const store={...base.store,recordInbound:async()=>{throw Error('private database details')}};
+  const {handler,replies}=mock({store});
   const r=await handler(signedRequest([message('2330')]));
   assert.equal(r.status,502);
   assert.equal(replies.length,0);
-  assert.doesNotMatch(await r.text(),/private connection/u);
+  assert.doesNotMatch(await r.text(),/private/u);
 });
 
-test('missing LINE secret disables integration without exposing stored records',async()=>{
-  const {handler,replies}=mock({channelSecret:''});
-  assert.equal((await handler(signedRequest([message('2330')]))).status,503);
-  assert.equal(replies.length,0);
+test('acknowledgement failure is explicitly unconfirmed, not reported as success',async()=>{
+  const base=mock();
+  const store={...base.store,completeReply:async()=>{throw Error('db update failed')}};
+  const {handler,replies}=mock({store});
+  const r=await handler(signedRequest([message('2330')]));
+  assert.equal(r.status,502);
+  assert.equal(replies.length,1);
+  assert.match(await r.text(),/unconfirmed/u);
+});
+
+test('missing event ID or store fail closed; health endpoint stays available',async()=>{
+  const m=mock();
+  assert.equal((await m.handler(signedRequest([message('2330',undefined,{webhookEventId:undefined})]))).status,400);
+  assert.equal(m.logs.length,0);
+  const disabled=mock({store:undefined});
+  // undefined override uses the default store; explicit null is required.
+  const missing=mock({store:null});
+  assert.equal((await missing.handler(signedRequest([message('2330')]))).status,503);
+  assert.equal((await missing.handler(new Request('https://test.invalid/health'))).status,200);
 });
