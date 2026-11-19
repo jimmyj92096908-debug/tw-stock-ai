@@ -1,6 +1,6 @@
 import unittest
 from scripts.capture_official_raw_sources import (
-    TARGETS, build_tpex_bulk_params, find_tpex_monthly_row, find_twse_row, normalized_row, roc_date,
+    TARGETS, build_tpex_bulk_params, find_tpex_legacy_daily_row, find_tpex_monthly_row, find_twse_row, normalized_row, roc_date,
 )
 
 
@@ -26,6 +26,11 @@ class OfficialRawCaptureTests(unittest.TestCase):
         row = find_tpex_monthly_row(payload, "2026-10-05")
         self.assertEqual(row[0], "115/10/05")
         self.assertIsNone(find_tpex_monthly_row(payload, "2026-10-06"))
+
+    def test_tpex_public_daily_close_row_by_stock_id(self):
+        payload = {"aaData": [["1259", "安心", "66.00", "-2.00", "66.00", "66.00", "66.00"]]}
+        self.assertEqual(find_tpex_legacy_daily_row(payload, "1259")[0], "1259")
+        self.assertIsNone(find_tpex_legacy_daily_row(payload, "1264"))
 
     def test_twse_row_exact_date(self):
         payload = {"data": [["115/11/18", "1,000", "20", "10", "11", "9", "10", "0", "12"]]}
