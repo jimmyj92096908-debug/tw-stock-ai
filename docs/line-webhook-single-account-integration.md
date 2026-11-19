@@ -138,3 +138,23 @@ AI 台股投資系統正在建置中。
 4. 就算保留所有非股票事件舊路徑，仍有短暫失效、LINE token 逾時、混合事件重送、舊函式回覆失敗等剩餘風險，因此不能宣稱 exactly-once 或正式可用。
 
 結論：分流方案可在**一個 LINE 官方帳號**下保留原本的訊息路徑，同時新增股票指令，但仍處於未部署的測試階段。
+
+## 第四階段：時間限制、防止誤攔截、可打包驗證（2026-11-20）
+
+- 依 LINE 官方 Reply API 規則區分兩種期限：一般 webhook 回覆 token 應於**收到 webhook 後 1 分鐘內**使用；重送的 token 也應於收到重送 webhook 後 1 分鐘內使用，且**事件發生後 20 分鐘**即不可使用。程式採用保守的 50 秒處理上限和 19 分鐘重送上限；不可聲稱保證在上限內一定成功。
+- `single-account-candidate.mjs` 的 `isReplyTokenEligible` 採接收時間判斷，避免把原始事件 `timestamp` 誤當唯一的回覆期限；若資料庫查詢耗盡回覆時間，釋放申領並回覆 HTTP 503，避免嘗試使用可能已逾期的 token。
+- `single-account-gateway.mjs` 僅攔截具備**一對一私人 user ID、非空 reply token、有效 webhookEventId 及文字訊息**的股票事件。缺少必要欄位的模糊事件改走原本 `linewebhook` 路徑，不由新版靜默吃掉。
+- 新增 `build-candidate.mjs`、`npm run bundle:candidate`，產生 `line-stock-analysis/candidate-dist/index.mjs`。CI 只做建置、語法檢查及**未啟用時 HTTP 503**驗證；此檔不會部署、不會上傳為正式部署包。
+- 原本 `build.mjs` 保持不變；正式自動測試的可部署 ZIP 仍僅包含既有 `dist/index.mjs`。
+- 新增時間窗口單元測試、慢速資料庫查詢、遺失事件 ID / User ID / reply token 的分流測試。
+- 參考文件：[LINE Messaging API 回覆 token](https://developers.line.biz/en/reference/messaging-api/#send-reply-message) 及 [LINE Webhook redelivery](https://developers.line.biz/en/docs/messaging-api/receiving-messages/#redeliver-a-webhook-that-failed-to-be-received)。
+
+### 正式切換後的回復演練（僅作為計畫，未執行）
+
+1. 在任何切換前，在受控設定紀錄**原有** LINE Developers Webhook URL（原本 `linewebhook`），並核對 Neon 現用部署版本；不要將 Secret、Token 或私人訊息放進紀錄。
+2. 若新閘道無法完成預期回覆，**優先把 LINE Developers Webhook URL 恢復原本 `linewebhook` URL**，再驗證一般文字訊息可回覆、每日報告收件者仍可讀取、GitHub 排程未異動。
+3. Webhook URL 還指向新閘道時，不應單獨將 `LINE_SINGLE_ACCOUNT_ENABLED` 關閉當作回復，因為這只會讓新入口回 HTTP 503；必須先恢復舊 URL。
+4. 任何新建立的 `line_reply_delivery` 表、最小權限角色與紀錄不自動刪除；先完成事故分析和保存必要稽核資料。若要移除須另行取得資料庫異動授權。
+5. 回復後確認無重複 LINE 回覆、無錯誤代碼、無新增非預期收件者；若需切換回新閘道，先重新完成測試及取得授權。
+
+**開發狀態：此分流閘道尚未部署；真實 LINE Reply API、舊 `linewebhook` 轉送與資料庫最小權限尚未進行端到端驗收。**
