@@ -11,6 +11,7 @@ def sample_rows(count=260):
             "market": "twse",
             "stock_id": "2330",
             "trade_date": f"2026-{(index // 28) + 1:02d}-{(index % 28) + 1:02d}",
+            "open": close + 0.5,
             "high": close + 2,
             "low": close - 2,
             "close": close,
@@ -46,11 +47,13 @@ class TechnicalIndicatorsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compute_indicators(rows)
 
-    def test_invalid_ohlc_is_rejected(self):
-        rows = sample_rows(3)
-        rows[1]["close"] = rows[1]["high"] + 1
-        with self.assertRaises(ValueError):
-            compute_indicators(rows)
+    def test_invalid_ohlc_row_is_excluded_without_aborting_series(self):
+        rows = sample_rows(20)
+        rows[5]["close"] = rows[5]["high"] + 1
+        result = compute_indicators(rows)
+        for field in ("ma5", "ma240", "rsi14", "volume_ma5", "volume_ma20", "atr14"):
+            self.assertIsNone(result[5][field])
+        self.assertIsNotNone(result[6]["ma5"])
 
     def test_empty_input(self):
         self.assertEqual(compute_indicators([]), [])
@@ -70,6 +73,9 @@ class TechnicalIndicatorsTests(unittest.TestCase):
         self.assertIsNotNone(result[-1]["ma240"])
         self.assertIsNotNone(result[-1]["rsi14"])
         self.assertIsNotNone(result[-1]["atr14"])
+        # 成交量雖然大於 0，但缺少 OHLC 的資料不得污染量均線。
+        self.assertIsNone(result[100]["volume_ma5"])
+        self.assertIsNotNone(result[101]["volume_ma5"])
 
 
 if __name__ == "__main__":

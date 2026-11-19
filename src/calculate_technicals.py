@@ -38,7 +38,7 @@ def calculate_stock(conn: psycopg.Connection, market: str, stock_id: str) -> int
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT market, stock_id, trade_date, high, low, close, volume
+            SELECT market, stock_id, trade_date, open, high, low, close, volume
             FROM daily_adjusted_prices
             WHERE market=%s AND stock_id=%s
             ORDER BY trade_date

@@ -9,6 +9,11 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any, Iterable
 
+try:
+    from .ohlc_quality import classify_ohlc_row
+except ImportError:  # 支援以 src/ 作為 PYTHONPATH 的 GitHub Actions 執行方式
+    from ohlc_quality import classify_ohlc_row
+
 MA_WINDOWS = (5, 10, 13, 20, 34, 55, 60, 120, 240)
 RSI_PERIOD = 14
 ATR_PERIOD = 14
@@ -118,10 +123,16 @@ def compute_indicators(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         if dates and trade_date <= dates[-1]:
             raise ValueError("日 K 必須依 trade_date 嚴格遞增且不可重複")
         dates.append(trade_date)
-        close = _number(row.get("close"), "close", index)
-        high = _number(row.get("high"), "high", index)
-        low = _number(row.get("low"), "low", index)
-        volume = _number(row.get("volume"), "volume", index)
+        quality = classify_ohlc_row(row)
+        if quality.eligible_for_indicators:
+            close = _number(row.get("close"), "close", index)
+            high = _number(row.get("high"), "high", index)
+            low = _number(row.get("low"), "low", index)
+            volume = _number(row.get("volume"), "volume", index)
+        else:
+            # 缺價、來源缺價或 OHLC 不一致：保留該交易日輸出列，
+            # 但不讓其價格或成交量污染任何價格／量能指標窗口。
+            close = high = low = volume = None
         if high is not None and low is not None and high < low:
             raise ValueError(f"第 {index} 筆 high 小於 low")
         if close is not None and high is not None and close > high:
