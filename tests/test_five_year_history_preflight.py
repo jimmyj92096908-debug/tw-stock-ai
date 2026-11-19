@@ -89,7 +89,7 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             self.assertEqual(report["market_counts"]["tpex"]["pending"], 1)
 
     def test_reject_calendar_wrong_year(self):
-        with self.assertRaisesRegex(ValueError, "different calendar year"):
+        with self.assertRaisesRegex(ValueError, "instead of requested"):
             closed_dates_from_payload({"stat": "ok", "queryYear": 115, "title": "116 年市場開休市日期", "date": "20270101", "data": []}, 2026)
 
     def test_missing_historical_calendar_blocks_expected_and_pending_counts(self):
