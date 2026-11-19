@@ -9,7 +9,6 @@ import argparse, csv, hashlib, json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-import requests
 
 URL = "https://openapi.twse.com.tw/v1/opendata/t187ap03_L"
 TIMEOUT = (8, 25)
@@ -63,6 +62,7 @@ def main() -> None:
     p.add_argument("--output-dir", default="audit-output/market-scope/twse-current")
     a = p.parse_args()
     out = Path(a.output_dir); out.mkdir(parents=True, exist_ok=True)
+    import requests
     response = requests.get(URL, timeout=TIMEOUT, headers={"User-Agent":"tw-stock-ai-universe-audit/1.0"})
     response.raise_for_status()
     raw = response.content
