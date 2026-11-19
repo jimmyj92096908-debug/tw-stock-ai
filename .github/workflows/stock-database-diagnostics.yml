@@ -12,6 +12,8 @@ on:
       - "tests/test_stock_db_audit.py"
       - "src/official_market_feed.py"
       - "src/official_snapshot_ingest.py"
+      - "src/targeted_history_refresh.py"
+      - "tests/test_targeted_history_refresh.py"
       - "tests/test_official_market_feed.py"
       - "tests/test_official_snapshot_db.py"
       - "tests/test_refresh_rotation_db.py"
@@ -31,6 +33,8 @@ on:
       - "tests/test_stock_db_audit.py"
       - "src/official_market_feed.py"
       - "src/official_snapshot_ingest.py"
+      - "src/targeted_history_refresh.py"
+      - "tests/test_targeted_history_refresh.py"
       - "tests/test_official_market_feed.py"
       - "tests/test_official_snapshot_db.py"
       - "tests/test_refresh_rotation_db.py"
@@ -78,10 +82,10 @@ jobs:
           pip install -r requirements.txt
       - name: Compile data import and audit scripts
         run: |
-          python -m py_compile src/stock_db_audit.py src/full_market_refresh.py src/send_line_report.py src/official_market_feed.py src/official_snapshot_ingest.py
+          python -m py_compile src/stock_db_audit.py src/full_market_refresh.py src/send_line_report.py src/official_market_feed.py src/official_snapshot_ingest.py src/targeted_history_refresh.py
       - name: Test coverage audit, report dates and PostgreSQL batch rotation
         run: |
-          python -m unittest -v tests.test_stock_db_audit tests.test_send_line_report tests.test_send_line_report_queries tests.test_send_line_report_delivery tests.test_refresh_rotation_db tests.test_full_market_refresh tests.test_score_after_refresh tests.test_official_market_feed tests.test_official_snapshot_db
+          python -m unittest -v tests.test_stock_db_audit tests.test_send_line_report tests.test_send_line_report_queries tests.test_send_line_report_delivery tests.test_refresh_rotation_db tests.test_full_market_refresh tests.test_score_after_refresh tests.test_official_market_feed tests.test_official_snapshot_db tests.test_targeted_history_refresh
       - name: Ensure test database connection never targets Neon
         run: |
           python -c "import os; from urllib.parse import urlparse; u=urlparse(os.environ['STOCK_CI_POSTGRES_URL']); assert u.hostname=='127.0.0.1' and u.path=='/stock_ci_test'"
