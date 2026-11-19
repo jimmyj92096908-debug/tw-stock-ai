@@ -122,6 +122,16 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             {date(2024, 2, 6), date(2024, 2, 9), date(2024, 2, 10)},
         )
 
+    def test_historical_html_preserves_explicit_prior_year_dates(self):
+        html = """
+        <h1>中華民國111年有價證券集中交易市場開（休）市日期表</h1>
+        <table><tr><td>中華民國開國紀念日</td><td>12月31日(110年) 1月1日(111年)</td><td>五 六</td><td>111年1月1日適逢星期六，110年12月31日補假1日。</td></tr></table>
+        """
+        self.assertEqual(
+            closed_dates_from_html(html, 2022),
+            {date(2022, 1, 1)},
+        )
+
     def test_calendar_fetch_uses_year_selected_html_endpoint(self):
         class Response:
             text = "<html><h1>中華民國113年市場開休市日期</h1><table><tr><td>市場無交易</td><td>2月6日</td><td>二</td><td>僅辦理結算交割</td></tr></table></html>"
