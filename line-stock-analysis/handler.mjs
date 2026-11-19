@@ -7,7 +7,7 @@ export const HELP_TEXT = [
   '台股分析查詢',
   '請輸入 4 位數股票代碼，例如：2330',
   '也可輸入：分析 2330、股票 6488',
-  '輸入「清單」查看最新可用評分前 10 名，傳送 1～10 或「編號 1」查詢該序號。',
+  '輸入「清單」看最新可用評分前 10 名；傳送 1～10 或「編號 1」可查詢序號。',
   '輸入「說明」可查看使用方式。',
   '目前僅查詢資料庫已有資料；不提供即時報價或交易指令。'
 ].join('\n');
@@ -78,220 +78,16 @@ export const ANALYSIS_SQL = [
   'ORDER BY sm.market LIMIT 3'
 ].join('\n');
 
-// Ranking is always recomputed from the latest available score snapshot.
-// A short ordinal (1..10) refers to THIS list, not an account's historical report.
+
 export const RANKING_SQL = [
   'SELECT c.market, c.stock_id, sm.stock_name, c.total_score, c.as_of_date',
   'FROM public.daily_composite_scores c',
   'JOIN public.stock_master sm ON sm.market=c.market AND sm.stock_id=c.stock_id',
   'WHERE c.as_of_date=(SELECT MAX(as_of_date) FROM public.daily_composite_scores',
-  '  WHERE total_score IS NOT NULL)',
-  ' AND c.total_score IS NOT NULL',
-  " AND c.stock_id <> '1808'",
-  " AND c.stock_id ~ '^[1-9][0-9]{3}
-  if (value == null) return '尚無';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-  const raw = String(value);
-  return /^\d{4}-\d{2}-\d{2}/u.test(raw) ? raw.slice(0, 10) : '日期未知';
-}
-
-function number(value, digits = 2) {
-  if (value === null || value === undefined || value === '') return '—';
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString('zh-TW', {
-    minimumFractionDigits: digits, maximumFractionDigits: digits
-  }) : '—';
-}
-
-function nameText(value) {
-  return String(value || '名稱未提供').replace(/[\x00-\x1f\x7f]/gu, ' ').slice(0, 35);
-}
-
-function smcEvents(row) {
-  const flags = [
-    ['bos_bullish', 'BOS 多方'], ['bos_bearish', 'BOS 空方'],
-    ['choch_bullish', 'CHOCH 多方'], ['choch_bearish', 'CHOCH 空方'],
-    ['liquidity_sweep_high', '掃過高點流動性'],
-    ['liquidity_sweep_low', '掃過低點流動性']
-  ];
-  const found = flags.filter(([key]) => row[key] === true).map(([, label]) => label);
-  return found.length ? found.join('、') : '無已標記事件';
-}
-
-export function formatStockAnalysis(row) {
-  const market = row.market === 'twse' ? '上市' : '上櫃';
-  const id = String(row.stock_id || '');
-  const head = id + ' ' + nameText(row.stock_name) + '（' + market + '）';
-  const priceDate = displayDate(row.price_date);
-  if (row.close === null || row.close === undefined) {
-    return [
-      '台股資料分析｜' + head,
-      '目前資料庫沒有可用的收盤行情，無法產生分析。',
-      '資料庫股票名單仍為候選，普通股分類尚待完整驗證。',
-      '非即時報價或投資建議。'
-    ].join('\n');
-  }
-
-  const change = row.price_change == null ? '—' :
-    ((Number(row.price_change) > 0 ? '+' : '') + number(row.price_change));
-  const lines = [
-    '台股資料分析｜' + head,
-    '收盤交易日：' + priceDate,
-    '收盤：' + number(row.close) + '｜漲跌：' + change + ' 元',
-    '成交量：' + number(row.volume, 0) + ' 股',
-    '',
-    '【技術指標｜' + displayDate(row.technical_date) + '】'
-  ];
-
-  if (row.technical_date == null) {
-    lines.push('尚無技術指標資料');
-  } else {
-    const mas = [5, 10, 13, 20, 34, 55, 60, 120, 240]
-      .map(n => 'MA' + n + ' ' + number(row['ma' + n]));
-    lines.push(mas.slice(0, 3).join('｜'));
-    lines.push(mas.slice(3, 6).join('｜'));
-    lines.push(mas.slice(6, 9).join('｜'));
-    lines.push('RSI14：' + number(row.rsi14, 1) +
-               '｜ATR14：' + number(row.atr14));
-  }
-
-  lines.push('', '【SMC｜' + displayDate(row.smc_date) + '】');
-  if (row.smc_date == null) {
-    lines.push('尚無 SMC 分析資料');
-  } else {
-    const trend = Number(row.trend_direction) === 1 ? '多方' :
-      Number(row.trend_direction) === -1 ? '空方' : '中性／不明';
-    lines.push('趨勢：' + trend);
-    lines.push('事件：' + smcEvents(row));
-    lines.push('Order Block：' + (row.order_block_type || '尚無'));
-    lines.push('FVG：' + (row.fvg_type || '尚無'));
-  }
-
-  lines.push('', '【綜合評分｜' + displayDate(row.score_date) + '】');
-  if (row.score_date == null || row.total_score == null) {
-    lines.push('尚無達可用條件的綜合評分');
-  } else {
-    const coverage = row.coverage_weight == null ? '—' :
-      number(Number(row.coverage_weight) * 100, 0) + '%';
-    lines.push('總分：' + number(row.total_score, 1) + '｜因子覆蓋：' + coverage);
-    lines.push('短／波／長：' + number(row.short_term_score, 1) + '／' +
-      number(row.swing_score, 1) + '／' + number(row.long_term_score, 1));
-    lines.push('籌碼分數：' + number(row.chip_score, 1));
-  }
-
-  const observationTime = Date.parse(priceDate + 'T00:00:00Z');
-  if (Number.isFinite(observationTime) && Date.now() - observationTime > 7 * 86400000) {
-    lines.push('', '注意：最新可用行情距今已超過 7 日，請確認資料是否更新。');
-  }
-  const mismatched = [
-    row.technical_date, row.smc_date, row.score_date
-  ].filter(Boolean).some(value => displayDate(value) !== priceDate);
-  if (mismatched) lines.push('', '注意：部分指標日期與收盤交易日不同，請勿視為當日訊號。');
-  lines.push('', '僅呈現資料庫已有的歷史資料；並非即時報價。');
-  lines.push('商品分類尚待核驗；非買賣指令，不保證獲利。');
-  return lines.join('\n').slice(0, 4900);
-}
-
-export async function buildReplyText(text, query) {
-  const parsed = parseStockCode(text);
-  if (parsed.kind === 'help') return HELP_TEXT;
-  if (parsed.kind === 'invalid') return '無法辨識股票代碼或清單編號。\n' + HELP_TEXT;
-  if (parsed.kind === 'excluded') {
-    return '代碼 1808 已依設定排除，不提供分析。';
-  }
-
-  let code = parsed.code;
-  let selectedMarket = null;
-  if (parsed.kind === 'rank' || parsed.kind === 'list') {
-    const ranking = await query(RANKING_SQL, []);
-    const list = Array.isArray(ranking?.rows) ? ranking.rows : [];
-    const date = list.length ? displayDate(list[0].as_of_date) : '尚無';
-    if (!list.length) return '目前沒有可用的觀察清單評分，請改用四位數股票代碼。';
-    if (parsed.kind === 'list') {
-      const items = list.map((row, i) =>
-        (i + 1) + '. ' + row.stock_id + ' ' + nameText(row.stock_name) +
-        '｜' + number(row.total_score, 1) + ' 分'
-      );
-      return [
-        '評分觀察清單｜資料日：' + date,
-        ...items,
-        '',
-        '回傳 1～10 的序號即可查詢（例如：1、編號 2）。',
-        '清單依最新已儲存的評分排序，可能與先前報告不同。',
-        '候選股票分類未完全確認；非即時報價或買賣建議。'
-      ].join('\n').slice(0, 4900);
-    }
-    const selected = list[parsed.rank - 1];
-    if (!selected) return '最新清單只有 ' + list.length +
-      ' 檔；請傳送「清單」查看目前可查的序號。';
-    code = String(selected.stock_id);
-    selectedMarket = String(selected.market);
-    if (EXCLUDED_CODES.has(code)) return '此股票已排除，無法分析。';
-  }
-
-  const result = await query(ANALYSIS_SQL, [code]);
-  let rows = Array.isArray(result?.rows) ? result.rows : [];
-  if (selectedMarket) rows = rows.filter(r => r.market === selectedMarket);
-  if (rows.length === 0) {
-    return '找不到 ' + code + ' 的可用上市／上櫃候選資料。\n' +
-      '請確認代碼或資料是否已建立。';
-  }
-  if (rows.length > 1) {
-    return code + ' 在不同市場有重複代碼，暫不自動選擇，避免分析錯誤。';
-  }
-  return (selectedMarket ? '清單編號 ' + parsed.rank + '｜' : '') +
-    formatStockAnalysis(rows[0]);
-}
-
-function response(text, status) {
-  return new Response(text, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
-}
-
-// The caller injects an explicitly read-only DB query and LINE Reply API transport.
-// No webhook events, user identifiers or message bodies are written to Neon.
-export function createWebhookHandler({ query, sendReply, channelSecret, enabled = true }) {
-  return async function fetchHandler(request) {
-    const pathname = new URL(request.url).pathname;
-    if (request.method === 'GET' && pathname === '/health') return response('ok', 200);
-    if (pathname !== '/' && pathname !== '/webhook') return response('Not found', 404);
-    if (request.method !== 'POST') return response('Method not allowed', 405);
-    if (!enabled || !channelSecret) return response('Service unavailable', 503);
-    const contentLength = Number(request.headers.get('content-length'));
-    if (Number.isFinite(contentLength) && contentLength > 256000) return response('Payload too large', 413);
-    const rawBody = await request.text();
-    if (Buffer.byteLength(rawBody, 'utf8') > 256000) return response('Payload too large', 413);
-    if (!verifyLineSignature(rawBody, request.headers.get('x-line-signature'), channelSecret)) {
-      return response('Unauthorized', 401);
-    }
-
-    let payload;
-    try { payload = JSON.parse(rawBody); } catch { return response('Invalid JSON', 400); }
-    if (!Array.isArray(payload?.events) || payload.events.length > 20) {
-      return response('Invalid events', 400);
-    }
-    try {
-      for (const event of payload.events) {
-        if (!event || typeof event.replyToken !== 'string' || !event.replyToken) continue;
-        if (event.type !== 'message' && event.type !== 'follow') continue;
-        let message = HELP_TEXT;
-        if (event.type === 'message' && event.message?.type === 'text') {
-          try {
-            message = await buildReplyText(event.message.text, query);
-          } catch {
-            message = '目前無法讀取分析資料，請稍後再試。';
-          }
-        }
-        await sendReply(event.replyToken, message.slice(0, 4900));
-      }
-    } catch {
-      return response('Temporary reply failure', 502);
-    }
-    return response('OK', 200);
-  };
-}
-",
+  ' WHERE total_score IS NOT NULL)',
+  'AND c.total_score IS NOT NULL',
+  "AND c.stock_id <> '1808'",
+  "AND c.stock_id ~ '^[1-9][0-9]{3}$'",
   'ORDER BY c.total_score DESC, c.market, c.stock_id',
   'LIMIT 10'
 ].join('\n');
@@ -405,20 +201,50 @@ export function formatStockAnalysis(row) {
 export async function buildReplyText(text, query) {
   const parsed = parseStockCode(text);
   if (parsed.kind === 'help') return HELP_TEXT;
-  if (parsed.kind === 'invalid') return '無法辨識股票代碼。\n' + HELP_TEXT;
-  if (parsed.kind === 'excluded') {
-    return '代碼 1808 已依設定排除，不提供分析。';
+  if (parsed.kind === 'invalid') return '無法辨識股票代碼或清單編號。\n' + HELP_TEXT;
+  if (parsed.kind === 'excluded') return '代碼 1808 已依設定排除，不提供分析。';
+
+  let code = parsed.code;
+  let selectedMarket = null;
+  if (parsed.kind === 'rank' || parsed.kind === 'list') {
+    const ranking = await query(RANKING_SQL, []);
+    const list = Array.isArray(ranking?.rows) ? ranking.rows : [];
+    const date = list.length ? displayDate(list[0].as_of_date) : '尚無';
+    if (!list.length) return '目前沒有可用的觀察清單評分，請改用四位數股票代碼。';
+    if (parsed.kind === 'list') {
+      const items = list.map((row, i) =>
+        (i + 1) + '. ' + row.stock_id + ' ' + nameText(row.stock_name) +
+        '｜' + number(row.total_score, 1) + ' 分'
+      );
+      return [
+        '評分觀察清單｜資料日：' + date,
+        ...items,
+        '',
+        '回傳 1～10 的序號即可查詢（例如：1、編號 2）。',
+        '清單依最新已儲存評分排序，可能與先前報告不同。',
+        '候選股票分類未完全確認；非即時報價或買賣建議。'
+      ].join('\n').slice(0, 4900);
+    }
+    const selected = list[parsed.rank - 1];
+    if (!selected) return '最新清單只有 ' + list.length +
+      ' 檔；請傳送「清單」查看目前可查的序號。';
+    code = String(selected.stock_id);
+    selectedMarket = String(selected.market);
+    if (EXCLUDED_CODES.has(code)) return '此股票已排除，無法分析。';
   }
-  const result = await query(ANALYSIS_SQL, [parsed.code]);
-  const rows = Array.isArray(result?.rows) ? result.rows : [];
+
+  const result = await query(ANALYSIS_SQL, [code]);
+  let rows = Array.isArray(result?.rows) ? result.rows : [];
+  if (selectedMarket) rows = rows.filter(r => r.market === selectedMarket);
   if (rows.length === 0) {
-    return '找不到 ' + parsed.code + ' 的上市／上櫃候選資料。\n' +
-      '請確認 4 位數代碼；本服務不查詢 ETF、權證或其他商品。';
+    return '找不到 ' + code + ' 的可用上市／上櫃候選資料。\n' +
+      '請確認代碼或資料是否已建立。';
   }
   if (rows.length > 1) {
-    return parsed.code + ' 在不同市場有重複代碼，暫不自動選擇，避免分析錯誤。';
+    return code + ' 在不同市場有重複代碼，暫不自動選擇，避免分析錯誤。';
   }
-  return formatStockAnalysis(rows[0]);
+  return (selectedMarket ? '清單編號 ' + parsed.rank + '｜' : '') +
+    formatStockAnalysis(rows[0]);
 }
 
 function response(text, status) {
