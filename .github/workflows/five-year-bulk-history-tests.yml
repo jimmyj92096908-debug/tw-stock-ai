@@ -29,5 +29,6 @@ jobs:
         run: |
           python tests/test_market_data_bulk.py
           python tests/test_five_year_downloader.py
+          python tests/test_calendar_source_registry.py
       - name: Compile sources
         run: python -m compileall -q src scripts tests
