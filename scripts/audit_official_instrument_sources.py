@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -99,11 +100,23 @@ def main() -> None:
     }
 
     for source_id, metadata in SOURCES.items():
-        response = requests.get(
-            metadata["url"], timeout=(8, 30),
-            headers={"User-Agent": "tw-stock-ai-instrument-audit/1.0"},
-        )
-        response.raise_for_status()
+        response = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(
+                    metadata["url"], timeout=(10, 60),
+                    headers={"User-Agent": "tw-stock-ai-instrument-audit/1.0"},
+                )
+                response.raise_for_status()
+                break
+            except requests.exceptions.RequestException as exc:
+                last_error = exc
+                if attempt == 3:
+                    raise
+                time.sleep(2 * attempt)
+        if response is None:
+            raise RuntimeError(f"Unable to fetch {source_id}: {last_error}")
         raw = response.content
         (output / f"{source_id}-raw.json").write_bytes(raw)
         try:
