@@ -1,10 +1,13 @@
 """Read-only comparison of TPEx monthly historical quote endpoints.
 
-No database access or writes. Probes the current TPEx tradingStock API and
-the legacy st43_result.php endpoint for two known missing-OHLC observations.
+No database access or writes. Compares JSON and CSV response formats from
+the current TPEx tradingStock API, plus the legacy endpoint, for two known
+missing-OHLC observations. CSV is a format comparison, not an independent source.
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from datetime import date
@@ -63,9 +66,10 @@ def find_target_rows(payload: Any, target_date: str, layout: str) -> list[Any]:
 
 def request_endpoint(session: requests.Session, name: str, target: dict[str, str]) -> dict[str, Any]:
     year, month, _ = map(int, target["trade_date"].split("-"))
-    if name == "current_tradingStock":
+    if name in ("current_tradingStock", "current_tradingStock_csv"):
         url = CURRENT_URL
-        params = {"response": "json", "date": date(year, month, 1).strftime("%Y/%m/%d"), "code": target["stock_id"]}
+        response_format = "csv" if name.endswith("_csv") else "json"
+        params = {"response": response_format, "date": date(year, month, 1).strftime("%Y/%m/%d"), "code": target["stock_id"]}
         layout = "current"
     else:
         url = LEGACY_URL
@@ -74,8 +78,9 @@ def request_endpoint(session: requests.Session, name: str, target: dict[str, str
 
     response = session.get(url, params=params, timeout=45)
     body = response.text
-    raw_path = OUT / f'{target["stock_id"]}-{target["trade_date"]}-{name}.txt'
-    raw_path.write_text(body, encoding="utf-8")
+    suffix = "csv" if name.endswith("_csv") else "txt"
+    raw_path = OUT / f'{target["stock_id"]}-{target["trade_date"]}-{name}.{suffix}'
+    raw_path.write_text(body, encoding="utf-8-sig" if suffix == "csv" else "utf-8")
     result: dict[str, Any] = {
         "endpoint": name,
         "http_status": response.status_code,
@@ -86,6 +91,20 @@ def request_endpoint(session: requests.Session, name: str, target: dict[str, str
         "rows": [],
         "json_parse_error": None,
     }
+    if name.endswith("_csv"):
+        try:
+            dialect = csv.Sniffer().sniff(body[:4096], delimiters=",;\\t")
+            parsed_rows = list(csv.reader(io.StringIO(body), dialect))
+            result["csv_parse"] = "parsed"
+            result["csv_row_count"] = len(parsed_rows)
+            result["csv_header"] = parsed_rows[0] if parsed_rows else []
+            result["csv_rows_preview"] = parsed_rows[:5]
+            result["csv_target_date_matches"] = [row for row in parsed_rows if row and normalize_roc_date(row[0]) == target["trade_date"]] if parsed_rows else []
+        except (csv.Error, UnicodeError) as exc:
+            result["csv_parse"] = "failed"
+            result["csv_parse_error"] = str(exc)
+            result["body_preview"] = body[:1200]
+        return result
     try:
         payload = response.json()
         result["top_level_keys"] = list(payload.keys()) if isinstance(payload, dict) else None
@@ -107,7 +126,7 @@ def main() -> None:
     })
     results = []
     for target in TARGETS:
-        for endpoint in ("current_tradingStock", "legacy_st43_result"):
+        for endpoint in ("current_tradingStock", "current_tradingStock_csv", "legacy_st43_result"):
             try:
                 result = request_endpoint(session, endpoint, target)
             except requests.RequestException as exc:
