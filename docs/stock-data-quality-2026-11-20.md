@@ -53,3 +53,14 @@
 - `python src/stock_db_audit.py`：唯讀摘要；需已安全配置 `DATABASE_URL`。
 - `python src/stock_db_audit.py --json`：JSON 摘要；絕不要把資料庫憑證貼入日誌或 GitHub。
 - 建議以專用唯讀角色執行，勿把任何連線字串交給聊天紀錄。
+
+## 綜合評分重算排程缺口與預設關閉的修補
+
+檢查 GitHub 主分支 `.github/workflows/build-composite-scores.yml` 發現：原本只在 `workflow_dispatch` 或評分程式/設定檔有變動時執行，**沒有**在每日行情更新成功後自動重算，因此價格資料可能比評分新。這是需要獨立處理的排程問題，不能以改報告顯示日期代替重算。
+
+已在草稿分支新增：
+- `scripts/score_after_refresh.py`：沿用現有 `calculate_all`，但只列出處理檔數，不將資料庫連線字串或大量逐股票資料寫入 CI 日誌。
+- `.github/workflows/composite-after-market-refresh.yml`：可在 `Full Market Daily Data Rotation` 成功完成後連動評分，但**必須先由具權限的管理者明確設置** `ENABLE_AUTOMATIC_COMPOSITE_SCORES=true`，否則自動資料庫寫入工作保持停用。手動觸發也預設 `apply=false`，不會寫入。
+- `tests/test_score_after_refresh.py`：驗證輸入、日誌沒有憑證、以及自動重算必須有明確 opt-in 條件。
+
+**本次沒有設定 ENABLE_AUTOMATIC_COMPOSITE_SCORES，也沒有觸發評分寫入、部署或正式 Webhook 切換。** 這個方案在 PR 未合併前不影響既有排程，之後若要啟用還需另行確認預期的資料庫寫入量、批次先後順序和交易日曆。
