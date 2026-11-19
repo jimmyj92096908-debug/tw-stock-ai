@@ -83,6 +83,8 @@ export const RANKING_SQL = [
   'SELECT c.market, c.stock_id, sm.stock_name, c.total_score, c.as_of_date',
   'FROM public.daily_composite_scores c',
   'JOIN public.stock_master sm ON sm.market=c.market AND sm.stock_id=c.stock_id',
+  'JOIN public.daily_prices p ON p.market=c.market AND p.stock_id=c.stock_id',
+  ' AND p.trade_date=c.as_of_date AND p.close IS NOT NULL',
   'WHERE c.as_of_date=(SELECT MAX(as_of_date) FROM public.daily_composite_scores',
   ' WHERE total_score IS NOT NULL)',
   'AND c.total_score IS NOT NULL',
@@ -221,7 +223,7 @@ export async function buildReplyText(text, query) {
         ...items,
         '',
         '回傳 1～10 的序號即可查詢（例如：1、編號 2）。',
-        '清單依最新已儲存評分排序，可能與先前報告不同。',
+        '清單僅列評分當日有收盤價的候選股票；可能與先前報告不同。',
         '候選股票分類未完全確認；非即時報價或買賣建議。'
       ].join('\n').slice(0, 4900);
     }
