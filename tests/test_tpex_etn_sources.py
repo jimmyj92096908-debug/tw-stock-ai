@@ -12,6 +12,17 @@ class TpexEtnSourceTests(unittest.TestCase):
         """
         self.assertEqual(extract_etn_codes(html), ["020027", "020041"])
 
+    def test_extracts_codes_from_real_tpex_product_markup(self):
+        html = """
+        <h3 class="h3-title">ETF</h3>
+        <div class="product etf"><div class="product-code">(代號：00888)</div></div>
+        <h3 class="h3-title">ETN</h3>
+        <div class="product etn"><div class="product-title">甲</div>
+          <div class="product-code">(代號：020027)</div></div>
+        <div class="product etn"><div class="product-code">(代號：020041)</div></div>
+        """
+        self.assertEqual(extract_etn_codes(html), ["020027", "020041"])
+
     def test_deduplicates_codes(self):
         html = "<h2>ETN</h2><p>代號：020027</p><p>代號：020027</p>"
         self.assertEqual(extract_etn_codes(html), ["020027"])
