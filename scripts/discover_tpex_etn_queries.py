@@ -152,8 +152,8 @@ def run(output: Path):
                     item["inline_script_hints"].append(
                         {"inline_script_index": index, "hints": hints}
                     )
-            inline_text = "\\n".join(parser.inline_scripts)
-            action_match = re.search(r"""action\\s*:\\s*["']([^"']+)["']""", inline_text)
+            inline_text = "\n".join(parser.inline_scripts)
+            action_match = re.search(r"""action\s*:\s*["']([^"']+)["']""", inline_text)
             action = action_match.group(1) if action_match else None
             if action:
                 page_type = "listed" if source_id == "current_listing" else "delisted"
@@ -178,7 +178,7 @@ def run(output: Path):
                     try:
                         payload = api_response.json()
                         probe["json_summary"] = summarize_json(payload)
-                        (output / f"{source_id}_api_response.json").write_text(
+                            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                             json.dumps(payload, ensure_ascii=False, indent=2) + "\\n",
                             encoding="utf-8",
                         )
