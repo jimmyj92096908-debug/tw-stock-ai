@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: official-raw-source-reconciliation
+  group: official-raw-source-reconciliation-v2
   cancel-in-progress: true
 
 jobs:
