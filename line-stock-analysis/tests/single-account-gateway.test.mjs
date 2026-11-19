@@ -48,7 +48,7 @@ test('route only supported private stock commands to new handler',()=>{
   for(const input of ['2330','股票 6488','清單','1','編號 2','1808','資料狀態','說明']){
     assert.equal(isStockCommandEvent(textEvent(input)),true,input);
   }
-  for(const input of ['你好','說明','abc','2330 6488']){
+  for(const input of ['你好','abc','2330 6488']){
     assert.equal(isStockCommandEvent(textEvent(input)),false,input);
   }
   assert.equal(isStockCommandEvent(textEvent('2330','e1',{type:'group',groupId:'G-fake'})),false);
