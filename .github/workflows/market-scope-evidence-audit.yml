@@ -29,6 +29,7 @@ jobs:
           python -m unittest discover -s tests -p "test_tdcc_universe_candidates.py" -v
           python -m unittest discover -s tests -p "test_security_lifecycle_candidates.py" -v
           python -m unittest discover -s tests -p "test_lifecycle_source_inventory.py" -v
+          python -m unittest discover -s tests -p "test_tpex_delisted_discovery.py" -v
       - name: Install audit dependencies
         run: python -m pip install requests pypdf
       - name: Run read-only official market scope audit
