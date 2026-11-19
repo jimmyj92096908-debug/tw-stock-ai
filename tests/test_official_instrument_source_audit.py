@@ -13,6 +13,12 @@ class OfficialInstrumentSourceAuditTests(unittest.TestCase):
         self.assertEqual(result["security_code_field"], "權證代號")
         self.assertEqual(result["security_codes"], ["123456", "234567"])
 
+    def test_recognizes_twse_fund_code_field(self):
+        result = inspect_payload([{"基金代號": "0050", "基金類型": "國內成分證券指數股票型基金"}])
+        self.assertTrue(result["schema_validated"])
+        self.assertEqual(result["security_code_field"], "基金代號")
+        self.assertEqual(result["security_codes"], ["0050"])
+
     def test_rejects_ambiguous_code_fields(self):
         with self.assertRaisesRegex(ValueError, "exactly one"):
             inspect_payload([{"證券代號": "0050", "權證代號": "123456"}])
