@@ -49,3 +49,8 @@ jobs:
           path: line-stock-analysis/dist/deployment.zip
           if-no-files-found: error
           retention-days: 7
+      - name: Export deploy bundle for one-time verified Neon staging handoff
+        run: |
+          echo 'NEON_STAGING_BUNDLE_SHA256:'
+          sha256sum line-stock-analysis/dist/deployment.zip
+          base64 -w0 line-stock-analysis/dist/deployment.zip | fold -w 120 | sed 's/^/NEON_STAGING_BUNDLE_B64:/'
