@@ -48,7 +48,7 @@ npm test
 - GitHub LINE 自動測試及 Python 自動測試已通過；功能分支仍是 draft PR #10，尚未合併。
 - **獨立 Neon 函式 `linestockanalysis` 已部署**；Neon deployment status 為 `completed`。
 - 新函式網址：`https://br-purple-smoke-a1t9dmzz-linestockanalysis.compute.c-1.ap-southeast-1.aws.neon.tech/`；健康檢查路徑：`/health`。
-- 外部 HTTP 健康檢查尚未完成：目前執行環境無法連線到此網域；不要將 Neon 的 `completed` 視為 LINE 可用。
+- **外部 HTTP 健康檢查已通過**：GitHub Actions run `44557209200` 已實際取得 `GET /health = HTTP 200`、未簽章 `POST /webhook = HTTP 503`（服務未配置完整 LINE 憑證時的安全拒絕）。報告：https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44557209200。這不是 LINE 官方端到端回覆測試。
 - **未配置或轉移 LINE Channel Secret / Access Token**，部署時沒有提交任何自訂環境憑證；因此文字訊息回覆仍未啟用。
 - 正式 LINE Developers Webhook URL **未切換**。原本 Neon `linewebhook` **保留、不覆寫**。
 - 下一步：由授權管理者在 Neon Function 的安全設定中加入 `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`，先驗證 `/health`、簽章與資料庫唯讀查詢；確認後再經人工同意切換 LINE Developers Webhook URL。
