@@ -1,116 +1,74 @@
 #!/usr/bin/env python3
-"""Read-only diagnostic for the official TWSE historical holiday UI.
-
-Fetches the public page and linked first-party JavaScript assets. It does not
-submit forms, download calendar records, or modify project/database state.
-"""
+"""Read-only extraction of TWSE holiday report configuration and CSV request logic."""
 from __future__ import annotations
-
-import re
-import urllib.parse
-import urllib.request
+import json, re, urllib.parse, urllib.request
 from html.parser import HTMLParser
 
-PAGES = [
-    "https://www.twse.com.tw/zh/trading/holiday.html",
-    "https://accessibility.twse.com.tw/zh/trading/holiday.html",
-]
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; TWStockCalendarResearch/1.0)",
-    "Accept": "text/html,application/xhtml+xml,application/javascript,*/*",
-}
-
-
-class PageParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.forms = []
-        self.selects = []
-        self.scripts = []
-        self.links = []
-        self._form = None
-        self._select = None
-
-    def handle_starttag(self, tag, attrs):
-        a = dict(attrs)
-        if tag == "form":
-            self._form = {"action": a.get("action", ""), "method": a.get("method", "get")}
-            self.forms.append(self._form)
-        elif tag == "select":
-            self._select = {"name": a.get("name", ""), "id": a.get("id", ""), "options": []}
-            self.selects.append(self._select)
-        elif tag == "option" and self._select is not None:
-            self._select["options"].append({"value": a.get("value", "")})
-        elif tag == "script" and a.get("src"):
-            self.scripts.append(a["src"])
-        elif tag == "a" and any(k in (a.get("href", "").lower()) for k in ("csv", "download", "holiday")):
-            self.links.append(a.get("href", ""))
-
-    def handle_endtag(self, tag):
-        if tag == "form":
-            self._form = None
-        elif tag == "select":
-            self._select = None
-
+URL = "https://accessibility.twse.com.tw/zh/trading/holiday.html"
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TWStockCalendarResearch/1.0)",
+           "Accept": "text/html,application/xhtml+xml,application/javascript,*/*"}
 
 def fetch(url):
     req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=20) as response:
-        body = response.read(2_000_000)
-        return response.geturl(), response.headers.get("Content-Type", ""), body
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.geturl(), r.headers.get("Content-Type", ""), r.read(2_000_000)
 
+def snippets(source, patterns, before=500, after=1200, limit=30):
+    found = []
+    for pattern in patterns:
+        for m in re.finditer(pattern, source, re.I | re.S):
+            value = re.sub(r"\s+", " ", source[max(0,m.start()-before):m.end()+after]).strip()
+            if value not in found:
+                found.append(value)
+            if len(found) >= limit:
+                return found
+    return found
+
+class Parser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.scripts, self.forms, self.selects = [], [], []
+        self.links, self.tags = [], []
+        self.in_select = None
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "script" and a.get("src"): self.scripts.append(a["src"])
+        if tag == "form": self.forms.append({"action":a.get("action"),"method":a.get("method")})
+        if tag == "select":
+            self.in_select = {"name":a.get("name"),"id":a.get("id"),"options":[]}
+            self.selects.append(self.in_select)
+        if tag == "option" and self.in_select is not None:
+            self.in_select["options"].append({"value":a.get("value"),"text":a.get("label")})
+        if tag in ("div","table","button","a","input"):
+            keep = {k:v for k,v in a.items() if k in ("id","class","name","data-api","data-argv","data-report","href","type","value")}
+            if keep: self.tags.append({"tag":tag,**keep})
+        if tag == "a" and a.get("href"): self.links.append(a["href"])
+    def handle_endtag(self, tag):
+        if tag == "select": self.in_select = None
 
 def main():
-    summary = {"pages": [], "assets": [], "errors": []}
-    seen_assets = set()
-    for page in PAGES:
+    result = {"page":{}, "report_scripts":[], "errors":[]}
+    final, ctype, body = fetch(URL)
+    html = body.decode("utf-8","replace")
+    p = Parser(); p.feed(html)
+    result["page"] = {
+        "url":final,"content_type":ctype,"bytes":len(body),
+        "forms":p.forms,"selects":p.selects,"relevant_tags":p.tags,
+        "holiday_html_snippets":snippets(html,[r"rwd-table",r"data-argv",r"data-api",r"web-report",r"開休市"],250,500,35)
+    }
+    for src in p.scripts:
+        asset = urllib.parse.urljoin(final,src)
+        if "web-report.js" not in asset: continue
         try:
-            final_url, content_type, body = fetch(page)
-            html = body.decode("utf-8", errors="replace")
-            parser = PageParser()
-            parser.feed(html)
-            item = {
-                "requested_url": page,
-                "final_url": final_url,
-                "content_type": content_type,
-                "html_bytes": len(body),
-                "forms": parser.forms,
-                "selects": parser.selects,
-                "download_links": parser.links,
-                "script_count": len(parser.scripts),
-            }
-            summary["pages"].append(item)
-            for src in parser.scripts:
-                asset_url = urllib.parse.urljoin(final_url, src)
-                if asset_url in seen_assets or urllib.parse.urlparse(asset_url).netloc not in {
-                    "www.twse.com.tw", "accessibility.twse.com.tw"
-                }:
-                    continue
-                seen_assets.add(asset_url)
-                try:
-                    _, ctype, js = fetch(asset_url)
-                    text = js.decode("utf-8", errors="replace")
-                    hits = []
-                    for match in re.finditer(r"(?i).{0,100}(?:holiday|csv|download|queryYear|year|開休市).{0,160}", text):
-                        snippet = re.sub(r"\\s+", " ", match.group(0)).strip()
-                        if snippet and snippet not in hits:
-                            hits.append(snippet)
-                        if len(hits) >= 12:
-                            break
-                    summary["assets"].append({
-                        "url": asset_url, "content_type": ctype,
-                        "bytes": len(js), "relevant_snippets": hits,
-                    })
-                except Exception as exc:
-                    summary["errors"].append({"url": asset_url, "error": str(exc)[:240]})
+            js_url, js_type, js_body = fetch(asset)
+            js = js_body.decode("utf-8","replace")
+            result["report_scripts"].append({
+                "url":js_url,"content_type":js_type,"bytes":len(js_body),
+                "query_logic":snippets(js,[r"Form API:",r"\$\.getJSON",r"data\(['"]argv['"]\)",r"\.csv",r"cfg\.rwd",r"r\.api"],700,1800,40)
+            })
         except Exception as exc:
-            summary["errors"].append({"url": page, "error": str(exc)[:240]})
-
-    import json
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
-    if not summary["pages"]:
-        raise SystemExit("No official TWSE page could be fetched")
-
+            result["errors"].append({"url":asset,"error":str(exc)[:300]})
+    print(json.dumps(result,ensure_ascii=False,indent=2))
 
 if __name__ == "__main__":
     main()
