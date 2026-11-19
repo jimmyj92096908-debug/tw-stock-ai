@@ -27,10 +27,11 @@ jobs:
         run: python -m unittest tests.test_tpex_bulk_fallback -v
       - name: Probe official dated bulk endpoint (read only)
         run: python scripts/diagnose_tpex_bulk_fallback.py
+      - name: Discover public daily close history request (read only)
+        run: python scripts/discover_tpex_mi_pricing_request.py
       - name: Upload diagnostic evidence
         uses: actions/upload-artifact@v4
         with:
           name: tpex-bulk-fallback-diagnostic
-          path: artifacts/tpex-bulk-fallback/
-          if-no-files-found: error
+          path: artifacts/tpex-bulk-fallback/\n            artifacts/tpex-mi-pricing-discovery/\n          if-no-files-found: error
           retention-days: 14
