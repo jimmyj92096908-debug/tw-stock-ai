@@ -1,0 +1,43 @@
+name: Read-only OHLC Data Quality Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: read-only-ohlc-quality-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install database dependency
+        run: python -m pip install "psycopg[binary]>=3.2,<4"
+
+      - name: Test report classification
+        run: python -m unittest tests.test_ohlc_quality_report -v
+
+      - name: Generate read-only audit
+        run: python -m src.ohlc_quality_report
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ohlc-quality-audit
+          path: artifacts/ohlc-quality-audit/
+          retention-days: 14
