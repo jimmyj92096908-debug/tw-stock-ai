@@ -41,7 +41,7 @@ def bounded_get(session, url):
     return r, data
 
 def inspect_asset(text, url):
-    patterns = (r"(?:ajax|fetch|axios|\.get|\.post)\s*\([^)]{0,500}", r"https?://[^\s\"'<>]+", r"/[^\s\"'<>]{1,200}(?:api|query|search|delist)[^\s\"'<>]*")
+    patterns = (r"(?:ajax|fetch|axios|\$\.(?:get|post)|\.(?:get|post))\s*\([^)]{0,500}", r"https?://[^\s\"'<>]+", r"/[^\s\"'<>]{1,200}(?:api|query|search|delist)[^\s\"'<>]*")
     hits = []
     for pattern in patterns:
         hits.extend(re.findall(pattern, text, flags=re.I))
