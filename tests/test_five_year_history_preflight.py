@@ -6,6 +6,7 @@ from pathlib import Path
 
 from scripts.preflight_five_year_history import (
     build_preflight,
+    closed_dates_from_html,
     closed_dates_from_payload,
     expected_sessions,
     fetch_closed_dates,
@@ -107,25 +108,40 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             self.assertIsNone(report["market_counts"]["twse"]["pending"])
             self.assertFalse(report["pending_count_is_authoritative"])
 
-    def test_calendar_fetch_rejects_endpoint_that_ignores_requested_year(self):
+    def test_historical_html_calendar_parses_roc_dates_and_closed_days(self):
+        html = """
+        <h1>中華民國113年有價證券集中交易市場開（休）市日期表</h1>
+        <table><tr><th>名稱</th><th>日期</th><th>星期</th><th>說明</th></tr>
+        <tr><td>國曆新年開始交易日</td><td>1月2日</td><td>二</td><td>開始交易</td></tr>
+        <tr><td>市場無交易</td><td>2月6日</td><td>二</td><td>僅辦理結算交割</td></tr>
+        <tr><td>農曆春節</td><td>2月9日<br>2月10日</td><td>五<br>六</td><td>依規定放假</td></tr>
+        </table>
+        """
+        self.assertEqual(
+            closed_dates_from_html(html, 2024),
+            {date(2024, 2, 6), date(2024, 2, 9), date(2024, 2, 10)},
+        )
+
+    def test_calendar_fetch_uses_year_selected_html_endpoint(self):
         class Response:
+            text = "<html><h1>中華民國113年市場開休市日期</h1><table><tr><td>市場無交易</td><td>2月6日</td><td>二</td><td>僅辦理結算交割</td></tr></table></html>"
             def raise_for_status(self):
                 pass
-            def json(self):
-                return {"stat": "ok", "queryYear": 113, "title": "116 年市場開休市日期", "date": "20270101", "data": []}
 
         class Session:
-            def get(self, url, params, **kwargs):
-                self.url = url
-                self.params = params
+            def __init__(self):
+                self.calls = []
+            def get(self, url, params=None, **kwargs):
+                self.calls.append((url, params, kwargs))
                 return Response()
 
         session = Session()
-        with self.assertRaisesRegex(ValueError, "instead of requested 2024"):
-            fetch_closed_dates(2024, session)
-        self.assertEqual(session.url, "https://www.twse.com.tw/holidaySchedule/holidaySchedule")
-        self.assertEqual(session.params["queryYear"], "113")
-        self.assertTrue(session.params["_"])
+        self.assertEqual(fetch_closed_dates(2024, session), {date(2024, 2, 6)})
+        self.assertEqual(session.calls[0][0], "https://www.twse.com.tw/zh/trading/holiday.html")
+        self.assertEqual(session.calls[1][0], "https://www.twse.com.tw/holidaySchedule/holidaySchedule")
+        self.assertEqual(session.calls[1][1]["queryYear"], "113")
+        self.assertEqual(session.calls[1][1]["response"], "html")
+        self.assertIn("Referer", session.calls[1][2]["headers"])
 
 
 if __name__ == "__main__":
