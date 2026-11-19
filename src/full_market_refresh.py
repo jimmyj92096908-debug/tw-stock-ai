@@ -89,22 +89,43 @@ def upsert_universe(conn: psycopg.Connection, rows: list[dict[str, str]]) -> Non
 
 
 def select_batch(conn: psycopg.Connection, market: str, limit: int) -> list[dict]:
+    """Interleave previously unpriced stocks and existing priced stocks.
+
+    A fixed 'all never-priced first' ordering can starve existing tickers for
+    months when the candidate universe is large. Interleaving by rank keeps
+    both initial coverage and existing market data moving forward at the
+    configured request budget. No data is written in this selection step.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT sm.market, sm.stock_id, sm.stock_name,
-                   MAX(dp.trade_date) AS latest_trade_date
-            FROM stock_master sm
-            LEFT JOIN daily_prices dp
-              ON dp.market=sm.market AND dp.stock_id=sm.stock_id
-            LEFT JOIN market_data_refresh_state st
-              ON st.market=sm.market AND st.stock_id=sm.stock_id
-            WHERE sm.market=%s
-            GROUP BY sm.market, sm.stock_id, sm.stock_name, st.last_attempt_at
-            ORDER BY
-                CASE WHEN MAX(dp.trade_date) IS NULL THEN 0 ELSE 1 END ASC,
-                st.last_attempt_at ASC NULLS FIRST,
-                sm.stock_id
+            WITH candidates AS (
+                SELECT sm.market, sm.stock_id, sm.stock_name,
+                       MAX(dp.trade_date) FILTER (
+                           WHERE dp.close IS NOT NULL
+                       ) AS latest_trade_date,
+                       st.last_attempt_at
+                FROM stock_master sm
+                LEFT JOIN daily_prices dp
+                  ON dp.market=sm.market AND dp.stock_id=sm.stock_id
+                LEFT JOIN market_data_refresh_state st
+                  ON st.market=sm.market AND st.stock_id=sm.stock_id
+                WHERE sm.market=%s
+                GROUP BY sm.market, sm.stock_id, sm.stock_name, st.last_attempt_at
+            ), numbered AS (
+                SELECT market,stock_id,stock_name,latest_trade_date,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY (latest_trade_date IS NULL)
+                           ORDER BY last_attempt_at ASC NULLS FIRST,
+                                    latest_trade_date ASC NULLS FIRST, stock_id
+                       ) AS rotation_slot
+                FROM candidates
+            )
+            SELECT market,stock_id,stock_name,latest_trade_date
+            FROM numbered
+            ORDER BY rotation_slot,
+                     CASE WHEN latest_trade_date IS NULL THEN 0 ELSE 1 END,
+                     stock_id
             LIMIT %s
             """,
             (market, limit),
