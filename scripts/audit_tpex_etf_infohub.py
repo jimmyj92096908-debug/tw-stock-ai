@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Probe the TPEx ETF InfoHub's observed JSON data endpoint.
 
-The endpoint is treated as an unverified discovery candidate until the live
-response passes transport and schema checks. This script preserves raw bytes
-and never classifies securities, accesses a database, or downloads quotations.
+The endpoint is treated as a discovery candidate until its live response
+passes transport and schema checks. Raw bytes are preserved. This script
+does not independently classify securities, access a database, or download
+quotations.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 URL = "https://info.tpex.org.tw/api/etfFilter"
+CODE_FIELD_NAMES = {"stockno", "securitycode", "security_code", "證券代號", "證券代碼", "股票代號", "股票代碼"}
 
 
 def describe_payload(payload: Any) -> dict[str, Any]:
@@ -23,6 +25,10 @@ def describe_payload(payload: Any) -> dict[str, Any]:
         "record_count": 0,
         "record_fields": [],
         "security_code_field_candidates": [],
+        "security_code_field": None,
+        "security_code_count": 0,
+        "security_codes": [],
+        "duplicate_security_code_count": 0,
         "schema_validated": False,
     }
     rows: list[dict[str, Any]] = []
@@ -30,7 +36,12 @@ def describe_payload(payload: Any) -> dict[str, Any]:
         rows = [x for x in payload if isinstance(x, dict)]
     elif isinstance(payload, dict):
         result["root_keys"] = sorted(str(k) for k in payload.keys())
-        for key, value in payload.items():
+        # Prefer the actual ETF records over auxiliary lists such as factorList.
+        preferred = ("data", "list", "items", "records")
+        keys = [k for k in preferred if k in payload]
+        keys += [k for k in payload if k not in keys]
+        for key in keys:
+            value = payload[key]
             if isinstance(value, list) and value and all(isinstance(x, dict) for x in value):
                 rows = value
                 result["records_container_key"] = str(key)
@@ -39,11 +50,22 @@ def describe_payload(payload: Any) -> dict[str, Any]:
     if rows:
         fields = sorted({str(k) for row in rows for k in row})
         result["record_fields"] = fields
-        result["security_code_field_candidates"] = [
+        candidates = [
             field for field in fields
-            if any(token in field.lower() for token in ("代號", "代碼", "code", "security"))
+            if field.replace("_", "").lower() in CODE_FIELD_NAMES
+            or any(token in field.lower() for token in ("代號", "代碼", "securitycode"))
         ]
+        result["security_code_field_candidates"] = candidates
         result["schema_validated"] = bool(fields)
+        if len(candidates) == 1:
+            field = candidates[0]
+            codes = [str(row.get(field, "")).strip() for row in rows]
+            codes = [code for code in codes if code]
+            result["security_code_field"] = field
+            result["security_code_count"] = len(codes)
+            result["security_codes"] = sorted(set(codes))
+            result["duplicate_security_code_count"] = len(codes) - len(set(codes))
+            result["exact_security_code_field_confirmed"] = bool(codes) and result["duplicate_security_code_count"] == 0
     return result
 
 
@@ -69,7 +91,10 @@ def main() -> None:
         parse_error = None
     except (requests.RequestException, UnicodeDecodeError, json.JSONDecodeError) as exc:
         inspected = {"root_type": None, "record_count": 0, "record_fields": [],
-                     "security_code_field_candidates": [], "schema_validated": False}
+                     "security_code_field_candidates": [], "security_code_field": None,
+                     "security_code_count": 0, "security_codes": [],
+                     "duplicate_security_code_count": 0, "schema_validated": False,
+                     "exact_security_code_field_confirmed": False}
         parse_error = str(exc)
 
     report = {
@@ -83,7 +108,6 @@ def main() -> None:
         "sha256": hashlib.sha256(raw).hexdigest(),
         "parse_error": parse_error,
         **inspected,
-        "exact_security_code_field_confirmed": False,
         "classification_confirmed": False,
         "automatic_exclusion_performed": False,
         "database_accessed": False,
@@ -98,8 +122,12 @@ def main() -> None:
         "http_status": report["http_status"],
         "content_type": report["content_type"],
         "record_count": report["record_count"],
-        "record_fields": report["record_fields"],
+        "records_container_key": report.get("records_container_key"),
+        "security_code_field": report["security_code_field"],
+        "security_code_count": report["security_code_count"],
+        "duplicate_security_code_count": report["duplicate_security_code_count"],
         "schema_validated": report["schema_validated"],
+        "classification_confirmed": False,
         "database_modified": False,
         "five_year_quotes_downloaded": False,
     }, ensure_ascii=False, sort_keys=True))
