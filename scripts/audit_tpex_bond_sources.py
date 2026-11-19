@@ -32,12 +32,11 @@ def inspect_rows(payload, code_field):
     for i, row in enumerate(payload, 1):
         if not isinstance(row, dict):
             raise ValueError(f"row {i} is not an object")
+        if code_field not in row:
+            raise ValueError(f"row {i} missing schema field {code_field}")
         code = str(row.get(code_field) or "").strip()
-        if not code:
-            raise ValueError(f"row {i} missing {code_field}")
-        codes.append(code)
-    if len(codes) != len(set(codes)):
-        raise ValueError(f"duplicate values in {code_field}")
+        if code:
+            codes.append(code)
     return codes
 
 def main():
