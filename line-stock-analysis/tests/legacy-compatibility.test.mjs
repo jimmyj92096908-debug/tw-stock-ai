@@ -46,7 +46,8 @@ test('draft preserves daily report enrollment shape for direct user text',()=>{
 
 test('draft keeps unknown commands and non-text events on legacy path',()=>{
   assert.equal(planLineEvent(textEvent('舊版特殊指令')).route,'legacy');
-  assert.equal(planLineEvent(textEvent('說明')).route,'legacy');
+  assert.equal(planLineEvent(textEvent('說明')).route,'stock');
+  assert.equal(planLineEvent(textEvent('資料狀態')).route,'stock');
   assert.deepEqual(planLineEvent({type:'follow',webhookEventId:'follow'}),{
     route:'legacy',record:null
   });
