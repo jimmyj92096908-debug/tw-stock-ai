@@ -44,7 +44,7 @@ def select_incomplete(universe: list[dict], coverage: dict, completed: set, mark
         rows = [row for row in rows if coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) is None or coverage[(MARKET_MAP[row["market"]], row["stock_id"])] > start_date]
     rows.sort(key=lambda row: (
         0 if coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) is None else 1,
-        coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) or date.max,
+        -coverage[(MARKET_MAP[row["market"]], row["stock_id"])].toordinal() if coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) else 0,
         MARKET_MAP[row["market"]],
         row["stock_id"],
     ))
