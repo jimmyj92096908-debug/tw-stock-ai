@@ -93,7 +93,7 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
     parser = _CalendarHTMLParser()
     parser.feed(html)
     page_text = " ".join(parser.page_text)
-    year_matches = re.findall(r"(?<!\\d)(\\d{2,4})\\s*年", page_text)
+    year_matches = re.findall(r"(?<!\d)(\d{2,4})\s*年", page_text)
     actual_years = {
         int(value) + 1911 if int(value) < 1911 else int(value)
         for value in year_matches
@@ -106,8 +106,8 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
 
     closed: set[date] = set()
     date_patterns = (
-        re.compile(r"(?:(\\d{2,4})\\s*年)?\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日"),
-        re.compile(r"(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})"),
+        re.compile(r"(?:(\d{2,4})\s*年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日"),
+        re.compile(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})"),
     )
     for row in parser.rows:
         if len(row) < 2:
