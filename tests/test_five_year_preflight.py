@@ -45,8 +45,8 @@ class CalendarParserTests(unittest.TestCase):
 
         self.assertEqual(fetch_closed_dates(2024, session), {date(2024, 1, 1)})
         args, kwargs = session.get.call_args
-        self.assertIn("/rwd/zh/holidaySchedule/holidaySchedule", args[0])
-        self.assertEqual(kwargs["params"], {"queryYear": "113", "response": "json"})
+        self.assertIn("/holidaySchedule/holidaySchedule", args[0])
+        self.assertEqual(kwargs["params"], {"date": "2024", "response": "json"})
         self.assertEqual(kwargs["timeout"], (8, 20))
 
     def test_rejects_wrong_year_response(self):
