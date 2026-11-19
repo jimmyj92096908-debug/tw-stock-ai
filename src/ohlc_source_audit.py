@@ -70,10 +70,13 @@ def classify_source_evidence(
     ohlc_values = [_number(database_row.get(key)) for key in ("open", "high", "low", "close")]
     all_ohlc_missing = all(value is None for value in ohlc_values)
 
+    if volume is None:
+        return SourceAudit("pending_review", "volume_missing_or_non_numeric", False)
+
     if _has_complete_ohlc(database_row):
         return SourceAudit("valid", "complete_consistent_ohlc", True)
 
-    if volume is not None and volume > 0 and all_ohlc_missing:
+    if volume > 0 and all_ohlc_missing:
         if source_observations:
             source_has_ohlc = any(_has_complete_ohlc(item) for item in source_observations)
             if not source_has_ohlc:
@@ -94,9 +97,6 @@ def classify_source_evidence(
             "zero_volume_and_all_ohlc_null_do_not_prove_no_trade_without_source_semantics",
             False,
         )
-
-    if volume is None:
-        return SourceAudit("pending_review", "volume_missing_or_non_numeric", False)
 
     if any(value is None for value in ohlc_values):
         return SourceAudit("pending_review", "partial_or_non_numeric_ohlc", False)
