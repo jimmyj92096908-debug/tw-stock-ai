@@ -49,10 +49,17 @@ def extract_candidates(text: str, roc_year: int, source_sha256: str) -> list[dic
             matches.append((int(match.group(1)), int(match.group(2))))
         for match in ENGLISH_DATE.finditer(line):
             matches.append((ENGLISH_MONTH[match.group(1).lower()], int(match.group(2))))
+        # PDF text extraction may split month and day into separate lines;
+        # scan a short joined window, but retain the occurrence's local context.
+        window = " ".join(lines[index:index + 3])
+        for match in ENGLISH_DATE.finditer(window):
+            pair = (ENGLISH_MONTH[match.group(1).lower()], int(match.group(2)))
+            if pair not in matches:
+                matches.append(pair)
         for month, day in matches:
             if day > 31:
                 continue
-            context = " | ".join(part.strip() for part in lines[max(0, index - 1):min(len(lines), index + 2)] if part.strip())
+            context = " | ".join(part.strip() for part in lines[max(0, index - 1):min(len(lines), index + 3)] if part.strip())
             key = (month, day)
             item = found.setdefault(key, {
                 "date": f"{gregorian_year:04d}-{month:02d}-{day:02d}",
