@@ -35,10 +35,7 @@ def normalize_payload(payload: Any) -> dict[str, Any]:
             rejected.append({"row": index, "stock_id": code, "reason": "duplicate_code"})
             continue
         seen.add(code)
-        candidates.append({
-            "stock_id": code, "name": name, "short_name": abbreviation,
-            "market": "TPEX"
-        })
+        candidates.append({"stock_id": code, "name": name, "short_name": abbreviation, "market": "TPEX"})
     return {
         "source": "TPEx official current OTC stock basic-data OpenAPI",
         "url": URL, "schema_fields": fields,
@@ -73,16 +70,11 @@ def main() -> None:
         "five_year_quotes_downloaded": False
     })
     (out / "tpex-current-otc-raw.json").write_bytes(raw)
-    (out / "tpex-current-otc-audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\\n", encoding="utf-8")
+    (out / "tpex-current-otc-audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     with (out / "tpex-current-otc-candidates.csv").open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["stock_id","name","short_name","market"])
         writer.writeheader(); writer.writerows(report["candidates"])
-    print(json.dumps({
-        "source_rows": report["source_row_count"],
-        "candidate_count": report["candidate_count"],
-        "common_stock_classification_confirmed": False,
-        "database_modified": False, "five_year_quotes_downloaded": False
-    }, ensure_ascii=False, sort_keys=True))
+    print(json.dumps({"source_rows":report["source_row_count"],"candidate_count":report["candidate_count"],"common_stock_classification_confirmed":False,"database_modified":False,"five_year_quotes_downloaded":False},ensure_ascii=False,sort_keys=True))
 
 if __name__ == "__main__":
     main()
