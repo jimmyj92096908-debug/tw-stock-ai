@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from datetime import date
+import calendar
 from pathlib import Path
 
 import psycopg
@@ -26,17 +27,21 @@ LOG = logging.getLogger("five_year_backfill")
 
 
 def five_year_start(today: date) -> date:
-    """Use the same calendar day five years ago; clamp leap-day."""
-    try:
-        return today.replace(year=today.year - 5)
-    except ValueError:
-        return today.replace(year=today.year - 5, day=28)
+    """Stable month boundary: backfill from first day of month five years ago."""
+    return date(today.year - 5, today.month, 1)
 
 
-def select_incomplete(universe: list[dict], coverage: dict, completed: set, market_filter: str = "both") -> list[dict]:
+def target_month_end(today: date) -> date:
+    """Stable target boundary for monthly progress keys."""
+    return date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+
+
+def select_incomplete(universe: list[dict], coverage: dict, completed: set, market_filter: str = "both", start_date: date | None = None) -> list[dict]:
     """Prioritize stocks with no price rows, then the shortest existing history."""
     rows = [row for row in universe if market_filter == "both" or MARKET_MAP[row["market"]] == market_filter]
     rows = [row for row in rows if (MARKET_MAP[row["market"]], row["stock_id"]) not in completed]
+    if start_date is not None:
+        rows = [row for row in rows if coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) is None or coverage[(MARKET_MAP[row["market"]], row["stock_id"])] > start_date]
     rows.sort(key=lambda row: (
         0 if coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) is None else 1,
         coverage.get((MARKET_MAP[row["market"]], row["stock_id"])) or date.max,
@@ -66,7 +71,7 @@ def load_coverage(conn) -> tuple[dict, set]:
         coverage = {(r["market"],r["stock_id"]):r["first_date"] for r in cur.fetchall()}
         cur.execute("""SELECT market,stock_id FROM backfill_progress
                        WHERE status='success' AND start_date=%s AND end_date=%s""",
-                    (five_year_start(date.today()),date.today()))
+                    (five_year_start(date.today()),target_month_end(date.today())))
         completed = {(r["market"],r["stock_id"]) for r in cur.fetchall()}
     return coverage, completed
 
@@ -137,13 +142,13 @@ def main():
     if not url:
         raise RuntimeError("DATABASE_URL secret missing")
     start=five_year_start(date.today())
-    end=date.today()
+    end=target_month_end(date.today())
     universe=stock_list.build_stock_list()
     success=0; failures=[]
     with psycopg.connect(url,row_factory=dict_row,connect_timeout=20) as conn:
         sync_universe(conn,universe)
         coverage,completed=load_coverage(conn)
-        batch=select_incomplete(universe,coverage,completed,args.market)[:args.batch_size]
+        batch=select_incomplete(universe,coverage,completed,args.market,start)[:args.batch_size]
         if not batch:
             LOG.info("所選市場目前沒有待回補股票。")
             return
