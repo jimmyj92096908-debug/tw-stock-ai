@@ -105,12 +105,12 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             self.assertIsNone(report["market_counts"]["twse"]["pending"])
             self.assertFalse(report["pending_count_is_authoritative"])
 
-    def test_calendar_fetch_uses_gregorian_year_and_cache_buster(self):
+    def test_calendar_fetch_uses_roc_year_and_cache_buster(self):
         class Response:
             def raise_for_status(self):
                 pass
             def json(self):
-                return {"stat": "ok", "queryYear": 2024, "data": []}
+                return {"stat": "ok", "queryYear": 113, "data": []}
 
         class Session:
             def get(self, url, params, **kwargs):
@@ -119,7 +119,7 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
 
         session = Session()
         self.assertEqual(fetch_closed_dates(2024, session), set())
-        self.assertEqual(session.params["queryYear"], "2024")
+        self.assertEqual(session.params["queryYear"], "113")
         self.assertTrue(session.params["_"])
 
 
