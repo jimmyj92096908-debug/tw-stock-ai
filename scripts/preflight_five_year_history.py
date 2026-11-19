@@ -90,7 +90,7 @@ def read_latest_manifest(manifest: Path) -> dict[tuple[str, str], dict[str, Any]
             item = json.loads(line)
             market, day, status = item["market"], item["trade_date"], item["status"]
             date.fromisoformat(day)
-            if market not in MARKETS or status not in {"success", "failed"}:
+            if market not in MARKETS or status not in {"success", "failed", "no_data_unverified"}:
                 continue
             latest[(market, day)] = item
         except (ValueError, KeyError, TypeError):
@@ -130,6 +130,7 @@ def build_preflight(
     }
     successful: list[tuple[str, str]] = []
     failed: list[tuple[str, str]] = []
+    no_data_unverified: list[tuple[str, str]] = []
     incomplete_files: list[dict[str, str]] = []
     unexpected: list[tuple[str, str]] = []
 
@@ -139,6 +140,9 @@ def build_preflight(
             continue
         if item["status"] == "failed":
             failed.append(key)
+            continue
+        if item["status"] == "no_data_unverified":
+            no_data_unverified.append(key)
             continue
         raw_ok = _safe_existing_file(output_dir, str(item.get("raw_path", "")))
         rows_ok = _safe_existing_file(output_dir, str(item.get("rows_path", "")))
@@ -152,7 +156,7 @@ def build_preflight(
                 "rows_file_present": str(rows_ok).lower(),
             })
 
-    pending = sorted(expected_keys - set(successful) - set(failed) - {
+    pending = sorted(expected_keys - set(successful) - set(failed) - set(no_data_unverified) - {
         (item["market"], item["trade_date"]) for item in incomplete_files
     }) if calendar_complete else []
     market_counts = {
@@ -160,6 +164,7 @@ def build_preflight(
             "expected_sessions": len(sessions) if calendar_complete else None,
             "completed": sum(1 for m, _ in successful if m == market),
             "failed": sum(1 for m, _ in failed if m == market),
+            "no_data_unverified": sum(1 for m, _ in no_data_unverified if m == market),
             "pending": sum(1 for m, _ in pending if m == market) if calendar_complete else None,
         }
         for market in MARKETS
@@ -179,6 +184,9 @@ def build_preflight(
         "expected_market_date_tasks": len(expected_keys) if calendar_complete else None,
         "market_counts": market_counts,
         "failed_market_dates": [{"market": m, "trade_date": d} for m, d in sorted(failed)],
+        "no_data_unverified_market_dates": [
+            {"market": m, "trade_date": d} for m, d in sorted(no_data_unverified)
+        ],
         "incomplete_manifest_files": incomplete_files,
         "manifest_entries_outside_requested_range": [
             {"market": m, "trade_date": d} for m, d in sorted(unexpected)
