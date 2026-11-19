@@ -5,6 +5,7 @@ This module never imputes OHLC or interprets missing rows as zero trading.
 from __future__ import annotations
 
 from datetime import date
+import math
 from typing import Any
 
 
@@ -31,7 +32,7 @@ def _number(value: Any) -> float | None:
         result = float(text)
     except ValueError:
         return None
-    return result
+    return result if math.isfinite(result) else None
 
 
 def _monthly_observation(payload: dict | None, trade_date: str) -> dict | None:
