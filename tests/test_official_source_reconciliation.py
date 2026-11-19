@@ -1,6 +1,6 @@
 import unittest
 
-from src.official_source_reconciliation import reconcile_tpex_payloads, reconcile_twse_payloads
+from src.official_source_reconciliation import _valid_ohlc, reconcile_tpex_payloads, reconcile_twse_payloads
 
 
 class TpexReconciliationTests(unittest.TestCase):
@@ -24,6 +24,7 @@ class TpexReconciliationTests(unittest.TestCase):
         result = reconcile_tpex_payloads(self.monthly, self.bulk_empty, "1259", "2026-10-05")
         self.assertEqual(result["classification"], "source_conflict")
         self.assertEqual(result["reason"], "monthly_individual_positive_volume_but_bulk_table_total_count_zero")
+        self.assertEqual(result["evidence_confidence"], "insufficient")
         self.assertFalse(result["ohlc_imputed"])
 
     def test_missing_bulk_count_is_pending_not_conflict(self):
@@ -54,6 +55,7 @@ class TwseReconciliationTests(unittest.TestCase):
         self.assertTrue(result["ohlc_match"])
         self.assertTrue(result["volume_match"])
         self.assertTrue(result["trade_count_match"])
+        self.assertEqual(result["evidence_confidence"], "corroborated_two_official_endpoints")
         self.assertFalse(result["ohlc_imputed"])
 
     def test_twse_value_mismatch_is_source_conflict(self):
@@ -76,6 +78,29 @@ class TwseReconciliationTests(unittest.TestCase):
         result = reconcile_twse_payloads(self.monthly, missing, "1101", "2026-11-18")
         self.assertEqual(result["classification"], "pending_review")
         self.assertFalse(result["ohlc_imputed"])
+
+
+class OhlcValidationTests(unittest.TestCase):
+    def test_valid_ohlc(self):
+        self.assertTrue(_valid_ohlc({"open": 10, "high": 12, "low": 9, "close": 11}))
+
+    def test_missing_zero_negative_and_nonfinite_values_are_invalid(self):
+        cases = [
+            {"open": None, "high": 12, "low": 9, "close": 11},
+            {"open": 0, "high": 12, "low": 0, "close": 11},
+            {"open": -1, "high": 12, "low": 9, "close": 11},
+            {"open": 10, "high": float("inf"), "low": 9, "close": 11},
+        ]
+        for values in cases:
+            with self.subTest(values=values):
+                self.assertFalse(_valid_ohlc(values))
+
+    def test_high_must_cover_open_and_close(self):
+        self.assertFalse(_valid_ohlc({"open": 13, "high": 12, "low": 9, "close": 11}))
+        self.assertFalse(_valid_ohlc({"open": 10, "high": 12, "low": 9, "close": 13}))
+
+    def test_low_must_not_exceed_open_or_close(self):
+        self.assertFalse(_valid_ohlc({"open": 10, "high": 12, "low": 11, "close": 11.5}))
 
 
 if __name__ == "__main__":
