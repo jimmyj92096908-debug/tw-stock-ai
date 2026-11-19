@@ -167,6 +167,10 @@ export function formatStockAnalysis(row) {
     lines.push('籌碼分數：' + number(row.chip_score, 1));
   }
 
+  const observationTime = Date.parse(priceDate + 'T00:00:00Z');
+  if (Number.isFinite(observationTime) && Date.now() - observationTime > 7 * 86400000) {
+    lines.push('', '注意：最新可用行情距今已超過 7 日，請確認資料是否更新。');
+  }
   const mismatched = [
     row.technical_date, row.smc_date, row.score_date
   ].filter(Boolean).some(value => displayDate(value) !== priceDate);
