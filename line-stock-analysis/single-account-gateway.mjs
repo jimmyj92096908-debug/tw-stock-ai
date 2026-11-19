@@ -8,8 +8,16 @@ const STOCK_KINDS=new Set(['stock','rank','list','excluded']);
 const MAX_BYTES=256000;
 
 export function isStockCommandEvent(event) {
+  // Routing and the stock candidate must have the same minimum contract.
+  // Otherwise malformed stock-like events would be silently consumed instead
+  // of reaching the original handler.
   if (event?.type!=='message' || event.mode==='standby' ||
-      event.source?.type!=='user' || event.message?.type!=='text') return false;
+      event.source?.type!=='user' ||
+      typeof event.source.userId!=='string' || !event.source.userId ||
+      event.message?.type!=='text' ||
+      typeof event.message.text!=='string' ||
+      typeof event.webhookEventId!=='string' || !event.webhookEventId ||
+      typeof event.replyToken!=='string' || !event.replyToken) return false;
   return STOCK_KINDS.has(parseStockCode(event.message.text).kind);
 }
 
