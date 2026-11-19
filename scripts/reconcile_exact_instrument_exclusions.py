@@ -21,12 +21,8 @@ SOURCE_SPECS = {
     "tpex_warrants": ("instrument-sources/tpex_warrants-raw.json", "權證代號", "TPEX", "warrant"),
     "tpex_etf": ("tpex-etf/tpex-etf-infohub-raw.json", "stockNo", "TPEX", "etf"),
     "tpex_bonds": ("tpex-bonds/tpex-bond-codes-raw.json", "BondCode", "TPEX", "bond"),
-    "tpex_etn_partial": ("tpex-etn/tpex-etn-codes-raw.json", "security_code", "TPEX", "etn"),
+    "tpex_etn_current": ("tpex-etn-query-discovery/current_listing_api_response.json", "證券代號", "TPEX", "etn"),
 }
-
-PARTIAL_COVERAGE_SOURCES = {"tpex_etn_partial"}
-
-# The ETN source is an official current ESG showcase page, not a complete ETN master.
 
 
 def sha256_file(path: Path) -> str:
@@ -52,6 +48,35 @@ def load_codes(path: Path, field: str, container: str | None = None) -> set[str]
         code = str(row.get(field) or "").strip()
         if not code:
             raise ValueError(f"{path}: missing {field!r} at row {index}")
+        codes.append(code)
+    if len(codes) != len(set(codes)):
+        raise ValueError(f"{path}: duplicate values in {field!r}")
+    return set(codes)
+
+
+def load_tpex_etn_table_codes(path: Path, field: str) -> set[str]:
+    """Validate TPEx's nested tables/fields/data response without guessing columns."""
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path}: expected JSON object")
+    tables = payload.get("tables")
+    if not isinstance(tables, list) or len(tables) != 1 or not isinstance(tables[0], dict):
+        raise ValueError(f"{path}: expected exactly one table object")
+    table = tables[0]
+    fields = table.get("fields")
+    rows = table.get("data")
+    if not isinstance(fields, list) or fields.count(field) != 1:
+        raise ValueError(f"{path}: expected exactly one {field!r} column")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"{path}: expected non-empty table data")
+    index = fields.index(field)
+    codes = []
+    for row_number, row in enumerate(rows, start=1):
+        if not isinstance(row, list) or len(row) != len(fields):
+            raise ValueError(f"{path}: row {row_number} width does not match fields")
+        code = str(row[index] or "").strip()
+        if not code:
+            raise ValueError(f"{path}: missing {field!r} at row {row_number}")
         codes.append(code)
     if len(codes) != len(set(codes)):
         raise ValueError(f"{path}: duplicate values in {field!r}")
@@ -118,7 +143,6 @@ def reconcile_exact_codes(
     }
 
 
-
 def write_audit_csv(records: list[dict[str, Any]], output_path: Path) -> None:
     """Write all exclusion records, including operator-directed reasons, to CSV."""
     fields = [
@@ -136,6 +160,7 @@ def write_audit_csv(records: list[dict[str, Any]], output_path: Path) -> None:
             }
             writer.writerow(csv_row)
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit-root", required=True)
@@ -147,15 +172,16 @@ def main() -> None:
     source_codes: dict[str, dict[str, Any]] = {}
     for source_id, (relative_path, field, market, category) in SOURCE_SPECS.items():
         path = root / relative_path
-        container = "data" if source_id == "tpex_etf" else None
         source_sha256 = sha256_file(path)
         try:
-            codes = load_codes(path, field, container)
+            if source_id == "tpex_etn_current":
+                codes = load_tpex_etn_table_codes(path, field)
+            else:
+                container = "data" if source_id == "tpex_etf" else None
+                codes = load_codes(path, field, container)
             schema_validated = True
             source_error = None
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-            # Invalid/HTML response is unavailable evidence, not an empty list.
-            # Fail closed: no exclusion can be based on this source.
             codes = set()
             schema_validated = False
             source_error = f"{type(exc).__name__}: {exc}"
@@ -163,7 +189,7 @@ def main() -> None:
             "market": market, "category": category, "codes": codes,
             "path": str(path), "sha256": source_sha256, "code_field": field,
             "schema_validated": schema_validated, "source_error": source_error,
-            "coverage_status": "partial" if source_id in PARTIAL_COVERAGE_SOURCES else "audited_feed",
+            "coverage_status": "current_snapshot" if source_id == "tpex_etn_current" else "audited_feed",
         }
 
     reconciliation = json.loads(Path(args.reconciliation_json).read_text(encoding="utf-8-sig"))
@@ -181,7 +207,8 @@ def main() -> None:
     report["coverage"] = {
         "unavailable_source_count": sum(not item["schema_validated"] for item in source_codes.values()),
         "partial_source_count": sum(item["coverage_status"] == "partial" for item in source_codes.values()),
-        "classification_coverage_complete": all(item["schema_validated"] and item["coverage_status"] != "partial" for item in source_codes.values()),
+        "classification_coverage_complete": all(item["schema_validated"] for item in source_codes.values()),
+        "historical_lifecycle_coverage_complete": False,
     }
     report["sources"] = {
         source_id: {
@@ -189,6 +216,7 @@ def main() -> None:
             "code_field": item["code_field"], "code_count": len(item["codes"]),
             "schema_validated": item["schema_validated"],
             "source_error": item["source_error"],
+            "coverage_status": item["coverage_status"],
             "sha256": item["sha256"],
         } for source_id, item in source_codes.items()
     }
