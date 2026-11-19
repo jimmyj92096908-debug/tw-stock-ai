@@ -85,6 +85,23 @@ def summarize_json(payload):
     summary = {"top_level_type": type(payload).__name__}
     if isinstance(payload, dict):
         summary["top_level_keys"] = list(payload.keys())[:50]
+        tables = payload.get("tables")
+        if isinstance(tables, list) and tables and isinstance(tables[0], dict):
+            table = tables[0]
+            summary["first_table_keys"] = list(table.keys())[:50]
+            fields = table.get("fields")
+            data = table.get("data")
+            if isinstance(fields, list):
+                summary["table_field_count"] = len(fields)
+                summary["table_fields"] = fields[:30]
+            if isinstance(data, list):
+                summary["table_data_count"] = len(data)
+                if data and isinstance(data[0], list):
+                    summary["table_first_row_width"] = len(data[0])
+                    summary["table_first_row_sample"] = data[0][:12]
+                elif data and isinstance(data[0], dict):
+                    summary["table_first_record_keys"] = list(data[0].keys())[:50]
+                    summary["table_first_record_sample"] = data[0]
         for key in ("fields", "data", "tables", "records", "result"):
             value = payload.get(key)
             if isinstance(value, list):
