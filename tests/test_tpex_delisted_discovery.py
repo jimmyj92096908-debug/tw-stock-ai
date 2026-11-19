@@ -14,7 +14,7 @@ class TpexDelistedDiscoveryTests(unittest.TestCase):
     def test_extracts_frontend_api_hints_but_does_not_confirm_endpoint(self):
         hits = inspect_asset('fetch("/api/delist/search"); $.post("/query")', "test.js")
         self.assertTrue(any("/api/delist/search" in h for h in hits))
-        self.assertTrue(any("$.post" in h for h in hits)
+        self.assertTrue(any("$.post" in h for h in hits))
 
 if __name__ == "__main__":
     unittest.main()
