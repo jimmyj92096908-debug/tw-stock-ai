@@ -56,6 +56,7 @@ def load_codes(path: Path, field: str, container: str | None = None) -> set[str]
 def reconcile_exact_codes(
     exchange_rows: list[dict[str, str]],
     source_codes: dict[str, dict[str, Any]],
+    manual_exclusion_records: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     records = []
     seen: set[str] = set()
@@ -78,6 +79,17 @@ def reconcile_exact_codes(
             "bucket": "excluded" if matches else "candidate",
             "instrument_subtype_confirmed": False,
             "exclusion_evidence": matches,
+        })
+    for row in manual_exclusion_records or []:
+        code = str(row.get("stock_id", "")).strip()
+        if not code or code in seen:
+            raise ValueError(f"Invalid or duplicate manual exclusion code: {code!r}")
+        seen.add(code)
+        records.append({
+            "stock_id": code, "name": row.get("name", ""),
+            "market": row.get("market", ""), "bucket": "excluded",
+            "instrument_subtype_confirmed": False, "exclusion_evidence": [],
+            "manual_exclusion_reason": row.get("review_reason", "operator-directed exclusion"),
         })
     counts = {bucket: sum(r["bucket"] == bucket for r in records)
               for bucket in ("candidate", "excluded")}
@@ -136,7 +148,10 @@ def main() -> None:
         raise ValueError("Reconciliation JSON must contain a records array")
     exchange_rows = [row for row in all_records if row.get("bucket") == "candidate"]
     review_records = [row for row in all_records if row.get("bucket") == "review"]
-    report = reconcile_exact_codes(exchange_rows, source_codes)
+    manual_exclusion_records = [row for row in all_records if row.get("bucket") == "excluded"]
+    report = reconcile_exact_codes(exchange_rows, source_codes, manual_exclusion_records)
+    report["manual_exclusion_count"] = len(manual_exclusion_records)
+    report["manual_exclusion_records"] = manual_exclusion_records
     report["review_record_count"] = len(review_records)
     report["review_records"] = review_records
     report["coverage"] = {
