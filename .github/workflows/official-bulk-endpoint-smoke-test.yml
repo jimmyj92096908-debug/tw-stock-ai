@@ -33,10 +33,15 @@ jobs:
           PYTHONPATH: .
         run: |
           python scripts/audit_twse_positive_volume_missing_ohlc.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
-      - name: Upload audit report
+      - name: Reconcile affected securities against official individual monthly quotes
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/audit_twse_individual_stock_reconciliation.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Upload source reconciliation reports
         uses: actions/upload-artifact@v4
         with:
-          name: twse-positive-volume-missing-ohlc-audit
-          path: audit-output/twse-positive-volume-missing-ohlc.json
+          name: twse-official-source-reconciliation
+          path: audit-output/*.json
           if-no-files-found: error
           retention-days: 30
