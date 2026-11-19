@@ -1,0 +1,33 @@
+name: TPEx Raw Source Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      - name: Fetch TPEx raw rows and compare parser output
+        run: python scripts/diagnose_tpex_raw.py
+      - name: Upload raw response and parsed comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-raw-source-diagnostic
+          path: artifacts/tpex-raw-diagnostic/
+          if-no-files-found: warn
+          retention-days: 14
