@@ -68,6 +68,18 @@ def request_payload(session: requests.Session, market: str, trade_date: date) ->
     raise RuntimeError(f"{market} {day}: request failed after {MAX_ATTEMPTS} attempts: {last_error}")
 
 
+NO_DATA_MARKERS = ("沒有符合條件的資料", "查無資料", "無資料", "查無符合資料")
+
+
+def is_explicit_no_data_response(payload: dict[str, Any]) -> bool:
+    """Identify an explicit empty-result message without claiming it means a holiday."""
+    status = str(payload.get("stat") or "").strip()
+    title = str(payload.get("title") or "").strip()
+    message = str(payload.get("message") or "").strip()
+    combined = " ".join((status, title, message))
+    return any(marker in combined for marker in NO_DATA_MARKERS)
+
+
 def atomic_write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -104,7 +116,7 @@ def download_range(start: date, end: date, output: Path, markets: list[str], del
     output.mkdir(parents=True, exist_ok=True)
     manifest = output / "manifest.jsonl"
     completed = load_completed(manifest)
-    counts = {"success": 0, "skipped": 0, "failed": 0}
+    counts = {"success": 0, "skipped": 0, "no_data_unverified": 0, "failed": 0}
     session = requests.Session()
     session.headers.update(HEADERS)
 
@@ -117,6 +129,18 @@ def download_range(start: date, end: date, output: Path, markets: list[str], del
                 continue
             try:
                 raw, payload = request_payload(session, market, day)
+                if is_explicit_no_data_response(payload):
+                    append_manifest(manifest, {
+                        "market": market,
+                        "trade_date": day_text,
+                        "status": "no_data_unverified",
+                        "reason": "Official endpoint explicitly reported no matching data; trading calendar not verified",
+                        "response_stat": str(payload.get("stat") or "")[:200],
+                        "response_title": str(payload.get("title") or "")[:200],
+                    })
+                    counts["no_data_unverified"] += 1
+                    time.sleep(delay)
+                    continue
                 raw_path = output / "raw" / market / f"{day_text}.json.gz"
                 raw_bytes = gzip.compress(raw)
                 # Parse first. A rejected or mismatched response is not marked complete.
