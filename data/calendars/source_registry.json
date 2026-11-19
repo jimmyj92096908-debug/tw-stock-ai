@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "range": {
+    "gregorian_start": "2021-11-19",
+    "gregorian_end": "2026-11-19",
+    "roc_years": [
+      110,
+      111,
+      112,
+      113,
+      114,
+      115
+    ]
+  },
+  "policy": {
+    "official_sources_only_for_calendar_acceptance": true,
+    "third_party_sources_may_only_be_discovery_clues": true,
+    "no_weekday_only_calendar_fallback": true,
+    "no_data_response_is_not_proof_of_holiday": true,
+    "market_specific_scope_required": true,
+    "parse_status_for_all_entries": "discovered_not_parsed"
+  },
+  "markets": {
+    "twse": {
+      "110": {
+        "status": "official_notice_found_attachment_not_verified",
+        "url": "https://eshop.twse.com.tw/zh/news/detail/0000000072bb295201762ca56a7c0179",
+        "description": "TWSE Data E-Shop notice dated 2020-12-04; attachment link redirects to the current holiday schedule UI."
+      },
+      "111": {
+        "status": "official_notice_found_attachment_not_verified",
+        "url": "https://eshop.twse.com.tw/zh/news/detail/000000007e6ac9be017edcd5fc510025",
+        "description": "TWSE Data E-Shop notice dated 2022-02-09 for the 2022 annual schedule; attachment link redirects to the current holiday schedule UI."
+      },
+      "112": {
+        "status": "official_notice_found_attachment_not_verified",
+        "url": "https://eshop.twse.com.tw/zh/news/detail/0000000084fb51ed01852ea41720000a",
+        "description": "TWSE Data E-Shop notice dated 2022-12-20; attachment link redirects to the current holiday schedule UI."
+      },
+      "113": {
+        "status": "official_notice_found_attachment_not_verified",
+        "url": "https://eshop.twse.com.tw/zh/news/detail/000000008c1e9f81018cc87af7540078",
+        "description": "TWSE Data E-Shop notice dated 2024-01-02; attachment link redirects to the current holiday schedule UI."
+      },
+      "114": {
+        "status": "official_annual_notice_found_year_query_not_verified",
+        "url": "https://eshop.twse.com.tw/zh/news/detail/8a82e9e69471d3e8019495d93c4f0019",
+        "description": "TWSE Data E-Shop notice dated 2025-01-01 for the 2025 market calendar; notice points to the historical holiday query UI."
+      },
+      "115": {
+        "status": "official_annual_notice_found_year_query_not_verified",
+        "url": "https://eshop.twse.com.tw/zh/news/detail/8a82e9e69c3aecea019c510b35f50024",
+        "description": "TWSE Data E-Shop notice dated 2026-02-12 for the 2026 market calendar; notice points to the historical holiday query UI."
+      }
+    },
+    "tpex": {
+      "110": {
+        "status": "official_year_calendar_html_found",
+        "url": "https://www.tpex.org.tw/storage/en-us/web/bulletin/trading_date/trading_date_110.htm",
+        "description": "Official TPEx English holiday schedule for 2021; includes dates extending into January 2022."
+      },
+      "111": {
+        "status": "official_year_calendar_html_found",
+        "url": "https://www.tpex.org.tw/storage/en-us/web/bulletin/trading_date/trading_date_111.htm",
+        "description": "Official TPEx English holiday schedule for 2022; includes December 31, 2021 adjusted holiday and the full 2022 calendar."
+      },
+      "112": {
+        "status": "official_pdf_found",
+        "url": "https://www.tpex.org.tw/storage/eb_data/11111/111007021911-1.pdf",
+        "description": "Official TPEx 2023 annual market opening/closing schedule PDF."
+      },
+      "113": {
+        "status": "official_pdf_found",
+        "url": "https://www.tpex.org.tw/storage/eb_data/11211/112007460511-1.pdf",
+        "description": "Official TPEx 2024 annual market opening/closing schedule PDF."
+      },
+      "114": {
+        "status": "official_revised_pdf_found",
+        "url": "https://www.tpex.org.tw/storage/eb_data/11407/114030173911-1.pdf",
+        "description": "Official TPEx 2025 revised annual market opening/closing schedule PDF."
+      },
+      "115": {
+        "status": "official_pdf_found",
+        "url": "https://www.tpex.org.tw/storage/eb_data/11411/114007545811-1.pdf",
+        "description": "Official TPEx 2026 annual market opening/closing schedule PDF."
+      }
+    }
+  }
+}

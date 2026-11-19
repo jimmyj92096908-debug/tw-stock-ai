@@ -1,0 +1,43 @@
+name: Five-Year History Preflight
+
+on:
+  push:
+    branches:
+      - feature/five-year-bulk-history-downloader
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install HTTP dependency
+        run: python -m pip install requests
+      - name: Run five-year official calendar and manifest preflight (no quote download)
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/preflight_five_year_history.py \
+            --start-date 2021-11-19 \
+            --end-date 2026-11-19 \
+            --output-dir artifacts/five-year-market-history \
+            --report audit-output/five-year-history-preflight.json
+      - name: Upload preflight report
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-year-history-preflight
+          path: |
+            audit-output/five-year-history-preflight.json
+            audit-output/calendar-archive/
+          if-no-files-found: error
+          retention-days: 30

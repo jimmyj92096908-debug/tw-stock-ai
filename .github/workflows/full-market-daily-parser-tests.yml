@@ -1,0 +1,27 @@
+name: Full-Market Daily Parser Tests
+
+on:
+  push:
+    branches:
+      - feature/full-market-daily-parsers
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run parser tests
+        run: python -m unittest discover -s tests -p "test_market_data_bulk.py" -v
+      - name: Compile Python sources
+        run: python -m compileall -q src tests

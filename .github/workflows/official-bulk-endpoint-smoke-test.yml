@@ -1,0 +1,52 @@
+name: Official Bulk Endpoint Smoke Test
+
+on:
+  push:
+    branches:
+      - feature/five-year-bulk-history-downloader
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install HTTP dependency
+        run: python -m pip install requests
+      - name: Query four historical trading dates from each official endpoint
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/smoke_test_official_bulk_endpoints.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Build read-only TWSE positive-volume missing-OHLC audit
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/audit_twse_positive_volume_missing_ohlc.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Reconcile affected securities against official individual monthly quotes
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/audit_twse_individual_stock_reconciliation.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Classify OHLC gaps using official individual-source evidence
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/classify_twse_ohlc_gaps.py
+      - name: Upload source reconciliation reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: twse-official-source-reconciliation
+          path: audit-output/*.json
+          if-no-files-found: error
+          retention-days: 30

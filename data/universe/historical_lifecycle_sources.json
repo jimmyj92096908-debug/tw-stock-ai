@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "purpose": "historical security lifecycle evidence source inventory",
+  "status": "research_candidates_only",
+  "research_checked_at": "2026-11-19",
+  "sources": [
+    {
+      "market": "TWSE",
+      "source_id": "twse_current_listed_companies",
+      "url": "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
+      "data_scope": "current listed company reference",
+      "status": "live_response_schema_observed_current_snapshot",
+      "limitations": [
+        "Current snapshot only; does not establish historical universe.",
+        "Only current surviving listed-company snapshot; excludes delisted companies and cannot alone reconstruct full historical universe."
+      ],
+      "observed_fields": [
+        "公司代號",
+        "公司名稱",
+        "上市日期",
+        "出表日期"
+      ],
+      "date_format": "YYYYMMDD (Gregorian)",
+      "evidence": "Official endpoint response contains current listed-company records with listing date and report date."
+    },
+    {
+      "market": "TWSE",
+      "source_id": "twse_terminated_listings",
+      "url": "https://openapi.twse.com.tw/v1/company/suspendListingCsvAndHtml",
+      "data_scope": "terminated listing companies",
+      "status": "live_response_schema_and_coverage_observed",
+      "observed_schema": [
+        "DelistingDate",
+        "Company",
+        "Code"
+      ],
+      "date_format": "ROC YYYY/MM/DD",
+      "observed_date_range": {
+        "latest": "115/11/18",
+        "earliest": "090/01/20"
+      },
+      "evidence": "Official endpoint response was observed; source page exposes records from the most recent termination back to ROC year 90 (2001).",
+      "limitations": [
+        "Response field and observed date span confirmed, but completeness, endpoint retention policy, and suitability as the sole historical event source remain unverified."
+      ]
+    },
+    {
+      "market": "TPEX",
+      "source_id": "tpex_delisted_company_query",
+      "url": "https://www.tpex.org.tw/zh-tw/mainboard/listed/delisted.html",
+      "data_scope": "terminated OTC company query, with code, termination-year and termination-reason filters",
+      "status": "official_page_confirmed_frontend_discovery_audit_added_endpoint_unverified",
+      "observed_fields": [
+        "security code query",
+        "termination year filter",
+        "termination reason filter"
+      ],
+      "evidence": "Official page exposes the stated query controls; response schema and machine-readable endpoint not established.",
+      "limitations": [
+        "Bulk downloadable response, exact date fields, pagination behavior, historical coverage, and automated access not yet verified.",
+        "Added bounded read-only GitHub Actions diagnostic to capture the page HTML, form metadata, linked JavaScript, and endpoint hints as an artifact; diagnostic results pending CI run."
+      ]
+    },
+    {
+      "market": "TPEX",
+      "source_id": "tpex_openapi",
+      "url": "https://www.tpex.org.tw/openapi/",
+      "data_scope": "OTC, emerging and other securities public API catalog",
+      "status": "catalog_reviewed_lifecycle_endpoint_not_identified",
+      "limitations": [
+        "Catalog review did not establish a historical delisted security master endpoint; this is not proof no such endpoint exists."
+      ]
+    },
+    {
+      "market": "TPEX",
+      "source_id": "tpex_delisted_historical_quotes_manual_reference",
+      "url": "https://www.tpex.org.tw/zh-tw/mainboard/trading/info/stock-pricing.html",
+      "data_scope": "historical daily quotes query",
+      "status": "official_manual_historical_query_confirmed",
+      "evidence": "TPEx page says individual daily trading data available from ROC year 83 (1994) onward.",
+      "limitations": [
+        "Historical price query is by code/month and is not a complete historical listing/delisting universe."
+      ]
+    }
+  ],
+  "accepted_historical_universe": false,
+  "download_authorized": false
+}

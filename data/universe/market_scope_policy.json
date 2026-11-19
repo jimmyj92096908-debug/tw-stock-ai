@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "policy_id": "phase_one_active_listed_otc_only",
+  "effective_phase": "phase_1",
+  "status": "approved_scope",
+  "markets": [
+    "TWSE",
+    "TPEX"
+  ],
+  "include": [
+    "currently listed common stocks on TWSE",
+    "currently OTC-listed common stocks on TPEx"
+  ],
+  "exclude": [
+    "delisted securities",
+    "terminated OTC-listed securities",
+    "ETFs",
+    "warrants",
+    "bonds",
+    "other non-common-stock instruments"
+  ],
+  "historical_prices": {
+    "lookback_years": 5,
+    "applies_to": "securities in the current eligible TWSE and TPEx universe",
+    "requirement": "download historical daily OHLCV for eligible securities across the five-year lookback where official source data is available",
+    "missing_data_policy": "do not impute; record unavailable or unverified coverage"
+  },
+  "lifecycle_policy": {
+    "historical_delisted_universe_required": false,
+    "delisted_source_validation_required": false,
+    "current_universe_snapshot_required": true,
+    "listing_date_validation_required": true
+  },
+  "safety_gates": {
+    "bulk_download_authorized": false,
+    "neon_database_writes_authorized": false,
+    "pull_request_merge_authorized": false
+  },
+  "notes": [
+    "This scope intentionally excludes securities that are no longer listed or OTC-listed as of the current universe snapshot.",
+    "Historical five-year prices are still required for eligible securities; this does not mean downloading only current-day quotes.",
+    "Current universe snapshots must be refreshed and dated before each production ingestion run.",
+    "The active-only scope is a phase-one simplification and can be expanded in a later phase."
+  ]
+}
