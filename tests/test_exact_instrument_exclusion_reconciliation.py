@@ -28,6 +28,16 @@ class ExactInstrumentExclusionTests(unittest.TestCase):
         result = reconcile_exact_codes(rows, sources)
         self.assertEqual(result["bucket_counts"], {"candidate": 1, "excluded": 0})
 
+    def test_manual_exclusion_is_preserved_even_without_source_code_match(self):
+        rows = [{"stock_id": "2330", "name": "TSMC", "market": "TWSE"}]
+        manual = [{"stock_id": "1808", "name": "潤隆建設", "market": "TWSE",
+                   "review_reason": "user_directed_exclusion"}]
+        result = reconcile_exact_codes(rows, {}, manual)
+        self.assertEqual(result["bucket_counts"], {"candidate": 1, "excluded": 1})
+        self.assertEqual(result["records"][1]["stock_id"], "1808")
+        self.assertEqual(result["records"][1]["bucket"], "excluded")
+        self.assertEqual(result["records"][1]["manual_exclusion_reason"], "user_directed_exclusion")
+
     def test_duplicate_exchange_codes_rejected(self):
         rows = [
             {"stock_id": "2330", "name": "A", "market": "TWSE"},
