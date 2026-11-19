@@ -4,7 +4,7 @@ from datetime import date
 
 from src.stock_db_audit import (
     COVERAGE_SQL, GLOBAL_DATES_SQL, SCORE_MATCH_SQL, SAMPLES_SQL,
-    REFRESH_STATUS_SQL, collect_audit, format_audit, iso_date,
+    REFRESH_STATUS_SQL, QUALITY_SQL, collect_audit, format_audit, iso_date,
 )
 
 
@@ -40,6 +40,15 @@ class _Cursor:
             return {
                 "score_date": date(2026, 11, 18),
                 "scored": 18, "matched_price": 17, "missing_price": 1,
+            }
+        if self.sql == QUALITY_SQL:
+            return {
+                "total_price_rows": 49392, "invalid_close": 0,
+                "negative_volume": 0, "inverted_high_low": 0,
+                "close_above_high": 0, "close_below_low": 0,
+                "future_price_date": 0, "total_score_rows": 37118,
+                "invalid_score": 0, "invalid_score_coverage": 0,
+                "future_score_date": 0,
             }
         if "to_regclass" in self.sql:
             return {"name": "market_data_refresh_state" if self.refresh_exists else None}
@@ -84,7 +93,7 @@ class StockAuditTests(unittest.TestCase):
         self.assertEqual(result["latest"]["latest_score_date"], "2026-11-18")
         self.assertEqual(result["score"]["matched_price"], 17)
         self.assertEqual(result["samples"][0]["last_price"], "2026-10-30")
-        self.assertEqual(len(conn.cur.calls), 6)
+        self.assertEqual(len(conn.cur.calls), 7)
         self.assertEqual(conn.cur.calls[1][1], (date(2026, 11, 19),))
         self.assertEqual(conn.cur.calls[3][1], (["2330", "6488", "6213"],))
 
@@ -93,12 +102,26 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("評分日 2026-11-18：評分 18；有同日收盤價 17", output)
         self.assertIn("輪替更新 never_attempted：1977", output)
         self.assertIn("不可視為全市場分析", output)
+        self.assertIn("價格資料品質：共 49,392 筆；異常條件命中 0 次", output)
+        self.assertIn("評分資料品質：共 37,118 筆；異常條件命中 0 次", output)
+        self.assertIn("最新行情日與最新評分日不同", output)
 
     def test_optional_refresh_table_can_be_absent(self):
         conn = _Connection(refresh_exists=False)
         snapshot = collect_audit(conn)
         self.assertEqual(snapshot["refresh_state"], [])
-        self.assertEqual(len(conn.cur.calls), 5)
+        self.assertEqual(len(conn.cur.calls), 6)
+
+    def test_quality_warnings_report_flagged_rows(self):
+        snapshot = collect_audit(_Connection())
+        snapshot["quality"]["negative_volume"] = 1
+        snapshot["quality"]["invalid_score"] = 2
+        output = format_audit(snapshot)
+        self.assertIn("價格資料品質：共 49,392 筆；異常條件命中 1 次", output)
+        self.assertIn("評分資料品質：共 37,118 筆；異常條件命中 2 次", output)
+        self.assertIn("發現行情或評分欄位異常", output)
+        self.assertIn("FROM public.daily_prices", QUALITY_SQL)
+        self.assertIn("FROM public.daily_composite_scores", QUALITY_SQL)
 
     def test_null_date_and_empty_composite_count_not_fabricated(self):
         self.assertIsNone(iso_date(None))
