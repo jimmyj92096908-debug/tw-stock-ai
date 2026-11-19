@@ -79,6 +79,15 @@ def capture(session: requests.Session, name: str, url: str, params: dict[str, st
     }
 
 
+def build_tpex_bulk_params(trade_date: str) -> dict[str, str]:
+    """Build the TPEx whole-market daily quote request for all securities."""
+    return {
+        "response": "json",
+        "date": trade_date.replace("-", "/"),
+        "type": "AL",
+    }
+
+
 def find_tpex_monthly_row(payload: dict | None, trade_date: str) -> list | None:
     if not isinstance(payload, dict):
         return None
@@ -197,8 +206,7 @@ def main() -> None:
                 ("monthly_individual", "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock",
                  {"response": "json", "date": date(y, m, 1).strftime("%Y/%m/%d"), "code": target["stock_id"]}),
                 ("bulk_daily", "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc",
-                 {"response": "json", "date": target["trade_date"].replace("-", "/")}),
-                ("openapi_daily_snapshot", "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes", {}),
+                 build_tpex_bulk_params(target["trade_date"])),
             ]
         else:
             sources = [
@@ -220,16 +228,12 @@ def main() -> None:
                     row = find_twse_row(item["payload"], target["trade_date"])
                 elif name == "twse_daily_market":
                     row = find_twse_daily_market_row(item["payload"], target["stock_id"])
-                elif name == "openapi_daily_snapshot":
-                    row = find_tpex_openapi_row(item["payload"], target["stock_id"], target["trade_date"])
                 else:
                     # Keep bulk payload verbatim; do not guess its row schema.
                     row = None
                 item["matching_raw_row"] = row
                 if name == "twse_daily_market":
                     item["normalized_row"] = normalized_twse_daily_row(item["payload"], row)
-                elif name == "openapi_daily_snapshot":
-                    item["normalized_row"] = row
                 else:
                     item["normalized_row"] = normalized_row(row)
                 item.pop("payload", None)
