@@ -10,6 +10,7 @@ from scripts.preflight_five_year_history import (
     closed_dates_from_payload,
     expected_sessions,
     fetch_closed_dates,
+    fetch_calendar_snapshot,
     read_latest_manifest,
 )
 
@@ -165,6 +166,29 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
         self.assertEqual(session.calls[0][1], {"date": "2024", "response": "json"})
         self.assertEqual(session.calls[0][2]["timeout"], (8, 20))
 
+
+    def test_calendar_snapshot_archives_raw_bytes_and_sha256(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            raw = b'{"stat":"ok","title":"113 \\u5e74\\u5e02\\u5834\\u958b\\u4f11\\u5e02\\u65e5\\u671f","date":"20240101","data":[["2024-02-06","\\u5e02\\u5834\\u7121\\u4ea4\\u6613","\\u50c5\\u8fa6\\u7406\\u7d50\\u7b97\\u4ea4\\u5272"]]}'
+            class Response:
+                content = raw
+                url = "https://www.twse.com.tw/holidaySchedule/holidaySchedule?date=2024&response=json"
+                status_code = 200
+                headers = {"Content-Type": "application/json"}
+                def json(self):
+                    return json.loads(raw)
+                def raise_for_status(self):
+                    pass
+            class Session:
+                def get(self, *args, **kwargs):
+                    return Response()
+            closed, metadata = fetch_calendar_snapshot(2024, Session(), Path(temp))
+            archived = Path(temp) / "twse/2024.json"
+            self.assertEqual(closed, {date(2024, 2, 6)})
+            self.assertEqual(archived.read_bytes(), raw)
+            self.assertEqual(metadata["sha256"], hashlib.sha256(raw).hexdigest())
+            self.assertEqual(metadata["bytes"], len(raw))
 
 
 if __name__ == "__main__":
