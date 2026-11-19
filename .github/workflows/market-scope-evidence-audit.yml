@@ -36,7 +36,7 @@ jobs:
           python -m unittest discover -s tests -p "test_exact_instrument_exclusion_reconciliation.py" -v
           python -m unittest discover -s tests -p "test_security_lifecycle_candidates.py" -v
           python -m unittest discover -s tests -p "test_lifecycle_source_inventory.py" -v
-          python -m unittest discover -s tests -p "test_tpex_openapi_catalog.py" -v
+          python -m unittest discover -s tests -p "test_tpex_openapi_catalog.py" -v\n          python -m unittest discover -s tests -p "test_tpex_bond_sources.py" -v
           python -m unittest discover -s tests -p "test_tpex_delisted_discovery.py" -v
       - name: Install audit dependencies
         run: python -m pip install requests pypdf
@@ -48,7 +48,7 @@ jobs:
           python scripts/audit_tpex_current_list.py --output-dir audit-output/market-scope/tpex-current
           python scripts/audit_official_instrument_sources.py --output-dir audit-output/market-scope/instrument-sources
           python scripts/audit_tpex_etf_infohub.py --output-dir audit-output/market-scope/tpex-etf
-          python scripts/audit_tpex_openapi_catalog.py --output-dir audit-output/market-scope/tpex-openapi
+          python scripts/audit_tpex_openapi_catalog.py --output-dir audit-output/market-scope/tpex-openapi\n          python scripts/audit_tpex_bond_sources.py --output-dir audit-output/market-scope/tpex-bonds
           python scripts/audit_market_scope.py \
             --registry data/calendars/source_registry.json \
             --output-dir audit-output/market-scope \
@@ -67,7 +67,7 @@ jobs:
             --tpex-audit-json audit-output/market-scope/tpex-current/tpex-current-otc-audit.json \
             --output-dir audit-output/market-scope/reconciliation
           python scripts/reconcile_exact_instrument_exclusions.py \
-            --audit-root audit-output/market-scope \
+            --audit-root audit-output/market-scope \\
             --reconciliation-json audit-output/market-scope/reconciliation/current-market-universe-reconciliation.json \
             --output-dir audit-output/market-scope/exact-exclusions
       - name: Upload raw official sources and audit report
