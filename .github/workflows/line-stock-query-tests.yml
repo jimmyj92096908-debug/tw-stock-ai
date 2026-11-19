@@ -1,0 +1,25 @@
+name: LINE stock query unit tests
+
+on:
+  push:
+    branches: [feature/line-stock-query]
+    paths:
+      - "src/stock_query.py"
+      - "tests/test_stock_query.py"
+      - ".github/workflows/line-stock-query-tests.yml"
+  pull_request:
+    paths:
+      - "src/stock_query.py"
+      - "tests/test_stock_query.py"
+      - ".github/workflows/line-stock-query-tests.yml"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run stock query tests
+        run: python -m unittest discover -s tests -p "test_stock_query.py" -v
