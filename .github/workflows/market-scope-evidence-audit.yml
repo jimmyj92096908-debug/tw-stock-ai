@@ -30,6 +30,7 @@ jobs:
           python -m unittest discover -s tests -p "test_twse_current_list.py" -v
           python -m unittest discover -s tests -p "test_tpex_current_list.py" -v
           python -m unittest discover -s tests -p "test_current_market_universe_reconciliation.py" -v
+          python -m unittest discover -s tests -p "test_instrument_classification_source_registry.py" -v
           python -m unittest discover -s tests -p "test_security_lifecycle_candidates.py" -v
           python -m unittest discover -s tests -p "test_lifecycle_source_inventory.py" -v
           python -m unittest discover -s tests -p "test_tpex_delisted_discovery.py" -v
