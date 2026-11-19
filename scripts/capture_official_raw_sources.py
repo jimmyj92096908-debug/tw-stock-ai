@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-from src.official_source_reconciliation import reconcile_tpex_payloads
+from src.official_source_reconciliation import reconcile_tpex_payloads, reconcile_twse_payloads
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get("RAW_SOURCE_OUTPUT", ROOT / "artifacts" / "official-raw-source"))
@@ -88,6 +88,20 @@ def find_twse_row(payload: dict | None, trade_date: str) -> list | None:
     return None
 
 
+def find_twse_daily_market_row(payload: dict | None, stock_id: str) -> list | None:
+    if not isinstance(payload, dict):
+        return None
+    for table in payload.get("tables") or []:
+        fields = [str(x).strip() for x in (table.get("fields") or [])]
+        code_index = next((i for i, field in enumerate(fields) if field in {"證券代號", "代號", "股票代號"}), None)
+        if code_index is None:
+            continue
+        for row in table.get("data") or []:
+            if len(row) > code_index and str(row[code_index]).strip() == stock_id:
+                return row
+    return None
+
+
 def normalized_row(row: list | None) -> dict | None:
     if not row or len(row) < 9:
         return None
@@ -119,6 +133,8 @@ def main() -> None:
             sources = [
                 ("twse_monthly_individual", "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY",
                  {"response": "json", "date": date(y, m, 1).strftime("%Y%m%d"), "stockNo": target["stock_id"]}),
+                ("twse_daily_market", "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX",
+                 {"response": "json", "date": target["trade_date"].replace("-", ""), "type": "ALLBUT0999"}),
             ]
         observations = []
         source_payloads = {}
@@ -130,6 +146,8 @@ def main() -> None:
                     row = find_tpex_monthly_row(item["payload"], target["trade_date"])
                 elif name == "twse_monthly_individual":
                     row = find_twse_row(item["payload"], target["trade_date"])
+                elif name == "twse_daily_market":
+                    row = find_twse_daily_market_row(item["payload"], target["stock_id"])
                 else:
                     # Keep bulk payload verbatim; do not guess its row schema.
                     row = None
@@ -144,6 +162,13 @@ def main() -> None:
             target_report["reconciliation"] = reconcile_tpex_payloads(
                 source_payloads.get("monthly_individual"),
                 source_payloads.get("bulk_daily"),
+                target["stock_id"],
+                target["trade_date"],
+            )
+        else:
+            target_report["reconciliation"] = reconcile_twse_payloads(
+                source_payloads.get("twse_monthly_individual"),
+                source_payloads.get("twse_daily_market"),
                 target["stock_id"],
                 target["trade_date"],
             )
