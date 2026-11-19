@@ -109,7 +109,7 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
     if actual_years != {year}:
         raise ValueError(
             f"TWSE HTML returned calendar year(s) {sorted(actual_years)} "
-            f"instead of requested {year}"
+            f"instead of requested {year}; sample={page_text[:240]!r}"
         )
 
     closed: set[date] = set()
