@@ -3,6 +3,7 @@
 // are approved. Disabled by default even if accidentally bundled.
 import pg from 'pg';
 import { createSingleAccountCandidate } from './single-account-candidate.mjs';
+import { createSingleAccountGateway } from './single-account-gateway.mjs';
 import { createDeliveryStore } from './delivery-state.mjs';
 import { ANALYSIS_SQL, RANKING_SQL } from './handler.mjs';
 
@@ -72,17 +73,60 @@ async function replyLine(replyToken,text) {
   }
 }
 
+// Require the exact pre-existing webhook host. An env var is needed only to
+// select its original path; never allow this gateway to proxy arbitrary URLs.
+const LEGACY_HOSTNAME =
+  'br-purple-smoke-a1t9dmzz-linewebhook.compute.c-1.ap-southeast-1.aws.neon.tech';
+
+export function validateLegacyWebhookUrl(rawUrl) {
+  if (!rawUrl) throw new Error('Legacy webhook URL is unavailable');
+  const url=new URL(rawUrl);
+  if (url.protocol!=='https:' || url.hostname!==LEGACY_HOSTNAME ||
+      url.username || url.password || url.port || url.search || url.hash ||
+      !['/','/webhook'].includes(url.pathname)) {
+    throw new Error('Legacy webhook URL must be the pre-existing Neon function');
+  }
+  return url.toString();
+}
+
+async function relayLegacy(targetUrl,body,signature) {
+  const result=await fetch(targetUrl,{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-line-signature':signature
+    },
+    body,
+    signal:AbortSignal.timeout(8000)
+  });
+  // Never expose upstream body, which may contain private data.
+  return {status:result.status};
+}
+
 export default {
   fetch(request) {
     const secret = process.env.LINE_CHANNEL_SECRET || '';
+    let legacyUrl;
+    try {
+      legacyUrl=validateLegacyWebhookUrl(process.env.LINE_LEGACY_WEBHOOK_URL);
+    } catch {
+      // Fail closed if the original destination has not been reviewed.
+      legacyUrl=null;
+    }
     const enabled = process.env.LINE_SINGLE_ACCOUNT_ENABLED === 'true' &&
       Boolean(secret && process.env.LINE_CHANNEL_ACCESS_TOKEN &&
         process.env.LINE_STOCK_READ_DATABASE_URL &&
-        process.env.LINE_LOG_WRITE_DATABASE_URL);
+        process.env.LINE_LOG_WRITE_DATABASE_URL && legacyUrl);
 
-    return createSingleAccountCandidate({
+    const stockHandler=createSingleAccountCandidate({
       query:queryStock,store,sendReply:replyLine,
       channelSecret:secret,enabled
-    })(request);
+    });
+    const gateway=createSingleAccountGateway({
+      channelSecret:secret,stockHandler,
+      forwardLegacy:(body,signature)=>relayLegacy(legacyUrl,body,signature),
+      enabled
+    });
+    return gateway(request);
   }
 };
