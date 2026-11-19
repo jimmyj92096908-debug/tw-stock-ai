@@ -132,9 +132,16 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
             {date(2022, 1, 1)},
         )
 
-    def test_calendar_fetch_uses_year_selected_html_endpoint(self):
+    def test_calendar_fetch_uses_official_historical_json_endpoint(self):
         class Response:
-            text = "<html><h1>中華民國113年市場開休市日期</h1><table><tr><td>市場無交易</td><td>2月6日</td><td>二</td><td>僅辦理結算交割</td></tr></table></html>"
+            def json(self):
+                return {
+                    "stat": "ok",
+                    "queryYear": "113",
+                    "title": "113 年市場開休市日期",
+                    "date": "20240101",
+                    "data": [["2024-02-06", "市場無交易", "僅辦理結算交割"]],
+                }
             def raise_for_status(self):
                 pass
 
@@ -147,11 +154,13 @@ class FiveYearHistoryPreflightTests(unittest.TestCase):
 
         session = Session()
         self.assertEqual(fetch_closed_dates(2024, session), {date(2024, 2, 6)})
-        self.assertEqual(session.calls[0][0], "https://www.twse.com.tw/zh/trading/holiday.html")
-        self.assertEqual(session.calls[1][0], "https://www.twse.com.tw/holidaySchedule/holidaySchedule")
-        self.assertEqual(session.calls[1][1]["queryYear"], "113")
-        self.assertEqual(session.calls[1][1]["response"], "html")
-        self.assertIn("Referer", session.calls[1][2]["headers"])
+        self.assertEqual(
+            session.calls[0][0],
+            "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule",
+        )
+        self.assertEqual(session.calls[0][1], {"queryYear": "113", "response": "json"})
+        self.assertEqual(session.calls[0][2]["timeout"], (8, 20))
+
 
 
 if __name__ == "__main__":
