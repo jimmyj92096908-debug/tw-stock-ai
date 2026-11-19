@@ -1,0 +1,30 @@
+name: Five-Year Bulk History Downloader Tests
+
+on:
+  push:
+    branches:
+      - feature/five-year-bulk-history-downloader
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install requests
+      - name: Run downloader and parser tests
+        run: |
+          python -m unittest tests.test_market_data_bulk tests.test_five_year_downloader -v
+      - name: Compile sources
+        run: python -m compileall -q src scripts tests
