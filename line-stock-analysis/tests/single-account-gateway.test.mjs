@@ -135,3 +135,22 @@ test('legacy webhook target is pinned to original Neon function, not an arbitrar
     base+'/unexpected',base+'/#fragment'
   ]) assert.throws(()=>validateLegacyWebhookUrl(invalid));
 });
+
+test('stock-like events without a complete LINE reply contract stay on legacy path',async()=>{
+  const malformed=[
+    textEvent('2330','evt-no-user',{type:'user'}),
+    {...textEvent('2330','evt-no-token'),replyToken:undefined},
+    {...textEvent('2330','evt-no-id'),webhookEventId:undefined},
+    {...textEvent('2330','evt-bad-msg'),message:{type:'text'}},
+    {...textEvent('2330','evt-number-msg'),message:{type:'text',text:2330}}
+  ];
+  for(const event of malformed) {
+    assert.equal(isStockCommandEvent(event),false);
+  }
+  const {handler,legacyCalls,stockCalls}=harness();
+  const {request}=signed({events:malformed});
+  assert.equal((await handler(request)).status,200);
+  assert.equal(stockCalls.length,0);
+  assert.equal(legacyCalls.length,1);
+  assert.equal(legacyCalls[0].payload.events.length,malformed.length);
+});
