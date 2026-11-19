@@ -177,9 +177,11 @@ test('in-progress claim prevents concurrent duplicate send and requests redelive
   assert.equal(m.replies.length,0);
 });
 
-test('expired original reply token is not attempted but direct user is enrolled',async()=>{
+test('expired redelivery token is not attempted but direct user is enrolled',async()=>{
   const m=mock();
-  const expired=message('2330','evt-1',{timestamp:TIME-21*60*1000});
+  const expired=message('2330','evt-1',{
+    timestamp:TIME-21*60*1000,deliveryContext:{isRedelivery:true}
+  });
   assert.equal((await m.handler(signedRequest([expired]))).status,200);
   assert.equal(m.logs.length,1);
   assert.equal(m.replies.length,0);
