@@ -256,10 +256,25 @@ def main() -> None:
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     write_audit_csv(report["records"], output / "exact-instrument-exclusion-audit.csv")
+    etn_source = report["sources"]["tpex_etn_current"]
+    etn_exact_match_codes = sorted(
+        row["stock_id"]
+        for row in report["records"]
+        if any(
+            evidence["source_id"] == "tpex_etn_current"
+            for evidence in row.get("exclusion_evidence", [])
+        )
+    )
     print(json.dumps({
         "record_count": report["record_count"],
         "review_record_count": report["review_record_count"],
         "bucket_counts": report["bucket_counts"],
+        "tpex_etn_current": {
+            "schema_validated": etn_source["schema_validated"],
+            "code_count": etn_source["code_count"],
+            "source_error": etn_source["source_error"],
+            "exact_match_candidate_codes": etn_exact_match_codes,
+        },
         "common_stock_classification_confirmed": False,
         "database_modified": False,
         "five_year_quotes_downloaded": False,
