@@ -52,9 +52,9 @@ WITH newest AS (
   FROM public.daily_composite_scores WHERE total_score IS NOT NULL
 )
 SELECT newest.score_date,
-  COUNT(*)::int AS scored,
-  COUNT(*) FILTER (WHERE p.close IS NOT NULL)::int AS matched_price,
-  COUNT(*) FILTER (WHERE p.close IS NULL)::int AS missing_price
+  COUNT(c.stock_id)::int AS scored,
+  COUNT(c.stock_id) FILTER (WHERE p.close IS NOT NULL)::int AS matched_price,
+  COUNT(c.stock_id) FILTER (WHERE p.close IS NULL)::int AS missing_price
 FROM newest
 LEFT JOIN public.daily_composite_scores c
   ON c.as_of_date=newest.score_date AND c.total_score IS NOT NULL
