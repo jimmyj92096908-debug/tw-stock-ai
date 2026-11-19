@@ -60,9 +60,9 @@
         "description": "Official TPEx English holiday schedule for 2021; includes dates extending into January 2022."
       },
       "111": {
-        "status": "official_announcement_found_attachment_not_resolved",
-        "url": "https://www.tpex.org.tw/storage/eb_data/11011/11000696121.html",
-        "description": "Official TPEx announcement dated 2021-11-16 announcing the 2022 full-year schedule; attachment content not yet retrieved."
+        "status": "official_year_calendar_html_found",
+        "url": "https://www.tpex.org.tw/storage/en-us/web/bulletin/trading_date/trading_date_111.htm",
+        "description": "Official TPEx English holiday schedule for 2022; includes December 31, 2021 adjusted holiday and the full 2022 calendar."
       },
       "112": {
         "status": "official_pdf_found",
