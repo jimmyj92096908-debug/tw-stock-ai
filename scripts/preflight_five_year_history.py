@@ -16,7 +16,7 @@ from typing import Any
 
 import requests
 
-CALENDAR_URL = "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule"
+CALENDAR_URL = "https://www.twse.com.tw/holidaySchedule/holidaySchedule"
 CLOSED_WORDS = ("放假", "補假", "市場無交易", "休市")
 MARKETS = ("twse", "tpex")
 
