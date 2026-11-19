@@ -21,6 +21,11 @@ class TestOHLCQuality(unittest.TestCase):
         self.assertEqual(result.status, "no_trade")
         self.assertFalse(result.eligible_for_indicators)
 
+    def test_zero_volume_with_prices_requires_review(self):
+        result = classify_ohlc_row(self.row(volume=0))
+        self.assertEqual(result.status, "review")
+        self.assertFalse(result.eligible_for_indicators)
+
     def test_missing_price_with_volume_is_invalid(self):
         result = classify_ohlc_row(self.row(close=None))
         self.assertEqual(result.status, "invalid")
