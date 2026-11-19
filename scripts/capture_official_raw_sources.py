@@ -106,6 +106,35 @@ def find_twse_daily_market_row(payload: dict | None, stock_id: str) -> list | No
     return None
 
 
+def normalized_twse_daily_row(payload: dict | None, row: list | None) -> dict | None:
+    if not isinstance(payload, dict) or not row:
+        return None
+    for table in payload.get("tables") or []:
+        fields = [str(x).strip() for x in (table.get("fields") or [])]
+        if len(row) != len(fields):
+            continue
+        raw = dict(zip(fields, row))
+        aliases = {
+            "stock_id": ("證券代號", "代號", "股票代號"),
+            "name": ("證券名稱", "名稱", "股票名稱"),
+            "volume_shares": ("成交股數",),
+            "transaction_count": ("成交筆數",),
+            "turnover": ("成交金額",),
+            "open": ("開盤價",),
+            "high": ("最高價",),
+            "low": ("最低價",),
+            "close": ("收盤價",),
+        }
+        result = {}
+        for key, candidates in aliases.items():
+            for candidate in candidates:
+                if candidate in raw:
+                    result[key] = raw[candidate]
+                    break
+        return result or None
+    return None
+
+
 def normalized_row(row: list | None) -> dict | None:
     if not row or len(row) < 9:
         return None
@@ -168,7 +197,10 @@ def main() -> None:
                     # Keep bulk payload verbatim; do not guess its row schema.
                     row = None
                 item["matching_raw_row"] = row
-                item["normalized_row"] = normalized_row(row)
+                if name == "twse_daily_market":
+                    item["normalized_row"] = normalized_twse_daily_row(item["payload"], row)
+                else:
+                    item["normalized_row"] = normalized_row(row)
                 item.pop("payload", None)
                 observations.append(item)
             except requests.RequestException as exc:
