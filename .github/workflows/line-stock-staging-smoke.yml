@@ -33,6 +33,6 @@ jobs:
             --data '{"events":[]}' "$BASE_URL/webhook")
           echo "POST /webhook without signature HTTP $unsigned"
           case "$unsigned" in
-            401|503) echo "Unsigned event rejected as expected." ;;
-            *) echo "::error::Unsigned LINE webhook was not safely rejected"; exit 1 ;;
+            401) echo "Configured LINE signature verification rejects unsigned event." ;;
+            *) echo "::error::Expected HTTP 401 with configured LINE credentials"; exit 1 ;;
           esac
