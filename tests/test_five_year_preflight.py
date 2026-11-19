@@ -40,6 +40,26 @@ class CalendarParserTests(unittest.TestCase):
             [date(2026, 1, 2), date(2026, 1, 5)],
         )
 
+
+    def test_preflight_reports_unverified_no_data_separately(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "manifest.jsonl").write_text(
+                '{"market":"twse","trade_date":"2026-11-19","status":"no_data_unverified"}\\n',
+                encoding="utf-8",
+            )
+            report = build_preflight(
+                date(2026, 11, 19),
+                date(2026, 11, 19),
+                {2026: set()},
+                root,
+            )
+        self.assertEqual(report["market_counts"]["twse"]["no_data_unverified"], 1)
+        self.assertEqual(report["market_counts"]["twse"]["failed"], 0)
+        self.assertEqual(report["no_data_unverified_market_dates"], [
+            {"market": "twse", "trade_date": "2026-11-19"}
+        ])
+
     def test_incomplete_calendar_does_not_claim_pending_count(self):
         with TemporaryDirectory() as tmp:
             report = build_preflight(
