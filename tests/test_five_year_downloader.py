@@ -74,7 +74,7 @@ class FiveYearDownloaderTests(unittest.TestCase):
             manifest = root / "manifest.jsonl"
             manifest.write_text(json.dumps({
                 "market": "twse", "trade_date": "2026-11-19", "status": "no_data_unverified"
-            }) + "\\n", encoding="utf-8")
+            }) + "\n", encoding="utf-8")
             self.assertNotIn(("twse", "2026-11-19"), load_completed(manifest))
 
 
