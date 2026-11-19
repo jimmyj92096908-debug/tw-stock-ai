@@ -136,18 +136,18 @@ def archive_tpex_calendars(registry_path: Path, output: Path, session: requests.
                             self.parts.append(" ".join(data.split()))
                 parser = Text()
                 parser.feed(raw.decode("utf-8", "replace"))
-                extracted = "\\n".join(parser.parts)
+                extracted = "\n".join(parser.parts)
                 text_path = path.with_suffix(".txt")
-                text_path.write_text(extracted + "\\n", encoding="utf-8")
+                text_path.write_text(extracted + "\n", encoding="utf-8")
                 record["text_path"] = str(text_path)
                 record["text_preview"] = extracted[:1200]
             else:
                 try:
                     from pypdf import PdfReader
                     reader = PdfReader(io.BytesIO(raw))
-                    extracted = "\\n".join(page.extract_text() or "" for page in reader.pages)
+                    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
                     text_path = path.with_suffix(".txt")
-                    text_path.write_text(extracted + "\\n", encoding="utf-8")
+                    text_path.write_text(extracted + "\n", encoding="utf-8")
                     record["pdf_pages"] = len(reader.pages)
                     record["text_path"] = str(text_path)
                     record["text_preview"] = extracted[:1600]
@@ -210,7 +210,7 @@ def main() -> None:
     }
     path = Path(args.report)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({
         "report": str(path),
         "tpex_calendar_years": len(tpex["years"]),
