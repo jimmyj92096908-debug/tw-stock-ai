@@ -5,7 +5,24 @@ import { verifyLineSignature, buildReplyText } from './handler.mjs';
 import { planLineEvent } from './legacy-compatibility.mjs';
 
 const MAX_WEBHOOK_BYTES = 256000;
-const REPLY_MAX_AGE_MS = 19 * 60 * 1000; // conservative; LINE docs say <20 min on redelivery.
+const REDELIVERY_MAX_EVENT_AGE_MS = 19 * 60 * 1000;
+const MAX_PROCESSING_AGE_MS = 50 * 1000; // reply token: within 1 minute of receiving webhook.
+
+export function isReplyTokenEligible(event, receivedAtMs, nowMs) {
+  if (!Number.isFinite(receivedAtMs) || !Number.isFinite(nowMs) ||
+      nowMs - receivedAtMs >= MAX_PROCESSING_AGE_MS) return false;
+
+  // The original reply token remains usable for about a minute after
+  // receiving the webhook, not a minute after event.timestamp.
+  if (event?.deliveryContext?.isRedelivery !== true) return true;
+
+  // A redelivered webhook keeps the same token. LINE also caps it to
+  // 20 minutes from the event's occurrence, independent of receipt time.
+  const eventTime = Number(event.timestamp);
+  const age = nowMs - eventTime;
+  return Number.isFinite(eventTime) && eventTime > 0 &&
+    age >= -60000 && age < REDELIVERY_MAX_EVENT_AGE_MS;
+}
 
 export function observedLegacyReply(messageText) {
   // Only the basic echo has been observed in the user's screenshot.
@@ -55,6 +72,7 @@ export function createSingleAccountCandidate({
       return response('Invalid events', 400);
     }
 
+    const receivedAtMs = now();
     for (const event of payload.events) {
       // Unknown legacy events are NOT presumed to be compatible.
       if (event?.type !== 'message' || event.mode === 'standby' ||
@@ -76,15 +94,10 @@ export function createSingleAccountCandidate({
         return response('Temporary record failure', 502);
       }
 
-      // Redelivered events retain the original reply token. Do not attempt
-      // use after the documented redelivery maximum of 20 minutes.
-      const eventTime = Number(event.timestamp);
-      const age = now() - eventTime;
-      if (!Number.isFinite(eventTime) || eventTime <= 0 ||
-          age >= REPLY_MAX_AGE_MS || age < -60000) {
-        // Still keep daily-report enrollment from the inbound record.
-        continue;
-      }
+      // The original reply is time-limited relative to webhook receipt.
+      // Redelivered tokens additionally expire 20 minutes after the event.
+      // Skip unsafe attempts while keeping the existing report recipient log.
+      if (!isReplyTokenEligible(event, receivedAtMs, now())) continue;
 
       let claim;
       try { claim = await store.claimReply(event.webhookEventId); }
@@ -104,6 +117,12 @@ export function createSingleAccountCandidate({
         catch { answer = '目前無法讀取分析資料，請稍後再試。'; }
       } else {
         answer = observedLegacyReply(event.message.text);
+      }
+
+      // An expensive DB query or prior event can use up the reply window.
+      if (!isReplyTokenEligible(event, receivedAtMs, now())) {
+        try { await store.failReply(id, key); } catch { /* retry remains bounded */ }
+        return response('Reply window exceeded', 503);
       }
 
       try {
