@@ -103,8 +103,7 @@ def reconcile_exact_codes(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit-root", required=True)
-    parser.add_argument("--twse-csv", required=True)
-    parser.add_argument("--tpex-csv", required=True)
+    parser.add_argument("--reconciliation-json", required=True)
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
 
@@ -119,11 +118,15 @@ def main() -> None:
             "path": str(path), "sha256": sha256_file(path), "code_field": field,
         }
 
-    exchange_rows = []
-    for csv_path in (Path(args.twse_csv), Path(args.tpex_csv)):
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
-            exchange_rows.extend(csv.DictReader(handle))
+    reconciliation = json.loads(Path(args.reconciliation_json).read_text(encoding="utf-8-sig"))
+    all_records = reconciliation.get("records", [])
+    if not isinstance(all_records, list):
+        raise ValueError("Reconciliation JSON must contain a records array")
+    exchange_rows = [row for row in all_records if row.get("bucket") == "candidate"]
+    review_records = [row for row in all_records if row.get("bucket") == "review"]
     report = reconcile_exact_codes(exchange_rows, source_codes)
+    report["review_record_count"] = len(review_records)
+    report["review_records"] = review_records
     report["sources"] = {
         source_id: {
             "market": item["market"], "category": item["category"],
@@ -147,6 +150,7 @@ def main() -> None:
             writer.writerow({**row, "exclusion_evidence": json.dumps(row["exclusion_evidence"], ensure_ascii=False)})
     print(json.dumps({
         "record_count": report["record_count"],
+        "review_record_count": report["review_record_count"],
         "bucket_counts": report["bucket_counts"],
         "common_stock_classification_confirmed": False,
         "database_modified": False,
