@@ -2,11 +2,51 @@
   "schema_version": 1,
   "purpose": "historical security lifecycle evidence source inventory",
   "status": "research_candidates_only",
+  "research_checked_at": "2026-11-19",
   "sources": [
-    {"market":"TWSE","source_id":"twse_current_listed_companies","url":"https://openapi.twse.com.tw/v1/opendata/t187ap03_L","data_scope":"current listed company reference","status":"candidate_source","limitations":["Current snapshot only; does not establish historical universe."]},
-    {"market":"TWSE","source_id":"twse_terminated_listings","url":"https://openapi.twse.com.tw/v1/company/suspendListingCsvAndHtml","data_scope":"terminated listing companies","status":"candidate_source_needs_endpoint_validation","limitations":["Endpoint response schema and date coverage must be validated before automated ingestion."]},
-    {"market":"TPEX","source_id":"tpex_openapi","url":"https://www.tpex.org.tw/openapi/","data_scope":"OTC, emerging and other securities public API catalog","status":"catalog_candidate","limitations":["Historical delisted universe endpoint and date coverage not yet established."]},
-    {"market":"TPEX","source_id":"tpex_delisted_historical_quotes_manual_reference","url":"https://www.tpex.org.tw/","data_scope":"Historical quotes for delisted OTC securities described in TPEx FAQ","status":"manual_research_candidate","limitations":["Requires date/code query workflow; not a bulk historical security master."]}
+    {
+      "market": "TWSE",
+      "source_id": "twse_current_listed_companies",
+      "url": "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
+      "data_scope": "current listed company reference",
+      "status": "candidate_source",
+      "limitations": ["Current snapshot only; does not establish historical universe."]
+    },
+    {
+      "market": "TWSE",
+      "source_id": "twse_terminated_listings",
+      "url": "https://openapi.twse.com.tw/v1/company/suspendListingCsvAndHtml",
+      "data_scope": "terminated listing companies",
+      "status": "official_endpoint_confirmed_schema_and_date_coverage_unverified",
+      "evidence": "TWSE OpenAPI catalog lists GET /company/suspendListingCsvAndHtml as 終止上市公司.",
+      "limitations": ["Actual response fields, date coverage, completeness, and historical backfill suitability still require direct endpoint testing."]
+    },
+    {
+      "market": "TPEX",
+      "source_id": "tpex_delisted_company_query",
+      "url": "https://www.tpex.org.tw/zh-tw/mainboard/listed/delisted.html",
+      "data_scope": "terminated OTC company query, with year and termination-reason filters",
+      "status": "official_query_page_confirmed_bulk_export_unverified",
+      "evidence": "Official page exposes code, termination year, and reason query filters.",
+      "limitations": ["Search page confirmed, but bulk downloadable response, machine-readable endpoint, date fields, and historical coverage not yet verified."]
+    },
+    {
+      "market": "TPEX",
+      "source_id": "tpex_openapi",
+      "url": "https://www.tpex.org.tw/openapi/",
+      "data_scope": "OTC, emerging and other securities public API catalog",
+      "status": "catalog_reviewed_lifecycle_endpoint_not_identified",
+      "limitations": ["Catalog review did not establish a historical delisted security master endpoint; this is not proof no such endpoint exists."]
+    },
+    {
+      "market": "TPEX",
+      "source_id": "tpex_delisted_historical_quotes_manual_reference",
+      "url": "https://www.tpex.org.tw/zh-tw/mainboard/trading/info/stock-pricing.html",
+      "data_scope": "historical daily quotes query",
+      "status": "official_manual_historical_query_confirmed",
+      "evidence": "TPEx page says individual daily trading data available from ROC year 83 (1994) onward.",
+      "limitations": ["Historical price query is by code/month and is not a complete historical listing/delisting universe."]
+    }
   ],
   "accepted_historical_universe": false,
   "download_authorized": false
