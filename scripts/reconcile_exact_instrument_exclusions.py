@@ -112,10 +112,21 @@ def main() -> None:
     for source_id, (relative_path, field, market, category) in SOURCE_SPECS.items():
         path = root / relative_path
         container = "data" if source_id == "tpex_etf" else None
-        codes = load_codes(path, field, container)
+        source_sha256 = sha256_file(path)
+        try:
+            codes = load_codes(path, field, container)
+            schema_validated = True
+            source_error = None
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            # Invalid/HTML response is unavailable evidence, not an empty list.
+            # Fail closed: no exclusion can be based on this source.
+            codes = set()
+            schema_validated = False
+            source_error = f"{type(exc).__name__}: {exc}"
         source_codes[source_id] = {
             "market": market, "category": category, "codes": codes,
-            "path": str(path), "sha256": sha256_file(path), "code_field": field,
+            "path": str(path), "sha256": source_sha256, "code_field": field,
+            "schema_validated": schema_validated, "source_error": source_error,
         }
 
     reconciliation = json.loads(Path(args.reconciliation_json).read_text(encoding="utf-8-sig"))
@@ -127,10 +138,16 @@ def main() -> None:
     report = reconcile_exact_codes(exchange_rows, source_codes)
     report["review_record_count"] = len(review_records)
     report["review_records"] = review_records
+    report["coverage"] = {
+        "unavailable_source_count": sum(not item["schema_validated"] for item in source_codes.values()),
+        "classification_coverage_complete": all(item["schema_validated"] for item in source_codes.values()),
+    }
     report["sources"] = {
         source_id: {
             "market": item["market"], "category": item["category"],
             "code_field": item["code_field"], "code_count": len(item["codes"]),
+            "schema_validated": item["schema_validated"],
+            "source_error": item["source_error"],
             "sha256": item["sha256"],
         } for source_id, item in source_codes.items()
     }
