@@ -1,6 +1,6 @@
 import unittest
 from scripts.capture_official_raw_sources import (
-    TARGETS, find_tpex_monthly_row, find_tpex_openapi_row, find_twse_row, normalized_row, roc_date,
+    TARGETS, build_tpex_bulk_params, find_tpex_monthly_row, find_tpex_openapi_row, find_twse_row, normalized_row, roc_date,
 )
 
 
@@ -10,6 +10,12 @@ class OfficialRawCaptureTests(unittest.TestCase):
         self.assertEqual(len(keys), 9)
         self.assertEqual(len(keys), len(set(keys)))
         self.assertEqual({x["market"] for x in TARGETS}, {"twse", "tpex"})
+
+    def test_tpex_bulk_query_requests_all_securities(self):
+        self.assertEqual(
+            build_tpex_bulk_params("2026-10-05"),
+            {"response": "json", "date": "2026/10/05", "type": "AL"},
+        )
 
     def test_tpex_openapi_snapshot_requires_exact_stock_and_date(self):
         payload = [
