@@ -1,0 +1,51 @@
+name: Official Taiwan Market Daily Snapshot (Authorized)
+on:
+  schedule:
+    # 23:00 Taiwan time, weekdays, after the regular 22:00 rotation.
+    - cron: "0 15 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "是否正式補入缺漏日K？手動預設為否"
+        type: boolean
+        default: false
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/daily-official-market-snapshot.yml"
+permissions:
+  contents: read
+concurrency:
+  group: official-daily-market-snapshot
+  cancel-in-progress: false
+jobs:
+  verify-and-import:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install "psycopg[binary]>=3.2,<4" requests
+      - name: Test official quote parser and fail-closed validation
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m unittest tests.test_official_market_feed -v
+          python -m py_compile src/official_market_feed.py src/official_snapshot_ingest.py
+      - name: Official quote fetch and candidate match (no database writes)
+        run: python src/official_snapshot_ingest.py
+      - name: Insert missing official daily quotes on schedule or explicit manual approval
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_SNAPSHOT_WRITE_ENABLED: "yes"
+        run: python src/official_snapshot_ingest.py --apply
+      - name: Explain safe dry run
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.apply != true)
+        run: echo "No database writes; scheduled runs or explicitly approved manual runs apply missing-only snapshots."
