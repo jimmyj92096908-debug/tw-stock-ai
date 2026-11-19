@@ -1,6 +1,17 @@
 name: Taiwan Market Data Quality Audit
 
 on:
+  push:
+    branches: [feature/market-data-quality]
+    paths:
+      - "src/data_quality_audit.py"
+      - "tests/test_data_quality_audit.py"
+      - ".github/workflows/data-quality-audit.yml"
+  pull_request:
+    paths:
+      - "src/data_quality_audit.py"
+      - "tests/test_data_quality_audit.py"
+      - ".github/workflows/data-quality-audit.yml"
   workflow_dispatch:
   schedule:
     # 17:00 UTC weekdays (01:00 Taiwan time)
