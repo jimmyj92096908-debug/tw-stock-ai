@@ -69,7 +69,7 @@ test('disposable Postgres agrees on real status SQL and excludes unpriced rankin
     const status=(await client.query(DATA_STATUS_SQL)).rows[0];
     assert.equal(status.universe,5);
     assert.equal(status.priced,3);
-    assert.equal(status.priced_latest,0);
+    assert.equal(status.priced_latest,3); // Latest valid price date is 11/18, not the null-only 11/19 row.
     assert.equal(status.stale_over_7_days,0);
     assert.equal(status.scored_latest,5);
     assert.equal(status.score_date.toISOString().slice(0,10),'2026-11-18');
