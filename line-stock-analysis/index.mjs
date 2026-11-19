@@ -4,11 +4,24 @@ import { createWebhookHandler } from './handler.mjs';
 const { Pool } = pg;
 let pool;
 
+// This project stores stock data in "twstock", while Neon can inject
+// DATABASE_URL pointing at its default "postgres" database.
+// Only change the database path; preserve credentials, host, and TLS options.
+export function stockDatabaseUrl(rawUrl) {
+  if (!rawUrl) throw new Error('DATABASE_URL is unavailable');
+  const parsed = new URL(rawUrl);
+  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+    throw new Error('Expected a PostgreSQL connection URL');
+  }
+  parsed.pathname = '/twstock';
+  return parsed.toString();
+}
+
 function getPool() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is unavailable');
   if (!pool) {
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString: stockDatabaseUrl(process.env.DATABASE_URL),
       max: 3,
       connectionTimeoutMillis: 5000,
       query_timeout: 7000,
