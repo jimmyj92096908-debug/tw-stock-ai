@@ -116,3 +116,25 @@ AI 台股投資系統正在建置中。
 官方依據：
 - https://developers.line.biz/en/docs/messaging-api/receiving-messages/
 - https://developers.line.biz/en/reference/messaging-api/#send-reply-message
+
+## 第三階段：沿用原有 `linewebhook` 的分流閘道（2026-11-20，未部署）
+
+因舊版函式的完整原始碼仍未取得，改採用**轉送原本服務，而非重寫其未知功能**的候選方案：
+
+- `line-stock-analysis/single-account-gateway.mjs` 先驗證 LINE 原始 Webhook 的 HMAC 簽章，再依事件內容分流。
+- 僅一對一私人文字訊息中的四位股票代碼、`清單`、`1～10`、排除代碼等明確支援指令，由新股票候選處理器處理並以獨立 reply 狀態去重。
+- 一般文字、追蹤事件、群組、非文字、未知指令、待命模式等，**不重新實作舊功能**，直接轉送到既有 `linewebhook`，保留原本的處理路徑。
+- 當同一個 LINE Webhook POST 同時包含股票與舊版事件時，分開事件集合、保留其他合法欄位並重新計算各集合的 `X-Line-Signature`，確保舊版不會消耗股票事件的 reply token，也避免一個事件被兩個處理器回覆。
+- 先處理股票子集合：如果失敗，原本 webhook 不會收到舊版子集合，HTTP 回傳非 2xx 供 LINE 選擇重送；如果舊版轉送失敗，同樣回傳非 2xx，已成功回覆的股票事件由資料庫 reply 狀態阻止重送。
+- `line-stock-analysis/single-account-entry.mjs` 的舊版轉送目的地由 `LINE_LEGACY_WEBHOOK_URL` 指定，但只允許目前已存在 Neon `linewebhook` 的**固定 HTTPS 主機與受限路徑**，不接受任意 URL。啟用仍需 `LINE_SINGLE_ACCOUNT_ENABLED=true` 與各自的授權憑證。
+- `line-stock-analysis/tests/single-account-gateway.test.mjs` 模擬原始合法/偽造簽章、純股票事件、純舊版事件、混合事件、群組/待命、轉送失敗等；不接觸真實 LINE 或正式資料庫。
+- **並未修改**舊 `linewebhook`、LINE Developers 正式 Webhook URL、原本 `src/send_line_report.py` 或已上線的 `index.mjs`。目前 `build.mjs` 仍然**只封裝 `index.mjs`**，不會打包這個候選分流閘道。
+
+### 此方案仍需驗收的問題
+
+1. 必須先確認 LINE Developers 當前原始 Webhook 的**精確路徑**、原本函式對重新簽章與轉送事件的相容性，並做有限度的實際驗收。模擬測試不等於原本函式真的接受轉送。
+2. 候選入口需要另外審核的讀／寫帳密、回覆狀態表、監控與 LINE 重送設定；**尚未設定、尚未套用正式資料庫**。
+3. 原本的 `linewebhook` 須繼續可直接使用，並在切換失敗時將 LINE Developers Webhook URL 復原；任何正式切換必須取得使用者明確授權。
+4. 就算保留所有非股票事件舊路徑，仍有短暫失效、LINE token 逾時、混合事件重送、舊函式回覆失敗等剩餘風險，因此不能宣稱 exactly-once 或正式可用。
+
+結論：分流方案可在**一個 LINE 官方帳號**下保留原本的訊息路徑，同時新增股票指令，但仍處於未部署的測試階段。
