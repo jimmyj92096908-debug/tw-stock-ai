@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "purpose": "historical security lifecycle evidence source inventory",
+  "status": "research_candidates_only",
+  "sources": [
+    {"market":"TWSE","source_id":"twse_current_listed_companies","url":"https://openapi.twse.com.tw/v1/opendata/t187ap03_L","data_scope":"current listed company reference","status":"candidate_source","limitations":["Current snapshot only; does not establish historical universe."]},
+    {"market":"TWSE","source_id":"twse_terminated_listings","url":"https://openapi.twse.com.tw/v1/company/suspendListingCsvAndHtml","data_scope":"terminated listing companies","status":"candidate_source_needs_endpoint_validation","limitations":["Endpoint response schema and date coverage must be validated before automated ingestion."]},
+    {"market":"TPEX","source_id":"tpex_openapi","url":"https://www.tpex.org.tw/openapi/","data_scope":"OTC, emerging and other securities public API catalog","status":"catalog_candidate","limitations":["Historical delisted universe endpoint and date coverage not yet established."]},
+    {"market":"TPEX","source_id":"tpex_delisted_historical_quotes_manual_reference","url":"https://www.tpex.org.tw/","data_scope":"Historical quotes for delisted OTC securities described in TPEx FAQ","status":"manual_research_candidate","limitations":["Requires date/code query workflow; not a bulk historical security master."]}
+  ],
+  "accepted_historical_universe": false,
+  "download_authorized": false
+}
