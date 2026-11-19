@@ -38,6 +38,11 @@ jobs:
           PYTHONPATH: .
         run: |
           python scripts/audit_twse_individual_stock_reconciliation.py --dates 2026-11-19,2026-11-18,2026-11-17,2025-11-19
+      - name: Classify OHLC gaps using official individual-source evidence
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/classify_twse_ohlc_gaps.py
       - name: Upload source reconciliation reports
         uses: actions/upload-artifact@v4
         with:
