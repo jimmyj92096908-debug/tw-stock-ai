@@ -116,7 +116,7 @@ def main() -> None:
         "quote_download_authorized": False,
     }
     (output / "tpex-etf-infohub-audit.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8"
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps({
         "http_status": report["http_status"],
