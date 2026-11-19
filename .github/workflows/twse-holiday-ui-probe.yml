@@ -1,0 +1,33 @@
+name: TWSE Holiday UI Probe
+
+on:
+  push:
+    branches:
+      - feature/five-year-bulk-history-downloader
+    paths:
+      - "scripts/probe_twse_holiday_ui.py"
+      - ".github/workflows/twse-holiday-ui-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Probe official TWSE holiday page and scripts
+        run: python scripts/probe_twse_holiday_ui.py | tee twse-holiday-ui-probe.json
+      - name: Upload diagnostic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: twse-holiday-ui-probe
+          path: twse-holiday-ui-probe.json
+          retention-days: 14
