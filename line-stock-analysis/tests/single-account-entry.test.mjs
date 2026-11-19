@@ -35,7 +35,7 @@ test('unapproved entrypoint is disabled by default, without reading DB or sendin
 test('readonly gateway accepts only three reviewed SELECT statements',()=>{
   for (const sql of [ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL]) {
     assert.equal(isApprovedStockReadQuery(sql),true);
-    assert.match(sql.trimStart(),/^(?:SELECT|WITH)\\s/u);
+    assert.ok(sql.trimStart().startsWith('SELECT'));
   }
   for (const sql of [
     "INSERT INTO public.line_messages VALUES ('bad')",
