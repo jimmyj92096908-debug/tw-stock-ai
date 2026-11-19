@@ -21,6 +21,20 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: line_ci_test
+          POSTGRES_USER: line_ci_test
+          POSTGRES_PASSWORD: ci-disposable-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U line_ci_test -d line_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,6 +45,9 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Test LINE stock command and signed webhook
         working-directory: line-stock-analysis
+        env:
+          # Disconnected, ephemeral PostgreSQL service started above. NEVER Neon.
+          LINE_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
         run: npm test
       - name: Check syntax of runtime entrypoint
         run: node --check line-stock-analysis/index.mjs
