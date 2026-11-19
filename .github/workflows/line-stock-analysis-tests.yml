@@ -54,6 +54,7 @@ jobs:
           node --check line-stock-analysis/index.mjs
           node --check line-stock-analysis/single-account-entry.mjs
           node --check line-stock-analysis/single-account-candidate.mjs
+          node --check line-stock-analysis/single-account-gateway.mjs
           node --check line-stock-analysis/delivery-state.mjs
       - name: Build self-contained Neon Node.js function
         working-directory: line-stock-analysis
