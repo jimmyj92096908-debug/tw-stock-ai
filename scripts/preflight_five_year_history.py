@@ -101,6 +101,7 @@ def closed_dates_from_html(html: str, year: int) -> set[date]:
     parser = _CalendarHTMLParser()
     parser.feed(html)
     heading_text = " ".join(parser.heading_text)
+    page_text = " ".join(parser.page_text)
     year_matches = re.findall(r"(?<!\d)(\d{2,4})\s*年", heading_text)
     actual_years = {
         int(value) + 1911 if int(value) < 1911 else int(value)
