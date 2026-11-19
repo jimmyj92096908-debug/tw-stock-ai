@@ -34,3 +34,18 @@ jobs:
         run: npm test
       - name: Check syntax of runtime entrypoint
         run: node --check line-stock-analysis/index.mjs
+      - name: Build self-contained Neon Node.js function
+        working-directory: line-stock-analysis
+        run: npm run bundle
+      - name: Verify bundled function has valid syntax
+        run: node --check line-stock-analysis/dist/index.mjs
+      - name: Package deployment artifact (does not deploy)
+        run: |
+          cd line-stock-analysis/dist
+          zip -q deployment.zip index.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: line-stock-analysis-neon-deployment
+          path: line-stock-analysis/dist/deployment.zip
+          if-no-files-found: error
+          retention-days: 7
