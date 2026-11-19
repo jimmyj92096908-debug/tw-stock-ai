@@ -61,6 +61,47 @@ def choose_start_month(latest_trade_date: date | None, today: date) -> date:
     return max(month_start(latest_trade_date), floor)
 
 
+def shift_month(value: date, offset: int) -> date:
+    """Move a first-of-month date by a bounded integer month offset."""
+    total = value.year * 12 + value.month - 1 + offset
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def plan_download_windows(stock: dict, today: date, *, archive_months: int = 3) -> list[tuple[date, date]]:
+    """Bound archived history to small windows while refreshing the current month.
+
+    Full-market snapshots can populate one trading day without the historical
+    bars needed for moving averages. Use the *earliest* existing valid bar to
+    progressively extend backwards, at most 3 archive months per rotation.
+    Never request five years of data in a single stock invocation.
+    """
+    if not 1 <= archive_months <= 6:
+        raise ValueError("archive_months must be 1..6")
+    current = month_start(today)
+    floor = shift_month(current, -60)
+    oldest = stock.get("earliest_trade_date")
+    newest = stock.get("latest_trade_date")
+    windows = []
+    if oldest is None:
+        windows.append((shift_month(current, -archive_months + 1), current))
+        return windows
+
+    first = month_start(oldest)
+    if first > floor:
+        archive_end = previous_month(first)
+        if archive_end >= floor:
+            windows.append((
+                max(floor, shift_month(archive_end, -(archive_months - 1))),
+                archive_end,
+            ))
+
+    # Monthly sources update late: refetch the preceding month if the
+    # stock itself has not had a valid close since that month's beginning.
+    recent_start = previous_month(today) if newest is None or newest < current else current
+    windows.append((recent_start, current))
+    return windows
+
+
 def upsert_universe(conn: psycopg.Connection, rows: list[dict[str, str]]) -> None:
     with conn.transaction():
         with conn.cursor() as cur:
@@ -104,6 +145,9 @@ def select_batch(conn: psycopg.Connection, market: str, limit: int) -> list[dict
                        MAX(dp.trade_date) FILTER (
                            WHERE dp.close IS NOT NULL
                        ) AS latest_trade_date,
+                       MIN(dp.trade_date) FILTER (
+                           WHERE dp.close IS NOT NULL
+                       ) AS earliest_trade_date,
                        st.last_attempt_at
                 FROM stock_master sm
                 LEFT JOIN daily_prices dp
@@ -113,7 +157,7 @@ def select_batch(conn: psycopg.Connection, market: str, limit: int) -> list[dict
                 WHERE sm.market=%s
                 GROUP BY sm.market, sm.stock_id, sm.stock_name, st.last_attempt_at
             ), numbered AS (
-                SELECT market,stock_id,stock_name,latest_trade_date,
+                SELECT market,stock_id,stock_name,latest_trade_date,earliest_trade_date,
                        ROW_NUMBER() OVER (
                            PARTITION BY (latest_trade_date IS NULL)
                            ORDER BY last_attempt_at ASC NULLS FIRST,
@@ -121,7 +165,7 @@ def select_batch(conn: psycopg.Connection, market: str, limit: int) -> list[dict
                        ) AS rotation_slot
                 FROM candidates
             )
-            SELECT market,stock_id,stock_name,latest_trade_date
+            SELECT market,stock_id,stock_name,latest_trade_date,earliest_trade_date
             FROM numbered
             ORDER BY rotation_slot,
                      CASE WHEN latest_trade_date IS NULL THEN 0 ELSE 1 END,
@@ -164,16 +208,19 @@ def record_attempt(
 
 def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> None:
     market, stock_id = stock["market"], stock["stock_id"]
-    start = choose_start_month(stock["latest_trade_date"], today)
+    windows = plan_download_windows(stock, today)
     module = market_data if market == "twse" else tpex_market_data
     logger.info(
-        "更新 %s %s：%04d-%02d 至 %04d-%02d",
-        market.upper(), stock_id, start.year, start.month, today.year, today.month,
+        "更新 %s %s：%s",
+        market.upper(), stock_id,
+        ", ".join(f"{start:%Y-%m}..{end:%Y-%m}" for start,end in windows),
     )
     try:
-        count = module.download_range(
-            stock_id, start.year, today.year, start.month, today.month
-        )
+        count = 0
+        for start,end in windows:
+            count += module.download_range(
+                stock_id, start.year, end.year, start.month, end.month
+            )
         history_dir = ROOT / "data" / "history" / market
         csv_path = history_dir / f"{stock_id}.csv"
         if not csv_path.exists():
