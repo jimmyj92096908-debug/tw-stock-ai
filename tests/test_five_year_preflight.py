@@ -40,6 +40,7 @@ class CalendarParserTests(unittest.TestCase):
             "data": [["2024-01-01", "中華民國開國紀念日", "依規定放假1日。"]],
         }
         response.raise_for_status.return_value = None
+        response.content = b'{\"stat\":\"ok\"}'
         session = Mock()
         session.get.return_value = response
 
