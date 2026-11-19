@@ -8,11 +8,14 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from src.official_source_reconciliation import reconcile_tpex_payloads, reconcile_twse_payloads
 
@@ -22,6 +25,7 @@ TIMEOUT = 45
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; tw-stock-ai-readonly-audit/1.0)",
     "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.tpex.org.tw/",
 }
 TARGETS = [
     {"market": "tpex", "stock_id": "1259", "trade_date": "2026-10-05"},
@@ -113,6 +117,17 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
     session.headers.update(HEADERS)
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        status=3,
+        backoff_factor=1.0,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=False,
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retry))
     report = {
         "read_only": True,
         "database_accessed": False,
@@ -142,6 +157,7 @@ def main() -> None:
             try:
                 item = capture(session, name, url, params, target)
                 source_payloads[name] = item["payload"]
+                time.sleep(0.5)
                 if name == "monthly_individual":
                     row = find_tpex_monthly_row(item["payload"], target["trade_date"])
                 elif name == "twse_monthly_individual":
@@ -156,7 +172,13 @@ def main() -> None:
                 item.pop("payload", None)
                 observations.append(item)
             except requests.RequestException as exc:
-                observations.append({"endpoint": name, "request_error": type(exc).__name__})
+                response = getattr(exc, "response", None)
+                observations.append({
+                    "endpoint": name,
+                    "request_error": type(exc).__name__,
+                    "http_status": response.status_code if response is not None else None,
+                    "requested_url": getattr(response, "url", None),
+                })
         target_report = {**target, "observations": observations}
         if target["market"] == "tpex":
             target_report["reconciliation"] = reconcile_tpex_payloads(
