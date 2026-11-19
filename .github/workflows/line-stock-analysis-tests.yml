@@ -49,8 +49,12 @@ jobs:
           # Disconnected, ephemeral PostgreSQL service started above. NEVER Neon.
           LINE_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
         run: npm test
-      - name: Check syntax of runtime entrypoint
-        run: node --check line-stock-analysis/index.mjs
+      - name: Check syntax of runtime entrypoints (candidate is not deployed)
+        run: |
+          node --check line-stock-analysis/index.mjs
+          node --check line-stock-analysis/single-account-entry.mjs
+          node --check line-stock-analysis/single-account-candidate.mjs
+          node --check line-stock-analysis/delivery-state.mjs
       - name: Build self-contained Neon Node.js function
         working-directory: line-stock-analysis
         run: npm run bundle
