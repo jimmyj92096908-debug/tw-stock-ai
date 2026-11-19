@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
-  ANALYSIS_SQL, EXCLUDED_CODES, HELP_TEXT, parseStockCode,
+  ANALYSIS_SQL, RANKING_SQL, EXCLUDED_CODES, HELP_TEXT, parseStockCode,
   verifyLineSignature, formatStockAnalysis, buildReplyText, createWebhookHandler
 } from '../handler.mjs';
 
@@ -45,6 +45,10 @@ test('support bare 4-digit codes and Chinese command prefixes', () => {
   }
   assert.equal(parseStockCode('help').kind, 'help');
   assert.equal(parseStockCode('說明').kind, 'help');
+  assert.deepEqual(parseStockCode('1'), { kind: 'rank', rank: 1 });
+  assert.deepEqual(parseStockCode('編號 10'), { kind: 'rank', rank: 10 });
+  assert.deepEqual(parseStockCode('第 2 名'), { kind: 'rank', rank: 2 });
+  assert.equal(parseStockCode('清單').kind, 'list');
 });
 
 test('reject arbitrary SQL, multi-code messages and unsupported instruments', () => {
@@ -142,6 +146,47 @@ test('signed webhook replies with database analysis without persisting messages'
   assert.equal(sent.length, 1);
   assert.equal(sent[0].token, 'reply-abc');
   assert.match(sent[0].message, /台積電/u);
+});
+
+
+test('ranking lists its observation date and ordinal maps to selected stock', async () => {
+  const example = [
+    { market: 'twse', stock_id: '2330', stock_name: '台積電', total_score: '88', as_of_date: '2026-11-18' },
+    { market: 'tpex', stock_id: '6488', stock_name: '環球晶', total_score: '77', as_of_date: '2026-11-18' }
+  ];
+  let calls = 0;
+  const query = async (sql, params) => {
+    calls += 1;
+    if (calls === 1) {
+      assert.equal(sql, RANKING_SQL);
+      assert.deepEqual(params, []);
+      return { rows: example };
+    }
+    assert.equal(sql, ANALYSIS_SQL);
+    assert.deepEqual(params, ['6488']);
+    return { rows: [stock({ market: 'tpex', stock_id: '6488', stock_name: '環球晶' })] };
+  };
+  const analysis = await buildReplyText('編號 2', query);
+  assert.match(analysis, /清單編號 2/u);
+  assert.match(analysis, /6488 環球晶/u);
+  assert.equal(calls, 2);
+  const list = await buildReplyText('清單', async (sql, params) => {
+    assert.equal(sql, RANKING_SQL);
+    assert.deepEqual(params, []);
+    return { rows: example };
+  });
+  assert.match(list, /2026-11-18/u);
+  assert.match(list, /1\. 2330/u);
+  assert.match(list, /2\. 6488/u);
+  assert.doesNotMatch(list, /代碼 1808/u);
+});
+
+test('out-of-range ordinal and empty ranking fail safely', async () => {
+  assert.match(await buildReplyText('1', async () => ({ rows: [] })), /沒有可用/u);
+  const r = await buildReplyText('10', async () => ({
+    rows: [{ market: 'twse', stock_id: '2330', stock_name: '台積電', total_score: 88, as_of_date: '2026-11-18' }]
+  }));
+  assert.match(r, /只有 1 檔/u);
 });
 
 test('tampered signatures cannot trigger a query or reply', async () => {
