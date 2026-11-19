@@ -76,6 +76,27 @@ GROUP BY sm.market,sm.stock_id,sm.stock_name
 ORDER BY sm.market,sm.stock_id
 """
 
+
+QUALITY_SQL = """
+WITH p AS (
+ SELECT COUNT(*)::int AS total_price_rows,
+ COUNT(*) FILTER (WHERE close IS NOT NULL AND close<=0)::int AS invalid_close,
+ COUNT(*) FILTER (WHERE volume<0)::int AS negative_volume,
+ COUNT(*) FILTER (WHERE high IS NOT NULL AND low IS NOT NULL AND high<low)::int AS inverted_high_low,
+ COUNT(*) FILTER (WHERE close IS NOT NULL AND high IS NOT NULL AND close>high)::int AS close_above_high,
+ COUNT(*) FILTER (WHERE close IS NOT NULL AND low IS NOT NULL AND close<low)::int AS close_below_low,
+ COUNT(*) FILTER (WHERE trade_date>CURRENT_DATE)::int AS future_price_date
+ FROM public.daily_prices
+), s AS (
+ SELECT COUNT(*)::int AS total_score_rows,
+ COUNT(*) FILTER (WHERE total_score IS NOT NULL AND (total_score<0 OR total_score>100))::int AS invalid_score,
+ COUNT(*) FILTER (WHERE coverage_weight IS NOT NULL AND (coverage_weight<0 OR coverage_weight>1))::int AS invalid_score_coverage,
+ COUNT(*) FILTER (WHERE as_of_date>CURRENT_DATE)::int AS future_score_date
+ FROM public.daily_composite_scores
+)
+SELECT * FROM p CROSS JOIN s
+"""
+
 REFRESH_STATUS_SQL = """
 SELECT CASE WHEN last_attempt_at IS NULL THEN 'never_attempted'
   ELSE last_status END AS status, COUNT(*)::int AS total
@@ -112,6 +133,8 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         if exists:
             cur.execute(REFRESH_STATUS_SQL)
             refresh = [dict(row) for row in cur.fetchall()]
+        cur.execute(QUALITY_SQL)
+        quality = dict(cur.fetchone())
 
     return {
         "latest": {name: iso_date(value) for name, value in dict(dates).items()},
@@ -122,6 +145,7 @@ def collect_audit(conn: Any) -> dict[str, Any]:
             for row in samples
         ],
         "refresh_state": refresh,
+        "quality": quality,
     }
 
 
@@ -155,6 +179,29 @@ def format_audit(audit: dict[str, Any]) -> str:
         )
     for row in audit["refresh_state"]:
         lines.append(f"輪替更新 {row['status']}：{row['total']}")
+    quality = audit.get("quality")
+    if quality is not None:
+        price_issues = (
+            "invalid_close", "negative_volume", "inverted_high_low",
+            "close_above_high", "close_below_low", "future_price_date"
+        )
+        score_issues = (
+            "invalid_score", "invalid_score_coverage", "future_score_date"
+        )
+        price_issue_count = sum(int(quality.get(name) or 0) for name in price_issues)
+        score_issue_count = sum(int(quality.get(name) or 0) for name in score_issues)
+        lines.append(
+            f"價格資料品質：共 {int(quality['total_price_rows']):,} 筆；"
+            f"異常條件命中 {price_issue_count} 次"
+        )
+        lines.append(
+            f"評分資料品質：共 {int(quality['total_score_rows']):,} 筆；"
+            f"異常條件命中 {score_issue_count} 次"
+        )
+        if price_issue_count or score_issue_count:
+            lines.append("警告：發現行情或評分欄位異常，請先排查來源資料。")
+    if latest["latest_price_date"] != latest["latest_score_date"]:
+        lines.append("提醒：最新行情日與最新評分日不同，請勿混用。")
     if total_universe and total_priced < total_universe:
         lines.append("注意：資料尚未涵蓋全部候選股票，不可視為全市場分析。")
     return "\n".join(lines)
