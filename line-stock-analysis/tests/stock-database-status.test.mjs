@@ -15,13 +15,15 @@ test('database status is an explicit LINE command, not an accidental stock code'
 
 test('status formatter exposes price date, score date and missing coverage',async()=>{
   const data={
-    universe:1991,priced:40,price_date:'2026-11-19',
+    universe:1991,priced:40,priced_latest:25,stale_over_7_days:10,price_date:'2026-11-19',
     score_date:'2026-11-18',scored_latest:18
   };
   const msg=formatDataStatus(data);
   assert.match(msg,/2026-11-19/u);
   assert.match(msg,/2026-11-18/u);
   assert.match(msg,/已有行情：40 檔（2\.0%）/u);
+  assert.match(msg,/最新行情交易日有資料：25 檔/u);
+  assert.match(msg,/最後行情落後超過 7 日：10 檔/u);
   assert.match(msg,/尚無行情：1,951 檔/u);
   assert.match(msg,/最新評分資料筆數：18/u);
   assert.match(msg,/不是交易所完整股票數/u);
@@ -67,6 +69,8 @@ test('disposable Postgres agrees on real status SQL and excludes unpriced rankin
     const status=(await client.query(DATA_STATUS_SQL)).rows[0];
     assert.equal(status.universe,5);
     assert.equal(status.priced,3);
+    assert.equal(status.priced_latest,0);
+    assert.equal(status.stale_over_7_days,0);
     assert.equal(status.scored_latest,5);
     assert.equal(status.score_date.toISOString().slice(0,10),'2026-11-18');
     assert.match(formatDataStatus(status),/尚無行情：2 檔/u);
