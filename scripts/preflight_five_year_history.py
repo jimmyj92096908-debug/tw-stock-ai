@@ -22,8 +22,9 @@ MARKETS = ("twse", "tpex")
 def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
     if payload.get("stat") != "ok":
         raise ValueError(f"TWSE calendar status is not ok for {year}")
-    if payload.get("queryYear") not in (None, year):
-        raise ValueError(f"TWSE returned a different calendar year for {year}")
+    expected_roc_year = year - 1911
+    if payload.get("queryYear") not in (None, year, expected_roc_year, str(year), str(expected_roc_year)):
+        raise ValueError(f"TWSE returned a different calendar year for {year}: {payload.get('queryYear')!r}")
     rows = payload.get("data")
     if not isinstance(rows, list):
         raise ValueError(f"TWSE calendar data is missing for {year}")
@@ -40,7 +41,7 @@ def closed_dates_from_payload(payload: dict[str, Any], year: int) -> set[date]:
 def fetch_closed_dates(year: int, session: requests.Session) -> set[date]:
     response = session.get(
         CALENDAR_URL,
-        params={"queryYear": str(year), "response": "json"},
+        params={"queryYear": str(year - 1911), "response": "json"},
         timeout=(8, 20),
         headers={"User-Agent": "tw-stock-ai-history-preflight/1.0"},
     )
