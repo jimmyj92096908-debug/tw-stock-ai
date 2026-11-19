@@ -71,8 +71,8 @@ class PageParser(HTMLParser):
 def inspect_asset(text):
     patterns = (
         r"(?:ajax|fetch|axios|\$\.(?:get|post)|\.get|\.post)\s*\([^)]{0,700}",
-        r"(?:action|url|endpoint|api)\s*[:=]\s*[\\"']([^\\"']{1,300})",
-        r"/[^\\"'\s<>]{1,240}(?:api|query|search|list|delist)[^\\"'\s<>]*",
+        r"""(?:action|url|endpoint|api)\s*[:=]\s*["']([^"']{1,300})""",
+        r"""/[^"'\s<>]{1,240}(?:api|query|search|list|delist)[^"'\s<>]*""",
         r"tables\.init\s*\([^)]{0,700}",
     )
     hits = []
