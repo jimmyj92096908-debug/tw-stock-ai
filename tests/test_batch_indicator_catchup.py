@@ -28,14 +28,14 @@ class Cursor:
             "latest_close":date(2026,11,19),
             "technical_rows":0,
             "smc_rows":0,
-            "last_technical":None,
-            "last_smc":None,
+            "has_latest_technical":False,
+            "has_latest_smc":False,
         }]
     def fetchone(self):
         return {"adjusted_rows":74,"technical_rows":74,"smc_rows":74,
-                "adjusted_last":date(2026,11,19),
-                "technical_last":date(2026,11,19),
-                "smc_last":date(2026,11,19)}
+                "adjusted_has_latest":True,
+                "technical_has_latest":True,
+                "smc_has_latest":True}
 
 
 class Connection:
@@ -102,27 +102,27 @@ class IndicatorCatchupTests(unittest.TestCase):
         self.assertEqual(adjusted.call_count,2)
         self.assertEqual(tech.call_count,2)
         self.assertEqual(smc.call_count,2)
-        self.assertEqual(conn.cur.calls[1][1],("twse","2330")*6)
+        self.assertEqual(conn.cur.calls[1][1],("twse","2330",date(2026,11,19)))
 
     def test_candidate_sql_recovers_stale_dates_even_when_old_row_count_is_high(self):
         sql=ind.CANDIDATES_SQL
-        self.assertIn("last_technical IS DISTINCT FROM latest_close",sql)
-        self.assertIn("last_smc IS DISTINCT FROM latest_close",sql)
+        self.assertIn("NOT has_latest_technical",sql)
+        self.assertIn("NOT has_latest_smc",sql)
         self.assertIn("'8937'",sql)
         self.assertIn("'2330'",sql)
         self.assertIn("technical_rows < close_days",sql)
         self.assertIn("smc_rows < close_days",sql)
         # Never admit incorrect latest dates just because counts are higher.
-        self.assertIn("technical_last",ind.VERIFY_SQL)
-        self.assertIn("smc_last",ind.VERIFY_SQL)
-        self.assertIn("adjusted_last",ind.VERIFY_SQL)
+        self.assertIn("technical_has_latest",ind.VERIFY_SQL)
+        self.assertIn("smc_has_latest",ind.VERIFY_SQL)
+        self.assertIn("adjusted_has_latest",ind.VERIFY_SQL)
 
     def test_stale_latest_technical_date_rolls_back_even_if_counts_are_full(self):
         conn=Connection()
         base=conn.cur.fetchone
         def stale_date():
             result=base()
-            return {**result,"technical_last":date(2026,11,18)}
+            return {**result,"technical_has_latest":False}
         conn.cur.fetchone=stale_date
         with (
             patch.dict(os.environ,{"STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes"}),
@@ -135,6 +135,16 @@ class IndicatorCatchupTests(unittest.TestCase):
         self.assertEqual([x["status"] for x in report],["failed","failed"])
         self.assertEqual(conn.tx_rolled_back,2)
         self.assertEqual(conn.tx_committed,0)
+
+    def test_max_indicator_date_after_last_actual_close_is_not_automatically_bad(self):
+        # Real tpex/2235: Nov 20 has a NULL closing price. Valid last
+        # close is Nov 19, while technicals happen to contain a Nov 20 row.
+        sql=ind.CANDIDATES_SQL
+        self.assertIn("t.trade_date=p.latest_close",sql)
+        self.assertIn("s.trade_date=p.latest_close",sql)
+        self.assertIn("latest_valid_close_date",ind.VERIFY_SQL)
+        self.assertNotIn("technical_last",ind.VERIFY_SQL)
+        self.assertNotIn("smc_last",ind.VERIFY_SQL)
 
     def test_partial_stock_failure_is_rolled_back_and_next_stock_succeeds(self):
         conn=Connection()
