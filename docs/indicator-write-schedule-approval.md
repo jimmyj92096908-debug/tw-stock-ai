@@ -1,8 +1,9 @@
-# Independent indicator catch-up WRITE schedule — approval proposal only
+# Authorized independent indicator catch-up WRITE schedule
 
-**Draft only. Do not merge until authorized.** This changes when the
-production `twstock` database receives indicator writes; unlike
-`indicator-schedule-probe.yml`, this is not a read-only workflow.
+**Approved and merged to `main` in PR #26 on 2026-11-20.** This workflow writes
+verified adjusted prices, technical indicators and SMC to production `twstock`,
+subject to the existing 20-per-market cap and per-stock savepoint rollback.
+The independent `indicator-schedule-probe.yml` remains strictly read-only.
 
 ## Why the replacement is needed
 
@@ -12,7 +13,7 @@ an independent cron while retaining the upstream `workflow_run` trigger.
 That combination can run **two write batches in the same day**: concurrency
 ensures serial execution but does not deduplicate completed jobs.
 
-This proposal instead uses exactly **one schedule event** per Taiwan
+The activated workflow uses exactly **one schedule event** per Taiwan
 Tue–Sat at 03:10, after the 01:50 scheduled dated-history import.
 Manual `workflow_dispatch apply=false` is preview only.
 Manual `apply=true` is a separate explicit operator action.
@@ -59,17 +60,25 @@ A successful push event does **not** establish cron reliability.
   `STOCK_INDICATOR_CATCHUP_WRITE_ENABLED=yes`. No LINE or trading
   functionality is introduced.
 
-## Pre-merge decision record
+## Approval and verified first production execution
 
-The current baseline observed on 2026-11-20: **TWSE 1,044 pending,
-41 complete, 942 unstarted; TPEx 0 pending and 21 complete**.
-If 20 listed symbols are completed per successful scheduled run,
-the mathematical minimum is 53 such runs. This is not a promise or
-an estimate of calendar completion, as source data and eligibility change.
+The owner explicitly authorized activation on 2026-11-20. PR #26 was merged,
+and the one-time bounded two-stock-per-market real Neon pilot (PR #28)
+completed successfully: [Actions #44720719864](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44720719864).
+TWSE pending **1,044 → 1,042**, complete **41 → 43**, unstarted **942 → 940**.
+TPEx stayed 0 pending of 21 eligible.
 
-Before merging this draft, the operator must separately approve the new
-**automatic production write schedule**, ensure database write/compute
-budget is acceptable, review the prior PR #15 supersession, and confirm
-failure alerts and rollback plan. After merging, a scheduled run must
-show real before/after coverage improvement and persisted post-write
-counts; test PASS alone is not evidence of backfill.
+A separately authorized use of the existing composite score runner confirmed
+both newly completed TWSE stocks 1626 and 1702 received valid same-day scores:
+[Actions #44722651205](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44722651205).
+Valid composite-scored symbols grew **164 → 166**. Both temporary one-shot
+activation workflows are retired after success; historical artifacts remain.
+
+**The recurring 03:10 schedule is enabled but no real scheduled indicator
+execution has yet been observed after this activation.** Its first real cron
+run still requires the before/after Neon checks and a successful downstream
+composite-score workflow run. Do not treat an initial one-shot pilot as proof
+of unattended recurring reliability. At a maximum of 20 TWSE symbols per
+successful scheduled run, 1,042 pending stocks imply a mathematical minimum
+of 53 more full-success batches if the universe stays fixed; this is not a
+calendar forecast. No LINE webhook cutover or trade signal is approved.
