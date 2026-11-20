@@ -1,0 +1,49 @@
+# One-shot read-only smoke. Does NOT have LINE send token or write data.
+name: Verify Real Stock Data Daily LINE Report Dry Run (One Shot)
+on:
+  push:
+    branches: [feature/production-readiness-20261120]
+    paths: [.github/workflows/verify-production-daily-report-once.yml]
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install read-only database and HTTP dependencies
+        run: pip install "psycopg[binary]>=3.2,<4" requests
+      - name: Validate complete report formatter against real non-private aggregates
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m unittest tests.test_send_line_report tests.test_send_line_report_queries -v
+          python - <<'PY'
+          import os
+          from src.send_line_report import load_report,format_report
+          data=load_report(os.environ['DATABASE_URL'])
+          msg=format_report(data)
+          assert 0<len(msg)<=4900, "Report cannot fit LINE text message"
+          assert "行情交易日：" in msg and "綜合評分資料日：" in msg
+          assert data['trade_date'] is not None
+          assert data['score_date'] is not None
+          assert data['score_date']<=data['trade_date']
+          assert data['scores']['scored']>0
+          assert len(data['top'])<=10
+          # Do not print LINE recipient identifiers, user text or credentials.
+          print('Report format OK:',len(msg),'chars')
+          print('Price as-of:',data['trade_date'])
+          print('Score as-of:',data['score_date'])
+          print('Stocks with scores on used score date:',data['scores']['scored'])
+          print('Ranking entries:',len(data['top']))
+          print('Recipients registered:',len(data['recipients']))
+          print('No LINE send token was provided; no messages sent.')
+          PY
