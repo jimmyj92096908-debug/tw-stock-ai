@@ -12,12 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from line_webhook_control import inspect_endpoint
-from line_gateway_canary import GATEWAY_URL
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.line_webhook_control import inspect_endpoint
+from scripts.line_gateway_canary import GATEWAY_URL
 
 GATEWAY_HEALTH_URL = GATEWAY_URL.rstrip("/") + "/health"
 
