@@ -223,9 +223,16 @@ def classify_price_refresh(downloaded: int, latest_trade_date: date | None) -> s
     return "invalid_import"
 
 
-def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> bool:
+def refresh_one(
+    conn: psycopg.Connection, stock: dict, today: date,
+    *, windows: list[tuple[date, date]] | None = None,
+) -> bool:
+    """Refresh one ticker; optional bounded windows serve sparse-history jobs.
+
+    Ordinary full-market rotation keeps its existing default window planner.
+    """
     market, stock_id = stock["market"], stock["stock_id"]
-    windows = plan_download_windows(stock, today)
+    windows = plan_download_windows(stock, today) if windows is None else windows
     module = market_data if market == "twse" else tpex_market_data
     logger.info(
         "更新 %s %s：%s",

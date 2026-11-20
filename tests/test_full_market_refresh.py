@@ -106,6 +106,29 @@ class NoPriceHistoryResilienceTests(unittest.TestCase):
         self.assertEqual(attempt.call_args.args[3:6], ("failed", 0, None))
         self.assertIn("無有效價格資料", attempt.call_args.args[6])
 
+    def test_reviewed_override_windows_are_used_without_changing_default_rotation(self):
+        from unittest.mock import MagicMock, patch
+        stock={
+            "market":"twse","stock_id":"7867",
+            "earliest_trade_date":date(2026,10,30),
+            "latest_trade_date":date(2026,11,20)
+        }
+        window=[(date(2026,7,1),date(2026,11,1))]
+        fake=MagicMock()
+        fake.cursor.return_value.__enter__.return_value.fetchone.return_value={
+            "latest":date(2026,11,20)
+        }
+        with (
+            patch("full_market_refresh.market_data.download_range",return_value=15) as fetch,
+            patch("pathlib.Path.exists",return_value=True),
+            patch("db_storage.upsert_csv"),
+            patch("full_market_refresh.record_attempt") as attempt,
+        ):
+            self.assertTrue(refresh_one(fake,stock,date(2026,11,21),windows=window))
+        fetch.assert_called_once_with("7867",2026,2026,7,11)
+        attempt.assert_called_once()
+        self.assertEqual(attempt.call_args.args[3],"success")
+
     def test_downloaded_but_not_imported_is_real_failure(self):
         from unittest.mock import MagicMock, patch
         stock = {

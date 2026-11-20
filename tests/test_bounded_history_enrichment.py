@@ -11,6 +11,8 @@ class FakeCursor:
         self.sql = None
         self.params = None
         self.calls = []
+        self.check_row = {"price_days":58,"min_day":date(2026,8,1),
+                          "max_day":date(2026,11,19)}
 
     def __enter__(self):
         return self
@@ -39,7 +41,7 @@ class FakeCursor:
         }]
 
     def fetchone(self):
-        return {"price_days":58,"min_day":date(2026,8,1),"max_day":date(2026,11,19)}
+        return self.check_row
 
 
 class FakeConnection:
@@ -109,6 +111,71 @@ class BoundedHistoryTests(TestCase):
         self.assertEqual([x["status"] for x in out],["failed","failed"])
         self.assertTrue(all(x["error_type"]=="Exception" for x in out))
         self.assertNotIn("SECRET-DB-PASSWORD","\n".join(logs.output))
+
+    def test_recent_sparse_stock_downloads_contiguous_july_to_november(self):
+        for earliest in (date(2026,9,20),date(2026,10,27),
+                         date(2026,10,30),date(2026,11,19)):
+            with self.subTest(earliest=earliest):
+                stock={
+                    "earliest_trade_date":earliest,
+                    "latest_trade_date":date(2026,11,20),
+                }
+                windows=enrichment.plan_bounded_windows(stock,date(2026,11,21))
+                self.assertEqual(windows,[
+                    (date(2026,7,1),date(2026,11,1))
+                ])
+                self.assertEqual(enrichment.count_months(windows),5)
+        # This change does not broaden the ordinary older-stock rotation.
+        old={"earliest_trade_date":date(2026,4,28),
+             "latest_trade_date":date(2026,11,20)}
+        self.assertEqual(
+            enrichment.plan_bounded_windows(old,date(2026,11,21)),
+            enrichment.plan_download_windows(old,date(2026,11,21))
+        )
+
+    def test_no_growth_is_not_falsely_reported_as_verified(self):
+        fake=FakeConnection()
+        fake.cur.check_row={
+            "price_days":1,"min_day":date(2026,11,19),
+            "max_day":date(2026,11,19)
+        }
+        with (
+            patch.dict(enrichment.os.environ,{"STOCK_ENRICHMENT_WRITE_ENABLED":"yes"}),
+            patch.object(enrichment.psycopg,"connect",return_value=fake),
+            patch.object(enrichment,"refresh_one",return_value=True) as refresh,
+            patch.object(enrichment,"build_adjusted_stock",
+                         side_effect=AssertionError("no growth means no indicator rewrites")),
+            patch.object(enrichment,"calculate_technical_stock",
+                         side_effect=AssertionError("no growth means no technical rewrites")),
+            patch.object(enrichment,"calculate_smc_stock",
+                         side_effect=AssertionError("no growth means no SMC rewrites")),
+        ):
+            out=enrichment.execute(
+                "fake",apply=True,today=date(2026,11,20),per_market=1,pause_seconds=0
+            )
+        self.assertEqual([r["status"] for r in out],["no-growth","no-growth"])
+        self.assertEqual(refresh.call_count,2)
+        self.assertEqual(out[0]["price_days"],1)
+        self.assertNotIn("technical_rows",out[0])
+        for call in refresh.call_args_list:
+            self.assertEqual(enrichment.count_months(call.kwargs["windows"]),5)
+
+    def test_real_regression_still_fails_and_does_not_become_no_growth(self):
+        self.assertEqual(enrichment.classify_enrichment_growth(
+            16,date(2026,11,20),
+            {"price_days":16,"max_day":date(2026,11,20)}
+        ),"no-growth")
+        self.assertEqual(enrichment.classify_enrichment_growth(
+            16,date(2026,11,20),
+            {"price_days":20,"max_day":date(2026,11,20)}
+        ),"new-history")
+        for count,latest in ((15,date(2026,11,20)),(16,date(2026,11,19))):
+            with self.subTest(count=count,latest=latest):
+                with self.assertRaisesRegex(RuntimeError,"regressed"):
+                    enrichment.classify_enrichment_growth(
+                        16,date(2026,11,20),
+                        {"price_days":count,"max_day":latest}
+                    )
 
     def test_source_month_cap_never_allows_unbounded_range(self):
         window=[(date(2026,1,1),date(2026,6,1))]
