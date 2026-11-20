@@ -28,9 +28,14 @@ class Cursor:
             "latest_close":date(2026,11,19),
             "technical_rows":0,
             "smc_rows":0,
+            "last_technical":None,
+            "last_smc":None,
         }]
     def fetchone(self):
-        return {"adjusted_rows":74,"technical_rows":74,"smc_rows":74}
+        return {"adjusted_rows":74,"technical_rows":74,"smc_rows":74,
+                "adjusted_last":date(2026,11,19),
+                "technical_last":date(2026,11,19),
+                "smc_last":date(2026,11,19)}
 
 
 class Connection:
@@ -97,7 +102,39 @@ class IndicatorCatchupTests(unittest.TestCase):
         self.assertEqual(adjusted.call_count,2)
         self.assertEqual(tech.call_count,2)
         self.assertEqual(smc.call_count,2)
-        self.assertEqual(conn.cur.calls[1][1],("twse","2330","twse","2330","twse","2330"))
+        self.assertEqual(conn.cur.calls[1][1],("twse","2330")*6)
+
+    def test_candidate_sql_recovers_stale_dates_even_when_old_row_count_is_high(self):
+        sql=ind.CANDIDATES_SQL
+        self.assertIn("last_technical IS DISTINCT FROM latest_close",sql)
+        self.assertIn("last_smc IS DISTINCT FROM latest_close",sql)
+        self.assertIn("'8937'",sql)
+        self.assertIn("'2330'",sql)
+        self.assertIn("technical_rows < close_days",sql)
+        self.assertIn("smc_rows < close_days",sql)
+        # Never admit incorrect latest dates just because counts are higher.
+        self.assertIn("technical_last",ind.VERIFY_SQL)
+        self.assertIn("smc_last",ind.VERIFY_SQL)
+        self.assertIn("adjusted_last",ind.VERIFY_SQL)
+
+    def test_stale_latest_technical_date_rolls_back_even_if_counts_are_full(self):
+        conn=Connection()
+        base=conn.cur.fetchone
+        def stale_date():
+            result=base()
+            return {**result,"technical_last":date(2026,11,18)}
+        conn.cur.fetchone=stale_date
+        with (
+            patch.dict(os.environ,{"STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes"}),
+            patch.object(ind.psycopg,"connect",return_value=conn),
+            patch.object(ind,"build_adjusted_stock",return_value=74),
+            patch.object(ind,"calculate_technical_stock",return_value=74),
+            patch.object(ind,"calculate_smc_stock",return_value=74)
+        ):
+            report=ind.run("fake",apply=True,per_market=1)
+        self.assertEqual([x["status"] for x in report],["failed","failed"])
+        self.assertEqual(conn.tx_rolled_back,2)
+        self.assertEqual(conn.tx_committed,0)
 
     def test_partial_stock_failure_is_rolled_back_and_next_stock_succeeds(self):
         conn=Connection()
