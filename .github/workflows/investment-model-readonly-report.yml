@@ -1,5 +1,9 @@
 name: Generate Investment Research Model Report (Read Only)
 on:
+  # Taiwan time Tue-Sat 05:30, after the 03:10 verified indicator batch.
+  # Produces a research-only JSON artifact, not a LINE message.
+  schedule:
+    - cron: "30 21 * * 1-5"
   workflow_dispatch:
     inputs:
       market:
@@ -46,8 +50,8 @@ jobs:
           PY
       - name: Generate actual stock ranking and dated factor status from one read-only snapshot
         env:
-          STOCK_MARKET: ${{ inputs.market }}
-          STOCK_ID: ${{ inputs.stock_id }}
+          STOCK_MARKET: ${{ inputs.market || 'twse' }}
+          STOCK_ID: ${{ inputs.stock_id || '2330' }}
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL missing"; exit 1; fi
           python scripts/investment_model_pipeline.py --live-readonly --market "$STOCK_MARKET" --stock-id "$STOCK_ID" --output /tmp/investment-research-live.json

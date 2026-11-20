@@ -84,3 +84,10 @@ Linux／GitHub Actions 使用方式相同，僅需以 shell 環境變數設定�
 [一次性真實研究模型驗收 #44797342734](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44797342734) 成功，且輸出 [JSON 研究報告 Artifact](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44797342734/artifacts/14658653878)。當時 2330 行情／獨立籌碼日期為 **2026-11-20**，籌碼分數 **40.65**、覆蓋 **65%**；技術與綜合評分仍是 **2026-11-19**。
 
 第二次使用新增覆蓋率檢查的 [正式 Neon 唯讀驗收 #44797856429](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44797856429) 也已成功。最新全市場研究排名的來源分數日期為 **2026-11-20**；同日有 **1,973 檔**股票具有效收盤價，卻只有 **7 檔**符合當日研究模型排名資格，覆蓋率 **0.003548（約 0.35%）**。這不能被當成整個上市／上櫃市場的有效完整排名，亦不能由此推導 2330 已取得 11/20 的綜合評分。因此在完成正式資料日與市場覆蓋率修補以前，先將排名標記為**稀疏樣本**，繼續 `abstain=true`。一次性驗收的程式不會保留在主分支；未來如需重新執行可以使用手動 `Generate Investment Research Model Report (Read Only)` 工作流程，無自動推播。
+
+
+## GitHub Actions 每日自動研究報告
+
+依使用者選擇，研究模型工作流程 `.github/workflows/investment-model-readonly-report.yml` 同時支援手動與**定時**執行，設定為**台灣時間週二至週六 05:30（UTC 前一天 21:30）**。定時使用預設追蹤 `twse/2330`，手動可指定台股市場與代碼。兩種模式都只會產生 GitHub Actions `Artifacts` 中的 JSON 報告（保存 14 日），**不會主動發送 LINE、交易或修改資料庫**。
+
+研究報告使用當時正式 Neon **一筆 PostgreSQL REPEATABLE READ / READ ONLY 快照**，不依賴持續開啟 Windows 電腦。樣本外績效沒有通過時仍會顯示失敗；模型日期、行情日期、籌碼日期與覆蓋率維持分開列示。GitHub 排程可能延遲或被平台取消，實際執行是否成功必須查看 Actions run；設定 cron 不能當作已完成的證明。
