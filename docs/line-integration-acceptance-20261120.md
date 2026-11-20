@@ -31,3 +31,18 @@
 ## 無資料破壞／隱私邊界
 
 本次新增的是判斷是否應停止 LINE Push 的唯讀品質檢查，並沒有修改行情或評分資料庫表，沒有自動下單，也沒有修改 LINE 官方正式 Webhook URL。
+
+## 2026-11-20 23:14 官方 11/20 行情缺漏補齊（使用者明確授權）
+
+- 使用者明確核准：使用現有 `src/official_snapshot_ingest.py` 與官方來源補入 2026-11-20 上市、上櫃缺漏日 K；不得覆寫既有行情、變更 LINE Webhook 或額外發送 LINE 訊息。
+- 一次性受控 GitHub Actions [#44761144734](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44761144734) 執行成功。執行前檢查雙市場實際來源日期必須為 `2026-11-20`，且 TWSE 至少 800 檔、TPEx 至少 650 檔；官方解析與資料合法性單元測試共 7 項通過。
+- 執行使用原本 `run(..., apply=True, fetcher=checked_fetch, today=date(2026,11,20))`，沿用 `write_missing` 和 `ON CONFLICT (market,stock_id,trade_date) DO NOTHING`，僅新增不存在的 `daily_prices` 主鍵列。
+- GitHub 真實匯入日誌：
+  - `AUTHORIZED_IMPORT market=twse date=2026-11-20 qualified=1090 inserted=1085 mode=apply`
+  - `AUTHORIZED_IMPORT market=tpex date=2026-11-20 qualified=883 inserted=877 mode=apply`
+- **實際新增總計 1,962 筆**。正式 Neon 經唯讀查核：2026-11-20 TWSE 1,091 列／有效收盤價 1,090 檔（保留一筆原有空收盤價列）；TPEx 883 列／有效收盤價 883 檔；合計有效收盤價 **1,973 檔**。無 `close <= 0` 的記錄。
+- 11/20 `source` 聚合：TWSE `TWSE_MI_INDEX_ALLBUT0999` 1,085 列、既有 `TWSE_STOCK_DAY` 6 列；TPEx `TPEX_DAILY_CLOSE_OPENAPI` 877 列、既有 `TPEX_TRADING_STOCK` 6 列。符合只新增缺漏、不覆寫既有列的約束。
+- 前交易日 2026-11-19 的正式 Neon 有效收盤價維持 TWSE 1,090 + TPEx 876 = 1,966 檔，無覆寫該交易日的計畫或 SQL。
+- 有效綜合評分最新日期仍為 **2026-11-19**，未生成或假設 11/20 評分；LINE 日報應繼續明示評分與行情日期不同。
+- 執行後刪除一次性 GitHub 工作流程 `.github/workflows/one-time-authorized-1120-price-import.yml`；歷史 GitHub 執行日誌保留。
+- 本次匯入工作只讀官方兩市場資料與 `stock_master`、寫入缺漏 `daily_prices`；沒有 LINE API 呼叫、沒有變更任何 LINE Function 或正式 Webhook。原有 23:30 排程為獨立流程，其執行狀態需要另外查核，不能由本次匯入推定已成功發送。
