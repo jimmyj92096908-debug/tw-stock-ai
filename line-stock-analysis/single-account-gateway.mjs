@@ -42,7 +42,7 @@ export function createSingleAccountGateway({
     if(request.method==='GET' && path==='/health') return response('ok',200);
     if(path!=='/' && path!=='/webhook') return response('Not found',404);
     if(request.method!=='POST') return response('Method not allowed',405);
-    if(!enabled || !channelSecret ||
+    if(!channelSecret ||
        typeof stockHandler!=='function' || typeof forwardLegacy!=='function')
       return response('Gateway unavailable',503);
 
@@ -53,6 +53,21 @@ export function createSingleAccountGateway({
     if(Buffer.byteLength(rawBody,'utf8')>MAX_BYTES)
       return response('Payload too large',413);
     const originalSignature=request.headers.get('x-line-signature');
+    // A disabled candidate can acknowledge LINE's *signed empty* webhook
+    // connectivity test without processing or forwarding ANY user event.
+    // A 200 for this special case is NOT permission to serve real messages.
+    if(!enabled) {
+      if(!verifyLineSignature(rawBody,originalSignature,channelSecret))
+        return response('Gateway unavailable',503);
+      let canary;
+      try { canary=JSON.parse(rawBody); }
+      catch { return response('Gateway unavailable',503); }
+      if(canary && typeof canary.destination==='string' &&
+         canary.destination.length>0 &&
+         Array.isArray(canary.events) && canary.events.length===0)
+        return response('OK',200);
+      return response('Gateway unavailable',503);
+    }
     if(!verifyLineSignature(rawBody,originalSignature,channelSecret))
       return response('Unauthorized',401);
 
