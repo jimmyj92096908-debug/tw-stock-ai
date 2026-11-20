@@ -44,7 +44,8 @@ class CompositeFactorModelTests(unittest.TestCase):
         result = evaluate_rows(rows)
         self.assertEqual(result["signal_dates"], 0)
         self.assertEqual(result["excluded_rows"]["insufficient_coverage"], 1)
-        self.assertEqual(result["excluded_rows"]["invalid_or_missing"], 2)
+        self.assertEqual(result["excluded_rows"]["invalid_or_missing"], 1)
+        self.assertEqual(result["excluded_rows"]["missing_future_price"], 1)
 
     def test_duplicate_key_is_not_double_counted(self):
         rows = [make_row(str(i), i) for i in range(5)]
