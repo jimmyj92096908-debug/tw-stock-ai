@@ -1,0 +1,96 @@
+# One-time explicit owner-authorized, bounded production history extension.
+# Delete when complete; all source requests use official dated TWSE sessions.
+name: Authorized TWSE 120-Session Historical Coverage (One Shot)
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/authorized-120session-twse-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: twstock-twse-bulk-backfill
+  cancel-in-progress: false
+jobs:
+  backfill:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install approved dependencies
+        run: pip install -r requirements.txt
+      - name: Preflight database availability and strict official source tests
+        run: |
+          set -euo pipefail
+          if [ -z "$DATABASE_URL" ]; then echo "::error::No DATABASE_URL configured"; exit 1; fi
+          python -m unittest tests.test_twse_dated_history tests.test_official_market_feed tests.test_batch_indicator_catchup -v
+          python -m py_compile src/twse_dated_history.py src/batch_indicator_catchup.py scripts/score_after_refresh.py
+      - name: Preview one validated official historical day without writes
+        run: python src/twse_dated_history.py --batch-days 1 --lookback-days 366
+      - name: Extend TWSE history by at most eight batches of eight dated sessions
+        env:
+          STOCK_TWSE_HISTORY_WRITE_ENABLED: "yes"
+        run: |
+          python - <<'PY'
+          import os
+          from twse_dated_history import run
+          total_new=0
+          trading_days=0
+          closed_days=0
+          for n in range(1,9):
+              rows=run(os.environ['DATABASE_URL'],apply=True,batch_days=8,
+                       lookback_days=366,pause_seconds=2)
+              if len(rows)!=8:
+                  raise SystemExit("Insufficient unprocessed dates; stop, do not invent bars")
+              new=sum(int(row['inserted']) for row in rows)
+              trading=sum(row['status']=='imported' for row in rows)
+              closed=sum(row['status']=='closed' for row in rows)
+              total_new+=new; trading_days+=trading;closed_days+=closed
+              print(f"Batch {n}/8: verified TWSE sessions={trading}, closed={closed}, new daily bars={new}")
+          print(f"Verified total: sessions={trading_days}, closed={closed_days}, new_bars={total_new}")
+          PY
+      - name: Confirm at least 120 distinct verified sessions are now available
+        run: |
+          python - <<'PY'
+          import os,psycopg
+          with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""SELECT COUNT(*)::int FROM (
+                    SELECT market,stock_id FROM public.daily_prices
+                    WHERE market='twse' AND close IS NOT NULL AND stock_id <> '1808'
+                    GROUP BY market,stock_id HAVING COUNT(*) >= 120
+                  ) qualified""")
+                  ready=cur.fetchone()[0]
+          print(f"Listed stocks with at least 120 real sessions: {ready}")
+          if ready<850:
+              raise SystemExit("Not enough verified history; indicator/scoring stage not executed")
+          PY
+      - name: Recompute up to 20 qualified stock indicators
+        env:
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
+        run: python src/batch_indicator_catchup.py --apply --per-market 20
+      - name: Recompute verified composite scores
+        run: python scripts/score_after_refresh.py
+      - name: Verify production bar and analysis coverage without modifying it
+        run: |
+          python - <<'PY'
+          import os,psycopg
+          with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""SELECT
+                   (SELECT COUNT(*)::int FROM public.daily_prices),
+                   (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_technicals),
+                   (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_smc),
+                   (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_composite_scores
+                    WHERE total_score IS NOT NULL)""")
+                  bars,tech,smc,scored=cur.fetchone()
+          print(f"Verified: bars={bars}, technical_stocks={tech}, smc_stocks={smc}, scored_stocks={scored}")
+          if bars<170000 or min(tech,smc,scored)<144:
+              raise SystemExit("Observed data coverage unexpectedly decreased")
+          PY
