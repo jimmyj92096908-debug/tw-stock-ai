@@ -1,6 +1,8 @@
 from datetime import date
 
-from full_market_refresh import choose_start_month, previous_month, shift_month, plan_download_windows
+from full_market_refresh import (choose_start_month, previous_month, shift_month,
+                                 plan_download_windows, classify_price_refresh,
+                                 refresh_one, main)
 
 
 def test_previous_month_crosses_year_boundary():
@@ -74,3 +76,69 @@ class BoundedHistoryWindowsTests(unittest.TestCase):
         self.assertEqual(shift_month(date(2026,12,1),1),date(2027,1,1))
         with self.assertRaisesRegex(ValueError,"archive_months"):
             plan_download_windows({},self.today,archive_months=60)
+
+
+class NoPriceHistoryResilienceTests(unittest.TestCase):
+    """Unit tests do not use production DB or external quote endpoints."""
+
+    def test_empty_history_is_not_a_successful_refresh(self):
+        self.assertEqual(classify_price_refresh(0, None), "no_data")
+        self.assertEqual(classify_price_refresh(0, date(2026, 11, 20)), "usable")
+        self.assertEqual(classify_price_refresh(12, None), "invalid_import")
+        self.assertEqual(classify_price_refresh(12, date(2026, 11, 20)), "usable")
+        with self.assertRaises(ValueError):
+            classify_price_refresh(-1, None)
+
+    def test_refresh_empty_csv_marks_failed_and_skips_indicators(self):
+        from unittest.mock import MagicMock, patch
+        stock = {
+            "market": "twse", "stock_id": "1589",
+            "latest_trade_date": None, "earliest_trade_date": None,
+        }
+        conn = MagicMock()
+        conn.cursor.return_value.__enter__.return_value.fetchone.return_value = {"latest": None}
+        with patch("full_market_refresh.market_data.download_range", return_value=0), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("db_storage.upsert_csv"), \
+             patch("full_market_refresh.record_attempt") as attempt:
+            self.assertFalse(refresh_one(conn, stock, date(2026, 11, 20)))
+        attempt.assert_called_once()
+        self.assertEqual(attempt.call_args.args[3:6], ("failed", 0, None))
+        self.assertIn("無有效價格資料", attempt.call_args.args[6])
+
+    def test_downloaded_but_not_imported_is_real_failure(self):
+        from unittest.mock import MagicMock, patch
+        stock = {
+            "market": "twse", "stock_id": "1589",
+            "latest_trade_date": None, "earliest_trade_date": None,
+        }
+        conn = MagicMock()
+        conn.cursor.return_value.__enter__.return_value.fetchone.return_value = {"latest": None}
+        with patch("full_market_refresh.market_data.download_range", return_value=12), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("db_storage.upsert_csv"), \
+             patch("full_market_refresh.record_attempt") as attempt:
+            with self.assertRaisesRegex(RuntimeError, "下載有資料但未成功寫入"):
+                refresh_one(conn, stock, date(2026, 11, 20))
+        attempt.assert_called_once()
+        self.assertEqual(attempt.call_args.args[3], "failed")
+
+    def test_main_skips_indicator_calls_for_unavailable_stock(self):
+        from unittest.mock import MagicMock, patch
+        stock = {"market": "twse", "stock_id": "1589"}
+        conn_context = MagicMock()
+        with patch.dict("os.environ", {"DATABASE_URL": "postgresql://invalid.local/test",
+                                       "BATCH_SIZE": "1"}), \
+             patch("full_market_refresh.stock_list.build_stock_list", return_value=[stock]), \
+             patch("full_market_refresh.psycopg.connect", return_value=conn_context), \
+             patch("full_market_refresh.upsert_universe"), \
+             patch("full_market_refresh.select_batch", side_effect=[[stock], []]), \
+             patch("full_market_refresh.refresh_one", return_value=False) as update, \
+             patch("full_market_refresh.build_adjusted_stock") as adjusted, \
+             patch("full_market_refresh.calculate_technical_stock") as technical, \
+             patch("full_market_refresh.calculate_smc_stock") as smc:
+            self.assertIsNone(main())
+        update.assert_called_once()
+        adjusted.assert_not_called()
+        technical.assert_not_called()
+        smc.assert_not_called()
