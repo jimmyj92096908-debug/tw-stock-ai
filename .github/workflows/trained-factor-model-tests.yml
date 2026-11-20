@@ -1,0 +1,69 @@
+name: Trained Factor Model Offline Acceptance
+
+on:
+  pull_request:
+    paths:
+      - "src/trained_factor_model.py"
+      - "scripts/trained_factor_pipeline.py"
+      - "tests/test_trained_factor_model.py"
+      - "tests/test_fitted_artifact_consistency.py"
+      - "models/tw-factor-ridge-1-*.json"
+      - "docs/trained-factor-model.md"
+      - "README.md"
+      - ".github/workflows/trained-factor-model-tests.yml"
+  push:
+    branches:
+      - "feature/complete-trained-model-*"
+    paths:
+      - "src/trained_factor_model.py"
+      - "scripts/trained_factor_pipeline.py"
+      - "tests/test_trained_factor_model.py"
+      - "tests/test_fitted_artifact_consistency.py"
+      - "models/tw-factor-ridge-1-*.json"
+      - "docs/trained-factor-model.md"
+      - "README.md"
+      - ".github/workflows/trained-factor-model-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+      - name: Compile model and command line tool
+        run: |
+          python -m py_compile src/trained_factor_model.py
+          python -m py_compile scripts/trained_factor_pipeline.py
+      - name: Test model training, data embargo, holdout, and saved artifact replay
+        run: |
+          python -m unittest \
+            tests.test_factor_model \
+            tests.test_factor_model_validation \
+            tests.test_factor_model_v2 \
+            tests.test_trained_factor_model \
+            tests.test_fitted_artifact_consistency -v
+      - name: Run full offline regression suite
+        run: python -m pytest -q tests
+      - name: State offline verification boundary
+        if: always()
+        run: |
+          {
+            echo "### Trained Factor Model Acceptance"
+            echo "- CI tests synthetic/mock training and independently reconstructs saved real-data coefficients from aggregate sufficient statistics; no real Neon credentials."
+            echo "- Production PostgreSQL, LINE messages and trade orders were never accessed."
+            echo "- Research ranking always returns abstain=true and live_trading_approved=false."
+            echo "- A passing CI does not establish positive holdout performance."
+          } >> "$GITHUB_STEP_SUMMARY"
