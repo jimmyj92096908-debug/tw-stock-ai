@@ -18,6 +18,7 @@ EVALUATION = json.loads((ROOT/"models/tw-factor-ridge-1-evaluation.json").read_t
 
 def stock_dates(**kwargs):
     row = {
+        "ranked_date_priced_universe": 1090,
         "latest_price_date": date(2026,11,20),
         "latest_technical_date": date(2026,11,19),
         "latest_composite_date": date(2026,11,19),
@@ -111,6 +112,24 @@ class InvestmentBundleTests(unittest.TestCase):
         self.assertFalse(result["publish_line_trade_signal"])
         self.assertFalse(result["orders_enabled"])
         self.assertFalse(result["production_database_modified"])
+        self.assertEqual(result["ranking_sample_status"],"THIN_OR_UNKNOWN_RANKING_COHORT")
+        self.assertEqual(result["ranked_date_priced_universe"],1090)
+        self.assertLess(result["ranked_universe_coverage_of_priced_market"],.02)
+        self.assertTrue(result["ranking_not_a_complete_market_selection"])
+        self.assertFalse(result["reference_stock_in_rank_cohort"])
+
+    def test_broad_descriptive_cohort_does_not_override_failed_holdout(self):
+        rows=[ranking_row(i) for i in range(50)]
+        out=bundle.assemble_research_bundle(
+            MODEL,EVALUATION,rows,stock_dates(ranked_date_priced_universe=100),
+            limit=10
+        )
+        self.assertEqual(out["ranking_sample_status"],
+                         "DESCRIPTIVE_RESEARCH_COVERAGE_MET")
+        self.assertFalse(out["ranking_not_a_complete_market_selection"])
+        self.assertEqual(out["ranked_universe_coverage_of_priced_market"],.5)
+        self.assertTrue(out["abstain_from_trading"])
+        self.assertEqual(out["overall_status"],"RESEARCH_ONLY_EVIDENCE_BLOCKED")
 
     def test_cross_date_rank_input_fails_closed(self):
         with self.assertRaisesRegex(ValueError,"Cannot mix score dates"):
