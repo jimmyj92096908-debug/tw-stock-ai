@@ -72,16 +72,23 @@ def evaluate_rows(rows, *, min_per_date=MIN_PER_DATE, top_fraction=TOP_FRACTION)
         try:
             score = float(row["total_score"])
             coverage = float(row["coverage_weight"])
-            entry = float(row["entry_close"])
-            exit_ = float(row["exit_close"])
         except (TypeError, ValueError, KeyError):
             excluded["invalid_or_missing"] += 1
             continue
-        if not all(map(math.isfinite, (score, coverage, entry, exit_))) or not 0 <= score <= 100 or entry <= 0 or exit_ <= 0:
+        if not math.isfinite(score) or not math.isfinite(coverage) or not 0 <= score <= 100:
             excluded["invalid_or_missing"] += 1
             continue
         if coverage < MIN_COVERAGE or coverage > 1:
             excluded["insufficient_coverage"] += 1
+            continue
+        try:
+            entry = float(row["entry_close"])
+            exit_ = float(row["exit_close"])
+        except (TypeError, ValueError, KeyError):
+            excluded["missing_future_price"] += 1
+            continue
+        if not all(map(math.isfinite, (entry, exit_))) or entry <= 0 or exit_ <= 0:
+            excluded["missing_future_price"] += 1
             continue
         # The score is computed at t; only use t+1 and t+6 here as labels.
         result = exit_ / entry - 1
