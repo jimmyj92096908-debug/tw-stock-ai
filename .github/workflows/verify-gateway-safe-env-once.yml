@@ -1,0 +1,27 @@
+# One-shot smoke after adding ONLY dedicated Neon DB role URLs.
+# No LINE channel secret/token is present; cannot reply or receive real LINE events.
+name: Verify LINE Gateway Post-Credential Safe State (One Shot)
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/verify-gateway-safe-env-once.yml]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GATEWAY: https://br-purple-smoke-a1t9dmzz-linestockgateway.compute.c-1.ap-southeast-1.aws.neon.tech
+    steps:
+      - name: Ensure isolated gateway is reachable and deliberately disabled
+        run: |
+          set -euo pipefail
+          h=$(curl -sS --max-time 20 -o /tmp/gateway-health -w '%{http_code}' "$GATEWAY/health")
+          test "$h" = "200"
+          grep -qx ok /tmp/gateway-health
+          p=$(curl -sS --max-time 20 -o /tmp/gateway-post -w '%{http_code}' -H 'content-type: application/json' --data '{"events":[]}' "$GATEWAY/webhook")
+          test "$p" = "503"
+          grep -q 'Gateway unavailable' /tmp/gateway-post
+          echo "Safe staging check: health=$h, webhook-disabled=$p; no LINE events forwarded"
