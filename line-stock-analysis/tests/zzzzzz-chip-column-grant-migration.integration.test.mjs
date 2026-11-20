@@ -124,6 +124,7 @@ test('exact 7-column migration grants, verifies and safely rolls back on isolate
     // Re-running a grant against baseline drift is rejected (no hidden widening).
     await assert.rejects(target.query(grantSql),
       err => err.message.includes('drifted from approved baseline'));
+    await target.query('ROLLBACK'); // Reset failed SQL's explicit BEGIN.
     assert.equal(await canRead('private_raw'), false);
 
     await target.query(rollbackSql);
@@ -137,6 +138,7 @@ test('exact 7-column migration grants, verifies and safely rolls back on isolate
     await target.query('GRANT SELECT(private_raw) ON public.daily_chip_scores TO ' + readerRole);
     await assert.rejects(target.query(grantSql),
       err => err.message.includes('too broad'));
+    await target.query('ROLLBACK');
     for (const col of required) assert.equal(await canRead(col), false, col);
   } finally {
     if (target) await target.end().catch(() => {});
