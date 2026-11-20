@@ -21,3 +21,36 @@
 4. `daily_composite_scores` 的正式重算是不同的資料庫寫入動作，**不在此 PR 範圍**。
 
 本文件是進入正式驗收前的程式準備規格，不是正式切換或擴權授權。
+
+
+## 新增：權限前置檢查與隔離 PostgreSQL 整合測試（2026-11-21）
+
+這一階段只增加可檢驗的程式，不更動任何 Neon 授權。
+
+1. `scripts/line_chip_readiness.py` 以 **伺服器強制唯讀交易**（`default_transaction_read_only=on`）檢查 `twstock` 角色和欄位授權、私人 `line_messages` 是否意外可讀，以及 2330 行情／技術指標／綜合分數／獨立籌碼分數的各自日期。只輸出固定股票 `twse/2330` 的公開研究評分與權限布林值；不查詢個人 LINE 訊息、憑證或 Token。
+2. `tests/test_line_chip_readiness.py` 驗證未授權時不誤報可上線、私訊任何讀取權限都會阻擋、未來資料日不能被當成舊收盤日資料，以及程式只使用唯讀資料庫連線。
+3. `line-stock-analysis/tests/zzzzz-chip-postgres.integration.test.mjs` 使用 GitHub Actions 內建一次性 PostgreSQL 17 容器，對臨時角色**僅授權七個籌碼資料欄位**，實際執行新版 SQL，驗證 2330 的 40.65／65%、日期限制、股票代碼綁定；`SELECT *`、未授權欄位、私人訊息及 INSERT 都必須回傳 SQLSTATE `42501`。
+4. 上述測試執行於開發分支，與正式 Neon 分離；整合測試的所有股票值與私人訊息字串均為合成測試資料。
+
+現況的真實 Neon 唯讀查核：`line_stock_reader` 尚沒有七個必需的 `daily_chip_scores` SELECT 欄位權限；以該角色對真實籌碼資料執行唯讀 `EXPLAIN` 得到 `SQLSTATE 42501 permission denied`；但對 `public.line_messages` **沒有任何欄位的 SELECT 權限**。因此目前應維持 **blocked_or_inconclusive**，不能宣稱新功能已可正式啟用。
+
+以下 SQL 僅供未來安全審核；**沒有執行且尚未取得授權**：
+
+```sql
+-- 僅在另獲核准、核對功能和角色範圍後，才可能執行。
+GRANT SELECT (
+  market, stock_id, as_of_date, total_score, coverage_weight,
+  institutional_score, margin_score
+) ON TABLE public.daily_chip_scores TO line_stock_reader;
+```
+
+上述授權不會隱含 `line_messages` 讀取權限，但仍屬正式資料庫權限變更，必須先取得使用者明確同意。且即使未來唯讀權限通過，`LINE_CHIP_SCORE_DETAILS_ENABLED` 仍須另行受控啟用，整個正式 Webhook 切換與一般訊息轉送亦須獨立核准與實測。
+
+### 如何執行唯讀檢查（不執行 GRANT）
+
+```powershell
+# 已設定合法的唯讀／管理診斷連線環境變數 DATABASE_URL 後
+python scripts/line_chip_readiness.py
+```
+
+只輸出 JSON 統計與狀態旗標，不輸出連線資訊或 LINE 使用者資料。
