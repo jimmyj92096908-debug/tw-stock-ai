@@ -1,0 +1,87 @@
+# Owner-authorized single use only. Delete after this run completes.
+name: Authorized TWSE 60-Session Acceleration (One Shot)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/authorized-twse-acceleration-once.yml
+permissions:
+  contents: read
+concurrency:
+  group: twstock-twse-bulk-backfill
+  cancel-in-progress: false
+jobs:
+  catchup:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install verified project dependencies
+        run: pip install -r requirements.txt
+      - name: Test official source guards and 60-session prerequisites BEFORE writes
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m unittest tests.test_official_market_feed tests.test_twse_dated_history tests.test_batch_indicator_catchup tests.test_live_data_workflow_guards -v
+          python -m py_compile src/twse_dated_history.py src/batch_indicator_catchup.py scripts/score_after_refresh.py
+      - name: Verify upcoming official date source without writes
+        run: python src/twse_dated_history.py --batch-days 1 --lookback-days 366
+      - name: Insert no more than seven batches of eight verified market dates
+        env:
+          STOCK_TWSE_HISTORY_WRITE_ENABLED: "yes"
+        run: |
+          python - <<'PY'
+          import os
+          from twse_dated_history import run
+          total_new=0
+          total_dates=0
+          for batch in range(1,8):
+              rows=run(os.environ['DATABASE_URL'],apply=True,batch_days=8,
+                       lookback_days=366,pause_seconds=2)
+              new=sum(int(x['inserted']) for x in rows)
+              imported=sum(x['status']=='imported' for x in rows)
+              total_new+=new
+              total_dates+=imported
+              print(f"Batch {batch}/7: official trading dates={imported}; missing bars added={new}")
+              if len(rows)!=8:
+                  raise SystemExit("Selected fewer than eight candidate sessions; stop without inventing history")
+          print(f"Authorized bounded total: {total_dates} official trading days, {total_new} inserted bars")
+          PY
+      - name: Preview indicator-ready stocks after 60 verified sessions
+        run: python src/batch_indicator_catchup.py --per-market 20
+      - name: Apply up to 20 per market of adjusted prices, technical and SMC indicators
+        env:
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
+        run: python src/batch_indicator_catchup.py --apply --per-market 20
+      - name: Rebuild scored candidates only after verified data
+        run: python scripts/score_after_refresh.py
+      - name: Verify no-overwrite and measured coverage
+        run: |
+          python - <<'PY'
+          import os, psycopg
+          with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""SELECT COUNT(*)::int FROM public.twse_history_day_progress
+                      WHERE status='imported'""")
+                  imported=cur.fetchone()[0]
+                  cur.execute("""SELECT COUNT(*)::int FROM public.daily_prices
+                      WHERE market='twse' AND trade_date=DATE '2026-11-19' AND close IS NOT NULL""")
+                  latest=cur.fetchone()[0]
+                  cur.execute("""SELECT COUNT(*)::int FROM public.daily_prices""")
+                  prices=cur.fetchone()[0]
+                  cur.execute("""SELECT COUNT(DISTINCT (market,stock_id))::int
+                      FROM public.daily_technicals""")
+                  technical=cur.fetchone()[0]
+                  cur.execute("""SELECT COUNT(DISTINCT (market,stock_id))::int
+                      FROM public.daily_composite_scores WHERE total_score IS NOT NULL""")
+                  scored=cur.fetchone()[0]
+          print(f"Verified: imported_days={imported}, Nov19_TWSE={latest}, price_rows={prices}, technical_stocks={technical}, scored_stocks={scored}")
+          if imported<50 or latest<1000 or prices<59000 or technical<44 or scored<44:
+              raise SystemExit("Unexpected stock data coverage after authorized catch-up")
+          PY
