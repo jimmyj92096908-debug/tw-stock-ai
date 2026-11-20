@@ -33,7 +33,7 @@ class GatewayCanaryTests(unittest.TestCase):
         result=canary.run_canary("mock-only",apply=True,gate="yes",opener=opener)
         self.assertEqual(result["gateway"],"linestockgateway")
         self.assertTrue(result["signed_empty_event_accepted"])
-        self.assertTrue(result["registered_endpoint_unchanged"])
+        self.assertFalse(result["registered_endpoint_mutation_performed"])
         self.assertEqual(len(calls),1)
         request,timeout=calls[0]
         self.assertEqual(request.get_method(),"POST")
