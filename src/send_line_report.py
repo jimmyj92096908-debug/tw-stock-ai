@@ -171,6 +171,7 @@ def send_report(database_url: str, token: str, data: dict[str, Any], message: st
     if not data["recipients"]:
         raise RuntimeError("line_messages 沒有可通知的 LINE 使用者；請先傳訊息給官方帳號")
     sent = 0
+    rejected_recipients = 0
     with psycopg.connect(database_url, connect_timeout=20) as conn:
         for user_id in data["recipients"]:
             digest = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:16]
@@ -185,10 +186,18 @@ def send_report(database_url: str, token: str, data: dict[str, Any], message: st
                 timeout=30,
             )
             if response.status_code >= 300:
-                raise RuntimeError(
-                    f"LINE Push API 失敗：HTTP {response.status_code}；"
-                    "請確認 Channel Access Token、好友狀態與 LINE 配額"
-                )
+                # A rejected individual message must not prevent *later*
+                # recipients getting the same day's report. Never log a LINE
+                # user ID, token, upstream error body, or private message text.
+                # Authentication, rate-limit, and server-side failures usually
+                # affect the whole channel, so stop instead of hammering LINE.
+                if response.status_code not in (400, 404, 422):
+                    raise RuntimeError(
+                        f"LINE Push API 失敗：HTTP {response.status_code}；"
+                        "請確認 Channel Access Token、好友狀態與 LINE 配額"
+                    )
+                rejected_recipients += 1
+                continue
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO public.line_messages
@@ -198,6 +207,14 @@ def send_report(database_url: str, token: str, data: dict[str, Any], message: st
                 """, (event_id, user_id, message))
             conn.commit()
             sent += 1
+    if rejected_recipients:
+        # Mark the workflow failed for operator attention while preserving
+        # successful users' idempotent delivery records. Future retries skip
+        # those users and do not silently erase failed recipients.
+        raise RuntimeError(
+            f"LINE Push API 拒絕 {rejected_recipients} 位收件者；"
+            f"其餘 {sent} 位已完成推送與去重紀錄。"
+        )
     return sent
 
 
