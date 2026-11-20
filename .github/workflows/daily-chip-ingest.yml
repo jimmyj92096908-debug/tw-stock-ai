@@ -17,6 +17,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   ingest:
+    # A source push/PR is code review, never permission to write production.
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
