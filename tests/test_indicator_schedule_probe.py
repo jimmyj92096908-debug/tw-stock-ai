@@ -20,6 +20,7 @@ def stock(i, market="twse"):
         "market": market, "stock_id": str(1300+i),
         "close_days": 100, "latest_close": date(2026, 11, 19),
         "technical_rows": 0, "smc_rows": 0,
+        "last_technical": None, "last_smc": None,
     }
 
 
@@ -66,7 +67,9 @@ class IndicatorScheduleProbeTests(unittest.TestCase):
         for bad in (
             {**candidates[0], "stock_id": "1808"},
             {**candidates[0], "close_days": 59},
-            {**candidates[0], "technical_rows": 100, "smc_rows": 100},
+            {**candidates[0], "technical_rows": 100, "smc_rows": 100,
+             "last_technical": date(2026, 11, 19),
+             "last_smc": date(2026, 11, 19)},
             {**candidates[0], "market": "tpex"},
             {**candidates[0], "stock_id": candidates[1]["stock_id"]},
         ):
@@ -79,6 +82,24 @@ class IndicatorScheduleProbeTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "contract"):
                     probe.build_probe(FakeConn())
+
+    def test_stale_latest_date_with_high_row_counts_remains_eligible(self):
+        candidates=[stock(i) for i in range(20)]
+        candidates[0].update({
+            "stock_id": "8937",
+            "technical_rows": 105, "smc_rows": 106,
+            "last_technical": date(2026, 11, 18),
+            "last_smc": date(2026, 11, 18),
+        })
+        with (
+            patch.object(probe,"collect_audit",return_value=audit()),
+            patch.object(probe,"select_candidates",
+                         side_effect=lambda conn,market,limit:
+                         candidates if market == "twse" else []),
+        ):
+            result=probe.build_probe(FakeConn())
+        self.assertEqual(result["markets"][0]["preview_candidate_count"],20)
+        self.assertEqual(result["pending_total"],1044)
 
     def test_bad_backlog_counts_fail_closed(self):
         for mutation in ("unbalanced", "negative", "duplicate", "unstarted"):
