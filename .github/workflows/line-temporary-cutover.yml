@@ -1,0 +1,41 @@
+name: LINE Temporary Cutover (Auto-Restore)
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved:
+        description: "I approve 4-minute production routing trial and automatic legacy restore"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Keep the existing manual restore workflow separate and usable.
+concurrency:
+  group: line-temporary-cutover
+  cancel-in-progress: false
+
+jobs:
+  bounded-trial:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' && inputs.approved == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_TEMPORARY_CUTOVER_ENABLED: 'yes'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify dry-run cutover safety contract
+        run: python -m unittest tests.test_line_temporary_cutover -v
+      - name: Run bounded trial and attempt rollback even after errors
+        run: python scripts/line_temporary_cutover.py --action trial --duration 240 --apply
+      - name: Independent unconditional pinned legacy restore and verification
+        if: always()
+        run: python scripts/line_temporary_cutover.py --action restore --apply
