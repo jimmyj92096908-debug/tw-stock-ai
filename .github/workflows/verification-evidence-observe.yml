@@ -55,7 +55,6 @@ jobs:
         continue-on-error: true
         env:
           LINE_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
-          STOCK_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
         run: python scripts/verification_evidence.py --suite '${{ matrix.suite }}' --output 'verification-${{ matrix.suite }}.json'
       - name: Publish evidence summary from actual checks
         if: always()
