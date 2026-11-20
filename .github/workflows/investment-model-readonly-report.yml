@@ -59,12 +59,19 @@ jobs:
           assert d["data_mode"]=="existing_neon_snapshot_read_only"
           assert d["abstain_from_trading"] is True and d["publish_line_trade_signal"] is False
           assert d["orders_enabled"] is False and d["production_database_modified"] is False
+          assert d["ranking_sample_status"] in (
+            "THIN_OR_UNKNOWN_RANKING_COHORT",
+            "DESCRIPTIVE_RESEARCH_COVERAGE_MET"
+          )
           s=d["stock_data"]
-          print("STOCK_RESEARCH_AUDIT stock=%s/%s price_date=%s technical_date=%s composite_date=%s chip_date=%s chip_score=%s coverage=%s model_date=%s eligible_universe=%s current_rank=%s alpha_gate=%s" % (
+          print("STOCK_RESEARCH_AUDIT stock=%s/%s price_date=%s technical_date=%s composite_date=%s chip_date=%s chip_score=%s coverage=%s model_date=%s eligible_universe=%s priced_universe=%s ranking_coverage=%s cohort_status=%s reference_stock_ranked=%s current_rank=%s alpha_gate=%s" % (
             s["market"],s["stock_id"],s["price_date"],s["technical_date"],
             s["composite_date"],s["independent_chip_date"],
             s["independent_chip_score"],s["independent_chip_coverage"],
             d["ranking"].get("date"),d["ranking"].get("eligible_universe",0),
+            d["ranked_date_priced_universe"],
+            d["ranked_universe_coverage_of_priced_market"],
+            d["ranking_sample_status"],d["reference_stock_in_rank_cohort"],
             d["ranking_matches_reference_price_date"],
             d["model"]["research_evidence_status"]
           ))
