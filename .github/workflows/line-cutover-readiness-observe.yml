@@ -17,6 +17,10 @@ on:
   workflow_dispatch:
   # 02:40 Asia/Taipei daily: inspect the original LINE webhook and candidate
   # health without changing endpoints, secrets, user messages or the database.
+  # Staged linestockgateway Deployment 3 (2026-11-20): source code updated,
+  # but LINE channel credentials are still absent and the gateway remains
+  # disabled. GET health 200 does not authorize official Webhook cutover.
+  # This source-only comment also runs the post-deploy main-branch preflight.
   schedule:
     - cron: "40 18 * * *"
 

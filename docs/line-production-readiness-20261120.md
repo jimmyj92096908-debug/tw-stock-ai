@@ -7,7 +7,7 @@
 - 股票候選資料庫 `twstock`：股票代碼搜尋、行情、技術指標、SMC、綜合評分與排行榜，資料日期以表內交易日為準，並非即時行情。
 - GitHub Actions：官方行情快照、上市全市場日期型歷史行情回補、上櫃有限額逐檔回補、指標追補、綜合評分重算、唯讀資料品質稽核、每日 LINE 報告。
 - 原本的 LINE 官方帳號使用 Neon `linewebhook` Deployment 4，既有私人訊息紀錄 `public.line_messages` 仍用作每日推播的收件者來源。
-- 新版 `linestockgateway` Deployment 2 與 `linestockanalysis` Deployment 3 是**獨立候選服務**，並非正式 LINE Webhook 的入口。
+- 新版 `linestockgateway` **Deployment 3**（2026-11-20，中文名稱／代碼分析程式已安全部署）與 `linestockanalysis` Deployment 3 是**獨立候選服務**，並非正式 LINE Webhook 的入口。
 
 ## 實測結果
 
@@ -51,13 +51,24 @@
 | --- | --- | --- |
 | `linewebhook` | Deployment 4，completed | 有 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` |
 | `linestockanalysis` | Deployment 3，completed | 有 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` |
-| `linestockgateway` | Deployment 2，completed | 有 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`；**沒有新閘道使用的兩個 LINE Channel 憑證名稱** |
+| `linestockgateway` | **Deployment 3，completed（仍停用）** | 有 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`；**沒有新閘道使用的兩個 LINE Channel 憑證名稱** |
 
 部署 completed **不代表**候選閘道已能處理官方 LINE 事件：缺少新閘道必要憑證，亦未完成受控簽章與真實使用者驗收。不能透過已列出的名稱推斷實際憑證值，也不能從其他 Neon 函式或 GitHub 日誌貼出機密。
 
 新增 [LINE Cutover Readiness (Observe Only)](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/workflows/line-cutover-readiness-observe.yml) 每日台灣時間 **02:40** 的唯讀檢查：只使用受保護 Token 向 LINE 官方 `GET` 目前登記 Webhook，及對候選函式進行無憑證 `GET /health`。仍保留手動執行和 PR 離線測試，輸出 14 日的彙總 JSON，不修改 LINE 設定、不傳送訊息、不操作 Neon。此排程是否真正觸發需要透過實際 `schedule` 執行紀錄另外驗證。
 
 本檢查**只能證明舊版 Webhook 有沒有被更改與候選健康檢查是否回 200**，永遠不能自行滿足正式簽章 Canary 或使用者 E2E，也不能批准切換。若偵測到原始 Webhook 變更或健康檢查失敗，應先處理異常，不能自動切回或切到新閘道。
+
+## 中文股票名稱／代碼分析已安全部署（2026-11-20）
+
+- [PR #39](https://github.com/jimmyj92096908-debug/tw-stock-ai/pull/39) 已合併到 `main`：支援 `6213`、`聯茂`、`分析 聯茂` 等；只以最小權限 SELECT 做中文／上市英文名稱精確比對。普通聊天不會被當成股票指令。
+- [LINE Node24 / PostgreSQL CI #44739887842](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44739887842) 實測 **89 項通過、0 失敗**，包含隔離 PostgreSQL 真正執行 `6213／聯茂` 名稱、行情、技術、SMC、綜合評分查詢。
+- 真實 Neon `twstock` 唯讀 SELECT 也已實際核對 `聯茂→twse/6213`，最新存檔行情 2026-11-19、395 元；技術 RSI14 29.9279，綜合評分 32.33。未寫入真實使用者資料。
+- [PR #40](https://github.com/jimmyj92096908-debug/tw-stock-ai/pull/40) 的 [ZIP 匯出 #44741070458](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44741070458) 已產生唯一公開程式碼 ZIP；使用 Neon `deploy_function` 將它部署至**原本已存在、獨立的 `linestockgateway`**，原 Deployment 2 → **Deployment 3，Neon 狀態 completed，active_deployment=3**。
+- 部署時 **沒有設定、擷取、複製或輸出** `LINE_CHANNEL_SECRET` 或 `LINE_CHANNEL_ACCESS_TOKEN`；新閘道環境變數名稱仍只含 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`。候選功能因此維持 disabled，正式 `linewebhook` 未受影響。
+- 此次使用的單次公開程式碼 ZIP 匯出 workflow 於完成後退役，避免重跑。後續使用既有 GitHub **GET-only** 正式端點及候選健康監控核對 Deployment 3；即使候選 GET /health 回 200，也不能據此宣稱已通過官方簽章 Canary 或真實用戶測試。
+
+以上代表 **「程式與獨立部署完成」**，**不代表「官方 LINE 已正式切換」**。後者仍必須走下列受保護憑證、安全驗簽、真實測試帳號及回復驗收。
 
 ## 仍未通過的正式啟用門檻
 
