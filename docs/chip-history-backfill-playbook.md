@@ -71,3 +71,19 @@ inserted_margin: 0
 ```
 
 每個缺漏項目都從官方 TWSE 以指定歷史日期查詢，核對 JSON 日期及 2330 的唯一解析紀錄；未發送 LINE、未改正式 Webhook、未新增資料庫紀錄。此結果表示來源已經**可回補**，不代表已**完成回補**。正式寫入仍須另外明確授權，依最小缺口新增、禁止覆寫，然後重新核對原始表、籌碼分項及綜合分項。
+
+
+## 2026-11-21 凌晨：2330 正式缺漏籌碼回補已完成（使用者明確授權）
+
+授權僅針對 `2330` 最近 25 個真實交易日（2026-10-15～2026-11-20），以官方已驗證來源新增 24 筆三大法人與 24 筆融資融券；不得覆寫、不得修改 LINE Webhook、不得額外發送 LINE。
+
+- 一次性正式匯入 GitHub Actions：[#44770779763](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44770779763)，最終 `success`，離線 20 項測試通過。
+- 受控前置檢查：`AUTHORIZED_PREFLIGHT window=2026-10-15..2026-11-20 price_sessions=25 missing_inst=24 missing_margin=24`。
+- 官方來源全量驗證：`OFFICIAL_VERIFIED institutional=24 margin=24 matched_dates=true`；所有官方資料均驗證股票代碼、上市市場、每一指定交易日與不重複日期，**全部來源通過後**才開始寫入。
+- 兩類資料使用既有 `apply_missing`，原本 INSERT 均為 `ON CONFLICT (market,stock_id,trade_date) DO NOTHING`；單一 PostgreSQL 連線中的原子性檢查確認 `AUTHORIZED_COMMIT inserted_institutional=24 inserted_margin=24 original_rows_unchanged=true`。任何數量差異或原始紀錄變更均中止整批交易。
+- 正式 Neon 獨立唯讀複查：`public.institutional_flows` 對 2330 的 `TWSE_T86` 共 25 筆／25 個不同交易日，`public.margin_short` 的 `TWSE_MI_MARGN` 亦為 25 筆／25 個不同交易日。兩者日期最早 2026-10-15、最晚 2026-11-20。
+- 原始來源有效性：截止 11/20，三大法人觀測數量 20／20、最新日期 11/20；融資融券有 6 筆可供選取、最新日期 11/20、前一筆與最新融資餘額均非零；最近 5／20 個有效行情日成交量合計均大於零。依 `src/chip_score.py` 的現行規則，**法人 40% + 融資 25% = 65% 可用籌碼來源覆蓋**，若重新計算，具備達成 50% 公布門檻的必要資料條件。TDCC 與董監持股對 2330 仍無資料，不能當作有效來源。
+- **本次未重新計算或寫入 `daily_chip_scores`／`daily_composite_scores`**。最後唯讀查詢：2330 已儲存籌碼分數最新 2026-10-30，仍 `NULL`、來源覆蓋 0%；最近已儲存綜合評分日期 2026-11-19。LINE 可能仍顯示籌碼「—」，必須另行授權評分重算並完成端到端驗收才可稱修復。
+- 一次性 `.github/workflows/one-time-authorized-2330-chip-history-import.yml` 已刪除，保留 Actions 歷史日誌供稽核；過程沒有呼叫 LINE API、變更 Webhook、啟用 LINE 股票閘道或啟用自動下單。
+
+**下一步（尚未執行）：** 使用固定 2330 股票範圍重新計算籌碼分數，驗證新 `daily_chip_scores` 有效覆蓋，之後才評估是否重新計算綜合分數。因這兩步會修改不同的正式評分表，與這次僅新增原始籌碼歷史資料的授權範圍不同。
