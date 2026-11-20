@@ -46,7 +46,7 @@ class ChipScoreTests(unittest.TestCase):
         from src.chip_score import calculate_all
 
         conn = MagicMock()
-        cursor = conn.__enter__.return_value.cursor.__enter__.return_value
+        cursor = conn.__enter__.return_value.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = []
         with patch("src.chip_score.psycopg.connect", return_value=conn):
             self.assertEqual(calculate_all("postgresql://example.invalid/db",
