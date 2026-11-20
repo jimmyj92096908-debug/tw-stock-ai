@@ -1,6 +1,6 @@
-# One-time, owner-authorized production COVERAGE write. This file is
+# Second and final bounded production COVERAGE write, explicitly approved. This file is
 # deleted immediately after evidence is collected; never merged into main.
-name: One-Time Owner-Authorized Indicator Coverage Pilot
+name: One-Time Owner-Authorized Indicator Coverage Expansion
 on:
   push:
     branches: [feature/approved-indicator-coverage-pilot-20261121]
@@ -38,12 +38,12 @@ jobs:
           INVESTMENT_MODEL_READONLY=yes python scripts/investment_model_pipeline.py --live-readonly --market twse --stock-id 2330 --output model-before.json
       - name: Preview bounded market and stock candidates without writing
         run: |
-          python src/batch_indicator_catchup.py --per-market 10
-      - name: Explicitly apply at most ten verified-history stocks per market
+          python src/batch_indicator_catchup.py --per-market 20
+      - name: Explicitly apply at most twenty verified-history stocks per market
         env:
           STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
         run: |
-          python src/batch_indicator_catchup.py --apply --per-market 10
+          python src/batch_indicator_catchup.py --apply --per-market 20
       - name: Read back official indicator coverage (read-only)
         if: always()
         run: |
