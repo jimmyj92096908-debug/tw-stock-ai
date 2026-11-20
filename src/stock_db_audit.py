@@ -116,6 +116,45 @@ SELECT
  ) AS scored_latest_price_day
 """
 
+INDICATOR_BACKLOG_SQL = """
+WITH latest AS (
+ SELECT MAX(trade_date) AS newest
+ FROM public.daily_prices WHERE close IS NOT NULL
+), qualified AS (
+ SELECT market,stock_id,
+        COUNT(*) FILTER(WHERE close IS NOT NULL)::int AS close_days,
+        MAX(trade_date) FILTER(WHERE close IS NOT NULL) AS last_close
+ FROM public.daily_prices
+ WHERE stock_id <> '1808'
+ GROUP BY market,stock_id
+ HAVING COUNT(*) FILTER(WHERE close IS NOT NULL)>=60
+), recent AS (
+ SELECT q.market,q.stock_id,q.close_days
+ FROM qualified q CROSS JOIN latest l
+ WHERE q.last_close >= l.newest - INTERVAL '7 days'
+), technicals AS (
+ SELECT market,stock_id,COUNT(*)::int AS rows
+ FROM public.daily_technicals GROUP BY market,stock_id
+), smc AS (
+ SELECT market,stock_id,COUNT(*)::int AS rows
+ FROM public.daily_smc GROUP BY market,stock_id
+), coverage AS (
+ SELECT r.market,r.stock_id,r.close_days,
+        COALESCE(t.rows,0) AS technical_rows,
+        COALESCE(s.rows,0) AS smc_rows
+ FROM recent r
+ LEFT JOIN technicals t USING(market,stock_id)
+ LEFT JOIN smc s USING(market,stock_id)
+)
+SELECT market,
+ COUNT(*)::int AS eligible,
+ COUNT(*) FILTER (WHERE technical_rows<close_days OR smc_rows<close_days)::int AS pending,
+ COUNT(*) FILTER (WHERE technical_rows>=close_days AND smc_rows>=close_days)::int AS complete,
+ COUNT(*) FILTER (WHERE technical_rows=0 AND smc_rows=0)::int AS unstarted
+FROM coverage
+GROUP BY market ORDER BY market
+"""
+
 REFRESH_STATUS_SQL = """
 SELECT CASE WHEN last_attempt_at IS NULL THEN 'never_attempted'
   ELSE last_status END AS status, COUNT(*)::int AS total
@@ -156,6 +195,10 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         quality = dict(cur.fetchone())
         cur.execute(ANALYSIS_READINESS_SQL)
         readiness = dict(cur.fetchone())
+        # Exact same 60-session/freshness predicate as the bounded catch-up.
+        # Aggregate counts only; no ticker lists, writes or personal data.
+        cur.execute(INDICATOR_BACKLOG_SQL)
+        backlog = [dict(row) for row in cur.fetchall()]
 
     return {
         "latest": {name: iso_date(value) for name, value in dict(dates).items()},
@@ -168,6 +211,7 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         "refresh_state": refresh,
         "quality": quality,
         "analysis_readiness": readiness,
+        "indicator_backlog": backlog,
     }
 
 
@@ -235,6 +279,20 @@ def format_audit(audit: dict[str, Any]) -> str:
         )
         if readiness["scored_stocks"] < total_priced:
             lines.append("注意：有收盤行情不等於分析指標／評分已補齊。")
+    backlog = audit.get("indicator_backlog", [])
+    if backlog:
+        pending_total = sum(int(r["pending"]) for r in backlog)
+        eligible_total = sum(int(r["eligible"]) for r in backlog)
+        for row in backlog:
+            lines.append(
+                f"指標候選 {row['market']}："
+                f"符合 60 日且近期有行情 {row['eligible']} 檔；"
+                f"待補 {row['pending']}；已補齊 {row['complete']}；"
+                f"技術與 SMC 均未開始 {row['unstarted']}"
+            )
+        lines.append(f"技術／SMC 待補總量：{pending_total}/{eligible_total} 檔（不等於全市場）")
+        if pending_total:
+            lines.append("注意：補算程式通過測試不代表這些待補股票已實際寫入。")
     if latest["latest_price_date"] != latest["latest_score_date"]:
         lines.append("提醒：最新行情日與最新評分日不同，請勿混用。")
     if total_universe and total_priced < total_universe:
