@@ -1,9 +1,9 @@
-name: Composite Scores After Market Refresh (Opt-in)
+name: Composite Scores After Verified Official Snapshot
 
 on:
   workflow_run:
     workflows:
-      - "Full Market Daily Data Rotation"
+      - "Official Taiwan Market Daily Snapshot (Authorized)"
     types:
       - completed
   workflow_dispatch:
@@ -23,15 +23,14 @@ concurrency:
 
 jobs:
   score:
-    # Production writes stay DISABLED unless the repo owner explicitly sets
-    # ENABLE_AUTOMATIC_COMPOSITE_SCORES=true in repository variables or
-    # manually dispatches the workflow with apply=true. No change is made here.
+    # Owner approved automatic composite scores after the official source
+    # snapshot completed successfully on main. Manual dispatch remains opt-in.
+    # Successful source jobs include a no-write preview when main is updated.
     if: >-
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.repository.full_name == github.repository &&
-       vars.ENABLE_AUTOMATIC_COMPOSITE_SCORES == 'true')
+       github.event.workflow_run.repository.full_name == github.repository)
       ||
       (github.event_name == 'workflow_dispatch' && inputs.apply == true)
     runs-on: ubuntu-latest
