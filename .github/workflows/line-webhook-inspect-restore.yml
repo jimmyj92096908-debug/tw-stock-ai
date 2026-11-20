@@ -1,0 +1,64 @@
+name: LINE Webhook Inspect and Safe Legacy Restore
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Read registered webhook or explicitly restore verified original"
+        type: choice
+        required: true
+        default: inspect
+        options: [inspect, restore]
+      apply:
+        description: "Required TRUE for restore; inspect never modifies settings"
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-webhook-management
+  cancel-in-progress: false
+
+jobs:
+  inspect-or-restore:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_WEBHOOK_RESTORE_ENABLED: ${{ inputs.action == 'restore' && inputs.apply && 'yes' || 'no' }}
+      ACTION: ${{ inputs.action }}
+      APPLY: ${{ inputs.apply }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify endpoint control safety offline
+        run: python -m unittest tests.test_line_webhook_control -v
+      - name: Check LINE endpoint or apply explicit rollback to legacy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$LINE_CHANNEL_ACCESS_TOKEN" ]; then
+            echo "::error::LINE_CHANNEL_ACCESS_TOKEN is not configured"
+            exit 1
+          fi
+          case "$ACTION" in
+            inspect)
+              python scripts/line_webhook_control.py --action inspect
+              ;;
+            restore)
+              if [ "$APPLY" != "true" ]; then
+                echo "::error::Restore requires the explicit apply=true confirmation"
+                exit 1
+              fi
+              python scripts/line_webhook_control.py --action restore --apply
+              ;;
+            *)
+              echo "::error::Invalid management action"
+              exit 1
+              ;;
+          esac
