@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import candidate, { scopedStockUrl, isApprovedStockReadQuery, relayLegacy } from '../single-account-entry.mjs';
+import { createHmac } from 'node:crypto';
+import candidate, {
+  scopedStockUrl, candidateDatabaseUrls, isApprovedStockReadQuery, relayLegacy
+} from '../single-account-entry.mjs';
 import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL, STOCK_NAME_SQL, STANDALONE_CHIP_SQL } from '../handler.mjs';
 
 test('separate read/write database URLs are forced to twstock without dropping TLS params',()=>{
@@ -13,6 +16,82 @@ test('separate read/write database URLs are forced to twstock without dropping T
   assert.equal(url.host,'db.example.test');
   assert.throws(()=>scopedStockUrl(''),/Dedicated database URL/u);
   assert.throws(()=>scopedStockUrl('https://example.test'),/PostgreSQL/u);
+});
+
+test('LINE candidate requires exact separate reader and delivery PostgreSQL users',()=>{
+  const make=(user)=>'postgresql://'+user+':opaque%21password@db.example.test/postgres?sslmode=require&channel_binding=require';
+  const configured=candidateDatabaseUrls(
+    make('line_stock_reader'),make('line_stock_delivery')
+  );
+  const read=new URL(configured.read), delivery=new URL(configured.delivery);
+  assert.equal(read.username,'line_stock_reader');
+  assert.equal(delivery.username,'line_stock_delivery');
+  assert.equal(read.pathname,'/twstock');
+  assert.equal(delivery.pathname,'/twstock');
+  assert.equal(read.searchParams.get('sslmode'),'require');
+  assert.equal(delivery.searchParams.get('channel_binding'),'require');
+  assert.equal(read.password,'opaque%21password');
+
+  for (const [readUrl,writeUrl] of [
+    [make('postgres'),make('line_stock_delivery')],
+    [make('line_stock_delivery'),make('line_stock_reader')],
+    [make('line_stock_reader'),make('neondb_owner')],
+    [make('line_stock_reader').replace(':opaque%21password',''),make('line_stock_delivery')],
+    [make('line_stock_reader'),make('line_stock_delivery')+'&user=postgres'],
+    [make('line_stock_reader')+'&options=-c%20role%3Dpostgres',make('line_stock_delivery')],
+    [make('line_stock_reader')+'&dbname=postgres',make('line_stock_delivery')],
+    [make('line_stock_reader').replace('?sslmode=require&channel_binding=require',''),make('line_stock_delivery')],
+    [make('line_stock_reader').replace('sslmode=require','sslmode=disable'),make('line_stock_delivery')],
+    [make('line_stock_reader')+'&sslmode=disable',make('line_stock_delivery')],
+    [make('line_stock_reader'),make('line_stock_delivery').replace('sslmode=require','sslmode=prefer')],
+    ['https://fake.example.test/postgres',make('line_stock_delivery')]
+  ]) {
+    assert.throws(
+      ()=>candidateDatabaseUrls(readUrl,writeUrl),
+      /dedicated role credentials|PostgreSQL/u
+    );
+  }
+});
+
+test('enabled candidate rejects admin/swapped database URLs before reading or sending',async()=>{
+  const prev={};
+  const env={
+    LINE_SINGLE_ACCOUNT_ENABLED:'true',
+    LINE_CHANNEL_SECRET:'fake-test-secret',
+    LINE_CHANNEL_ACCESS_TOKEN:'fake-not-valid-line-token',
+    LINE_LEGACY_WEBHOOK_URL:
+      'https://br-purple-smoke-a1t9dmzz-linewebhook.compute.c-1.ap-southeast-1.aws.neon.tech/',
+    LINE_STOCK_READ_DATABASE_URL:
+      'postgresql://postgres:test@db.example.test/twstock?sslmode=require',
+    LINE_LOG_WRITE_DATABASE_URL:
+      'postgresql://line_stock_delivery:test@db.example.test/twstock?sslmode=require'
+  };
+  for(const [key,val] of Object.entries(env)){
+    prev[key]=process.env[key];
+    process.env[key]=val;
+  }
+  try {
+    const raw=JSON.stringify({events:[{
+      type:'message',webhookEventId:'fake-event',
+      source:{type:'user',userId:'U-synthetic'},
+      replyToken:'fake-reply-token',message:{type:'text',text:'2330'}
+    }]});
+    const signature=createHmac('sha256',env.LINE_CHANNEL_SECRET).update(raw).digest('base64');
+    const request=new Request('https://test.invalid/webhook',{
+      method:'POST',headers:{
+        'content-type':'application/json',
+        'x-line-signature':signature
+      },body:raw
+    });
+    const reply=await candidate.fetch(request);
+    assert.equal(reply.status,503);
+    assert.doesNotMatch(await reply.text(),/postgres|password|fake-test-secret/u);
+  } finally {
+    for(const [key,original] of Object.entries(prev)){
+      if(original===undefined) delete process.env[key];
+      else process.env[key]=original;
+    }
+  }
 });
 
 test('unapproved entrypoint is disabled by default, without reading DB or sending messages',async()=>{

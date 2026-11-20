@@ -158,3 +158,26 @@ test('only the seven chip columns are readable, and LINE keeps score dates separ
     await pool.end();
   }
 });
+
+
+test('reader pool forces PostgreSQL default_transaction_read_only to on', {
+  skip: !connectionString && 'Requires disposable local PostgreSQL'
+}, async () => {
+  if (!localOnly(connectionString)) throw Error('Refusing a non-disposable test DB');
+  const reader = new pg.Pool({
+    connectionString, max: 1,
+    options: '-c default_transaction_read_only=on'
+  });
+  try {
+    const status=await reader.query('SHOW default_transaction_read_only');
+    assert.equal(status.rows[0].default_transaction_read_only,'on');
+    await assert.rejects(
+      reader.query('CREATE TABLE ci_reader_must_not_write (id integer)'),
+      error => error.code === '25006'
+    );
+    const stillReadOnly=await reader.query('SHOW transaction_read_only');
+    assert.equal(stillReadOnly.rows[0].transaction_read_only,'on');
+  } finally {
+    await reader.end();
+  }
+});

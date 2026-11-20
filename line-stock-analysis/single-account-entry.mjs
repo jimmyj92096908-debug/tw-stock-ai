@@ -22,10 +22,45 @@ export function scopedStockUrl(rawUrl) {
   return u.toString();
 }
 
+// Do not trust the caller to put credentials in the correct environment var.
+// A mistakenly supplied owner/admin URL could make an otherwise allowlisted
+// SELECT execute with more privileges than the LINE reader should hold.
+const FORBIDDEN_CONNECTION_OVERRIDES = new Set([
+  'user', 'password', 'host', 'port', 'database', 'dbname', 'role',
+  'options', 'service', 'passfile'
+]);
+
+function checkedRoleUrl(rawUrl, role) {
+  const url = new URL(scopedStockUrl(rawUrl));
+  const sslModes = url.searchParams.getAll('sslmode');
+  const tlsRequired = sslModes.length === 1 &&
+    ['require', 'verify-ca', 'verify-full'].includes(sslModes[0].toLowerCase());
+  if (decodeURIComponent(url.username) !== role || !url.password ||
+      !url.hostname || !tlsRequired ||
+      [...url.searchParams.keys()].some(
+        key => FORBIDDEN_CONNECTION_OVERRIDES.has(key.toLowerCase()))) {
+    // Never echo the supplied connection string: it may contain a secret.
+    throw new Error('LINE candidate requires dedicated role credentials with no overrides');
+  }
+  return url.toString();
+}
+
+export function candidateDatabaseUrls(readUrl, deliveryUrl) {
+  return {
+    read: checkedRoleUrl(readUrl, 'line_stock_reader'),
+    delivery: checkedRoleUrl(deliveryUrl, 'line_stock_delivery')
+  };
+}
+
 function reader() {
   if (!readerPool) {
     readerPool = new Pool({
-      connectionString: scopedStockUrl(process.env.LINE_STOCK_READ_DATABASE_URL),
+      connectionString: candidateDatabaseUrls(
+        process.env.LINE_STOCK_READ_DATABASE_URL,
+        process.env.LINE_LOG_WRITE_DATABASE_URL
+      ).read,
+      // Additional defense even if future code bypasses the SQL allowlist.
+      options: '-c default_transaction_read_only=on',
       max:3, connectionTimeoutMillis:5000, query_timeout:7000,
       idleTimeoutMillis:30000, application_name:'line_stock_single_account_read'
     });
@@ -37,7 +72,10 @@ function reader() {
 function writer() {
   if (!writerPool) {
     writerPool = new Pool({
-      connectionString: scopedStockUrl(process.env.LINE_LOG_WRITE_DATABASE_URL),
+      connectionString: candidateDatabaseUrls(
+        process.env.LINE_STOCK_READ_DATABASE_URL,
+        process.env.LINE_LOG_WRITE_DATABASE_URL
+      ).delivery,
       max:3, connectionTimeoutMillis:5000, query_timeout:7000,
       idleTimeoutMillis:30000, application_name:'line_stock_single_account_delivery'
     });
@@ -137,10 +175,21 @@ export default {
       // Fail closed if the original destination has not been reviewed.
       legacyUrl=null;
     }
+    let dedicatedRolesReady = false;
+    try {
+      // Never accept a stock reader configured as a DB owner, or a swapped
+      // delivery/reader secret, even if the feature flag was enabled.
+      candidateDatabaseUrls(
+        process.env.LINE_STOCK_READ_DATABASE_URL,
+        process.env.LINE_LOG_WRITE_DATABASE_URL
+      );
+      dedicatedRolesReady = true;
+    } catch {
+      // A disabled/misconfigured candidate cannot route or relay user events.
+    }
     const enabled = process.env.LINE_SINGLE_ACCOUNT_ENABLED === 'true' &&
       Boolean(secret && process.env.LINE_CHANNEL_ACCESS_TOKEN &&
-        process.env.LINE_STOCK_READ_DATABASE_URL &&
-        process.env.LINE_LOG_WRITE_DATABASE_URL && legacyUrl);
+        legacyUrl && dedicatedRolesReady);
 
     const stockHandler=createSingleAccountCandidate({
       query:queryStock,store,sendReply:replyLine,lookupExactStockName,

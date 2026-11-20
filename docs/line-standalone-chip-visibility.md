@@ -84,3 +84,22 @@ python scripts/line_chip_readiness.py
 此防護只降低「同一批中」重複回覆和分流錯誤的風險。未知的原版事件（follow、圖片、群組行為）仍需真實相容性驗收，不能以 CI 綠燈宣稱可安全切換正式 Webhook。
 
 **發布界線：** 無資料庫寫入或 GRANT、無新 Neon Function 部署、無正式 LINE Webhook 設定修改、無任何主動 LINE 訊息。
+
+
+## 2026-11-21：候選閘道專用資料庫角色必須與連線字串一致
+
+對目前正式 Neon `twstock` 的**唯讀**安全盤點確認：
+
+- `line_stock_reader` 與 `line_stock_delivery` 兩個專用 LOGIN 角色都存在，均非 SUPERUSER，也沒有 CREATEDB、CREATEROLE 或 BYPASSRLS 權限。
+- `line_stock_reader` 有行情與綜合評分 SELECT，但沒有 `daily_chip_scores` 的七個新籌碼欄位權限，也沒有 `line_messages` 的 SELECT／INSERT 權限。
+- `line_stock_delivery` 已有 `line_messages`、`line_reply_delivery` 相關必要欄位的 INSERT／UPDATE／SELECT 權限（**欄位級**；不應只依 `has_table_privilege` 判斷角色沒權限）。它沒有行情與綜合評分的 SELECT 權限。
+- 之前的候選 Node 程式把任意 PostgreSQL URL 轉換成 `twstock`，但沒有保證輸入的兩條 URL 是上述不同角色，若誤配置資料庫 owner 連線，將繞過最小權限設計。
+
+本輪修正（**純程式碼及離線測試**）：
+
+1. `candidateDatabaseUrls(readUrl, deliveryUrl)` 必須分別確認 username **`line_stock_reader`**、**`line_stock_delivery`**、有密碼、有效 PostgreSQL hostname，以及明確的 TLS `sslmode=require`／`verify-ca`／`verify-full`（拒絕未指定、`disable`、`prefer` 或重複設定）；同時拒絕連線字串中的 `user/password/host/port/dbname/database/role/options/service/passfile` 等查詢參數覆寫。任何失敗只給固定錯誤，不列印原始 Secret。
+2. 在候選閘道判斷 `LINE_SINGLE_ACCOUNT_ENABLED` 前，先做兩條 URL 的身分驗證；若帳號錯置或配置管理員帳號，**候選服務不會接收或轉送任何用戶事件**（503），即使功能旗標原本是 true。
+3. 建立資料庫 Pool 時再次驗證角色（防止只通過啟用時的一次檢查）；股票讀取 Pool 額外帶 `options: '-c default_transaction_read_only=on'`，讓 PostgreSQL 伺服器端強制讀取交易唯讀。寫入 Pool 只允許 `line_stock_delivery`，不用共享 owner 連線。
+4. 測試包含正確讀寫角色、讀寫角色互換、管理員角色、無密碼、URL 參數試圖覆寫帳號、錯誤角色時的 HTTP 503；並使用 GitHub 一次性 PostgreSQL 容器確認讀取 Pool 的 `default_transaction_read_only=on` 且 `CREATE TABLE` 被 SQLSTATE `25006` 拒絕。
+
+上線限制不變：`line_stock_reader` 尚無七個籌碼欄位的 SELECT，候選版本仍維持停用。正式新權限授予、部署候選函式、LINE Webhook 切換與真實 LINE 訊息測試，均須另外明確授權。本輪不進行任何一項正式變更。
