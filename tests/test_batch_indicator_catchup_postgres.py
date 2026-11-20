@@ -49,6 +49,39 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             limited=select_candidates(conn,"tpex",3)
             self.assertNotIn("2998",[r["stock_id"] for r in limited])
 
+            # Regression: legacy indicator rows may outnumber currently
+            # usable close bars, while their newest date is still stale.
+            # This is the real-world 8937 situation on 2026-11-20.
+            for i in range(60):
+                d=start+timedelta(days=i)
+                conn.execute("""INSERT INTO public.daily_prices
+                  (market,stock_id,trade_date,close,source)
+                  VALUES('tpex','8937',%s,200,'ISOLATED_TEST')
+                  ON CONFLICT DO NOTHING""",(d,))
+            for i in range(61):
+                d=start+timedelta(days=i-2)
+                conn.execute("""INSERT INTO public.daily_technicals
+                  VALUES('tpex','8937',%s) ON CONFLICT DO NOTHING""",(d,))
+                conn.execute("""INSERT INTO public.daily_smc
+                  VALUES('tpex','8937',%s) ON CONFLICT DO NOTHING""",(d,))
+            date_stale=select_candidates(conn,"tpex",3)
+            match=[r for r in date_stale if r["stock_id"]=="8937"]
+            self.assertEqual(len(match),1)
+            self.assertEqual(match[0]["close_days"],60)
+            self.assertEqual(match[0]["technical_rows"],61)
+            self.assertEqual(match[0]["smc_rows"],61)
+            self.assertEqual(match[0]["last_technical"],start+timedelta(days=58))
+            self.assertEqual(match[0]["latest_close"],start+timedelta(days=59))
+            # Restoring the latest real session clears this pending status;
+            # excess older rows must not falsely keep it in the queue.
+            latest=start+timedelta(days=59)
+            conn.execute("""INSERT INTO public.daily_technicals
+              VALUES('tpex','8937',%s) ON CONFLICT DO NOTHING""",(latest,))
+            conn.execute("""INSERT INTO public.daily_smc
+              VALUES('tpex','8937',%s) ON CONFLICT DO NOTHING""",(latest,))
+            self.assertNotIn("8937",
+                [r["stock_id"] for r in select_candidates(conn,"tpex",3)])
+
             # If all 60 sessions are already covered by technical + SMC,
             # the same candidate must not be recomputed.
             for i in range(60):
