@@ -105,7 +105,7 @@ def execute(database_url: str, *, apply=False, per_market=2, today=None, pause_s
                             "last_date":str(checked["max_day"])
                         })
                     except Exception as exc:
-                        LOGGER.exception("Enrichment failed for %s %s",market,stock["stock_id"])
+                        LOGGER.error("Enrichment failed for %s %s (%s)",market,stock["stock_id"],type(exc).__name__)
                         result["status"]="failed"
                         # Prevent leaking connection strings or private exception details.
                         result["error_type"]=type(exc).__name__
