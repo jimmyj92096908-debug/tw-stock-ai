@@ -5,12 +5,14 @@ on:
     paths:
       - "scripts/render_first_stage_report.py"
       - "tests/test_first_stage_report.py"
+      - "tests/test_report_after_score_trigger.py"
       - ".github/workflows/first-stage-report.yml"
   push:
     branches: ["main"]
     paths:
       - "scripts/render_first_stage_report.py"
       - "tests/test_first_stage_report.py"
+      - "tests/test_report_after_score_trigger.py"
       - ".github/workflows/first-stage-report.yml"
   workflow_dispatch:
   schedule:
@@ -48,7 +50,7 @@ jobs:
       - name: Compile and verify read-only report rendering
         run: |
           python -m py_compile scripts/render_first_stage_report.py
-          python -m unittest tests.test_first_stage_report -v
+          python -m unittest tests.test_first_stage_report tests.test_report_after_score_trigger -v
       - name: Run existing full Python regression tests
         env:
           PYTHONPATH: src
