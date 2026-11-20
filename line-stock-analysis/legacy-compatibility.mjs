@@ -4,9 +4,9 @@
 // and sends NO LINE replies. Legacy behaviors must be audited before cutover.
 import { parseStockCode } from './handler.mjs';
 
-const STOCK_KINDS = new Set(['stock', 'rank', 'list', 'excluded', 'status', 'help']);
+const STOCK_KINDS = new Set(['stock', 'rank', 'list', 'excluded', 'status', 'help', 'research']);
 
-export function planLineEvent(event) {
+export function planLineEvent(event, { matchedBareName = false } = {}) {
   if (!event || event.type !== 'message' || event.message?.type !== 'text') {
     // Existing handler may have follow/non-text behavior; never silently replace it.
     return { route: 'legacy', record: null };
@@ -34,7 +34,8 @@ export function planLineEvent(event) {
 
   // Never invent an old webhook fallback response. Legacy source is unavailable.
   return {
-    route: STOCK_KINDS.has(parsed.kind) ? 'stock' : 'legacy',
+    route: STOCK_KINDS.has(parsed.kind) ||
+      (parsed.kind === 'name' && (parsed.explicit || matchedBareName)) ? 'stock' : 'legacy',
     record
   };
 }
