@@ -10,13 +10,15 @@ import argparse
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.rows import dict_row
 
-from full_market_refresh import plan_download_windows, refresh_one
+from full_market_refresh import (
+    month_start, plan_download_windows, refresh_one, shift_month,
+)
 from build_adjusted_prices import build as build_adjusted_stock
 from calculate_technicals import calculate_stock as calculate_technical_stock
 from calculate_smc import calculate_stock as calculate_smc_stock
@@ -65,6 +67,32 @@ def count_months(windows) -> int:
     return sum((end.year-start.year)*12+end.month-start.month+1 for start,end in windows)
 
 
+def plan_bounded_windows(stock: dict, today: date) -> list[tuple[date, date]]:
+    """Prevent sparse recent stocks from skipping their first traded month.
+
+    If the earliest valid price is in the last three calendar months, the
+    normal archive-plus-current planner can skip the *entire* preceding
+    month (e.g. 2026-10 for a 2026-10..11 new listing). Download one
+    contiguous and still bounded five-month window instead. Older-history
+    rotation remains unchanged.
+    """
+    earliest = stock.get("earliest_trade_date")
+    current = month_start(today)
+    if earliest is not None and shift_month(current, -2) <= month_start(earliest) <= current:
+        return [(shift_month(current, -(MAX_SOURCE_MONTHS - 1)), current)]
+    return plan_download_windows(stock, today)
+
+
+def classify_enrichment_growth(old_days: int, old_latest, checked: dict) -> str:
+    """Never call a no-growth import successful or hide a history regression."""
+    new_days = checked["price_days"]
+    if new_days > old_days:
+        return "new-history"
+    if new_days == old_days and checked["max_day"] == old_latest:
+        return "no-growth"
+    raise RuntimeError("Historical price count/date regressed or unexpectedly changed")
+
+
 def execute(database_url: str, *, apply=False, per_market=2, today=None, pause_seconds=3):
     if not database_url:
         raise ValueError("DATABASE_URL required")
@@ -78,7 +106,7 @@ def execute(database_url: str, *, apply=False, per_market=2, today=None, pause_s
         for market in ("twse","tpex"):
             candidates=select_candidates(conn,market,per_market)
             for stock in candidates:
-                windows=plan_download_windows(stock,today)
+                windows=plan_bounded_windows(stock,today)
                 months=count_months(windows)
                 if not 1<=months<=MAX_SOURCE_MONTHS:
                     raise ValueError("Bounded history window exceeded")
@@ -89,21 +117,34 @@ def execute(database_url: str, *, apply=False, per_market=2, today=None, pause_s
                 }
                 if apply:
                     try:
-                        refresh_one(conn,stock,today)
-                        bars=build_adjusted_stock(conn,market,stock["stock_id"])
-                        tech=calculate_technical_stock(conn,market,stock["stock_id"])
-                        smc=calculate_smc_stock(conn,market,stock["stock_id"])
+                        # An already-complete source month may redownload the
+                        # same real days. Check growth *before* rewriting all
+                        # technical/SMC rows or counting it as a new success.
+                        refresh_one(conn,stock,today,windows=windows)
                         with conn.cursor() as cur:
                             cur.execute(CHECK_SQL,(market,stock["stock_id"]))
                             checked=cur.fetchone()
-                        if min(bars,tech,smc)<=0 or checked["price_days"]<=stock["price_days"]:
-                            raise RuntimeError("History enrichment did not add verified price days")
-                        result.update({
-                            "status":"verified",
-                            "price_days":checked["price_days"],
-                            "technical_rows":tech,"smc_rows":smc,
-                            "last_date":str(checked["max_day"])
-                        })
+                        growth=classify_enrichment_growth(
+                            stock["price_days"],stock["latest_trade_date"],checked
+                        )
+                        if growth == "no-growth":
+                            result.update({
+                                "status":"no-growth",
+                                "price_days":checked["price_days"],
+                                "last_date":str(checked["max_day"]),
+                            })
+                        else:
+                            bars=build_adjusted_stock(conn,market,stock["stock_id"])
+                            tech=calculate_technical_stock(conn,market,stock["stock_id"])
+                            smc=calculate_smc_stock(conn,market,stock["stock_id"])
+                            if min(bars,tech,smc)<=0:
+                                raise RuntimeError("New price history lacks computed indicators")
+                            result.update({
+                                "status":"verified",
+                                "price_days":checked["price_days"],
+                                "technical_rows":tech,"smc_rows":smc,
+                                "last_date":str(checked["max_day"])
+                            })
                     except Exception as exc:
                         LOGGER.error("Enrichment failed for %s %s (%s)",market,stock["stock_id"],type(exc).__name__)
                         result["status"]="failed"
