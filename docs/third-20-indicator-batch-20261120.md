@@ -18,9 +18,16 @@
 的兩次唯讀覆蓋率稽核。若最新有效評分沒有增加，工作會失敗而不會
 宣稱整個分析鏈完成。
 
-> 此段的正式評分結果以
-> [第三批 GitHub Actions #44728697062](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44728697062)
-> 的最終執行結論及獨立 Neon SQL 為準；不能僅因技術指標成功寫入就宣稱評分完成。
+**已成功完成。** [第三批 GitHub Actions #44728697062](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44728697062)
+最終執行結果為 `completed / success`，其中：
+- TWSE 待補股票：1,022 → **1,002**；已補齊 63 → **83**
+- TWSE 兩類指標都未開始：920 → **900**
+- 全市場已有有效綜合評分的股票：186 → **206**
+- 最新有效行情日（2026-11-19）符合研究基本條件的股票：175 → **195**
+- TPEx：21 檔已補齊，0 檔待補
+- GitHub [補算與評分證據 Artifact #14625582019](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44728697062/artifacts/14625582019)，保存兩階段前後統計及驗證結果
+
+以上資料再次以 Neon **獨立唯讀 SQL** 查核一致，兩階段驗收均通過。
 
 ## 排程及風險界線
 
