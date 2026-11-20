@@ -1,0 +1,106 @@
+name: First-Stage Research Report (Read-Only)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/render_first_stage_report.py"
+      - "tests/test_first_stage_report.py"
+      - ".github/workflows/first-stage-report.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/render_first_stage_report.py"
+      - "tests/test_first_stage_report.py"
+      - ".github/workflows/first-stage-report.yml"
+  workflow_dispatch:
+  schedule:
+    # 04:45 Asia/Taipei Tuesday-Saturday after overnight official data jobs.
+    - cron: "45 20 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: first-stage-research-readonly
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python and offline test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+      - name: Compile and verify read-only report rendering
+        run: |
+          python -m py_compile scripts/render_first_stage_report.py
+          python -m unittest tests.test_first_stage_report -v
+      - name: Run existing full Python regression tests
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q tests
+
+  publish-research-artifact:
+    needs: offline-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install database and model dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Require existing protected database setting
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Missing existing DATABASE_URL; no fabricated report will be published."
+            exit 1
+          fi
+      - name: Read live market and score coverage with read-only transaction
+        run: |
+          mkdir -p first-stage-output
+          python src/stock_db_audit.py --json > first-stage-output/audit.json
+      - name: Evaluate frozen trained model on latest stored scores (read only)
+        run: |
+          python scripts/trained_factor_pipeline.py rank \
+            --model-in models/tw-factor-ridge-1-research.json \
+            --limit 10 --output first-stage-output/ranking.json
+      - name: Produce offline-readable HTML, JSON and Markdown reports
+        run: |
+          python scripts/render_first_stage_report.py \
+            --audit first-stage-output/audit.json \
+            --ranking first-stage-output/ranking.json \
+            --evaluation models/tw-factor-ridge-1-evaluation.json \
+            --outdir first-stage-output
+      - name: Retain report for manual viewing, not automatic trade/LINE release
+        uses: actions/upload-artifact@v4
+        with:
+          name: twstock-first-stage-research-report
+          path: |
+            first-stage-output/research-report.html
+            first-stage-output/research-report.md
+            first-stage-output/research-report.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: State actual verification scope
+        if: always()
+        run: |
+          {
+            echo "### First-stage research delivery"
+            echo "- Read-only stock database SELECT and frozen, trained model."
+            echo "- No trading signals, no LINE sends, no new Webhook cutover."
+            echo "- An HTML artifact is uploaded only if all read-only checks pass."
+          } >> "$GITHUB_STEP_SUMMARY"
