@@ -118,10 +118,12 @@ class NoPriceHistoryResilienceTests(unittest.TestCase):
         fake.cursor.return_value.__enter__.return_value.fetchone.return_value={
             "latest":date(2026,11,20)
         }
-        with patch("full_market_refresh.market_data.download_range",return_value=15) as fetch, \\
-             patch("pathlib.Path.exists",return_value=True), \\
-             patch("db_storage.upsert_csv"), \\
-             patch("full_market_refresh.record_attempt") as attempt:
+        with (
+            patch("full_market_refresh.market_data.download_range",return_value=15) as fetch,
+            patch("pathlib.Path.exists",return_value=True),
+            patch("db_storage.upsert_csv"),
+            patch("full_market_refresh.record_attempt") as attempt,
+        ):
             self.assertTrue(refresh_one(fake,stock,date(2026,11,21),windows=window))
         fetch.assert_called_once_with("7867",2026,2026,7,11)
         attempt.assert_called_once()
