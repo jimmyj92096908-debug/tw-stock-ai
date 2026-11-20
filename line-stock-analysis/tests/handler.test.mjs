@@ -162,6 +162,8 @@ test('standalone chip annotation requires opt-in and exact bound market/code/dat
   assert.match(enabled, /尚未納入上方較舊日期的綜合評分/u);
   assert.match(enabled, /26\.98|27\.0/u);
   assert.match(STANDALONE_CHIP_SQL, /as_of_date <= \$3::date/u);
+  assert.match(STANDALONE_CHIP_SQL, /total_score IS NOT NULL/u);
+  assert.match(STANDALONE_CHIP_SQL, /coverage_weight >= 0\.50/u);
   assert.doesNotMatch(STANDALONE_CHIP_SQL, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/iu);
 });
 
@@ -192,6 +194,35 @@ test('future-dated chip results and insufficient source coverage are not passed 
   });
   assert.match(insufficient, /尚無符合有效覆蓋門檻的獨立籌碼分數/u);
   assert.doesNotMatch(insufficient, /籌碼分數：40\.65/u);
+});
+
+test('standalone chip scores older than seven days never appear as current', () => {
+  const base = stock({
+    price_date:'2026-11-20', score_date:'2026-11-19',total_score:'26.98',
+    chip_score:null,standalone_chip_date:'2026-11-12',
+    standalone_chip_score:'85.00',standalone_chip_coverage:'0.65',
+    standalone_institutional_score:'88',standalone_margin_score:'81'
+  });
+  const stale = formatStockAnalysis(base);
+  assert.match(stale, /獨立籌碼評分｜2026-11-12/u);
+  assert.match(stale, /超過 7 天/u);
+  assert.doesNotMatch(stale, /籌碼分數：85\.00/u);
+  assert.doesNotMatch(stale, /來源覆蓋：65%/u);
+
+  const boundary = formatStockAnalysis({
+    ...base, standalone_chip_date:'2026-11-13'
+  });
+  assert.match(boundary, /籌碼分數：85\.00/u);
+  assert.doesNotMatch(boundary, /超過 7 天/u);
+});
+
+test('non-date or unavailable chip details cannot be represented as a current score', () => {
+  const base = stock({price_date:'2026-11-20',standalone_chip_score:'40.65',
+    standalone_chip_coverage:'0.65'});
+  for (const chipDate of ['not-a-date','2026-13-99','2026-11-21']) {
+    const preview=formatStockAnalysis({...base,standalone_chip_date:chipDate});
+    assert.doesNotMatch(preview,/籌碼分數：40\.65/u);
+  }
 });
 
 test('stock lookup returns no-data, ambiguity and manual exclusion messages', async () => {
