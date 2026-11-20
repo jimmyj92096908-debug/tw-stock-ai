@@ -24,6 +24,10 @@ def fixture():
             "technical_stocks": 164, "smc_stocks": 164, "scored_stocks": 164,
             "history_60d": 1108, "history_120d": 1093, "history_240d": 38,
         },
+        "indicator_backlog": [
+            {"market": "tpex", "eligible": 21, "pending": 0, "complete": 21, "unstarted": 0},
+            {"market": "twse", "eligible": 1085, "pending": 1044, "complete": 41, "unstarted": 942},
+        ],
     }
     ranking = {
         "model_version": "tw-factor-ridge-1", "date": "2026-11-19",
@@ -58,6 +62,10 @@ class FirstStageReportTests(unittest.TestCase):
         self.assertFalse(result["live_trading_approved"])
         self.assertTrue(result["abstain"])
         self.assertFalse(result["line_stock_gateway_enabled"])
+        self.assertEqual(result["indicator_pending"], 1044)
+        self.assertEqual(result["indicator_eligible"], 1106)
+        self.assertEqual(result["indicator_unstarted"], 942)
+        self.assertEqual(result["minimum_batches_at_20_per_market"], 53)
 
     def test_model_version_or_date_drift_fails_closed(self):
         audit, rank, evaluation = fixture()
@@ -115,7 +123,30 @@ class FirstStageReportTests(unittest.TestCase):
         self.assertIn("1968", text.replace(",", ""))
         self.assertIn("1614", html)
         self.assertIn("不是買賣建議", text)
+        self.assertIn("待補", text)
+        self.assertIn("1,044", text)
+        self.assertIn("最少 53", html)
         self.assertIn("live_trading_approved=false", html)
+
+    def test_missing_backlog_evidence_or_inconsistent_counts_cannot_look_complete(self):
+        audit, rank, evaluation = fixture()
+        del audit["indicator_backlog"]
+        with self.assertRaisesRegex(ValueError, "Missing fresh indicator"):
+            dashboard.build_summary(audit, rank, evaluation)
+        audit, rank, evaluation = fixture()
+        audit["indicator_backlog"][1]["pending"] = 0
+        with self.assertRaisesRegex(ValueError, "Inconsistent indicator"):
+            dashboard.build_summary(audit, rank, evaluation)
+
+    def test_duplicate_or_negative_market_backlog_is_rejected(self):
+        audit, rank, evaluation = fixture()
+        audit["indicator_backlog"].append(dict(audit["indicator_backlog"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate markets"):
+            dashboard.build_summary(audit, rank, evaluation)
+        audit, rank, evaluation = fixture()
+        audit["indicator_backlog"][1]["unstarted"] = -1
+        with self.assertRaisesRegex(ValueError, "Negative"):
+            dashboard.build_summary(audit, rank, evaluation)
 
     def test_real_model_artifacts_remain_failed_holdout(self):
         base = Path(__file__).resolve().parents[1] / "models"
