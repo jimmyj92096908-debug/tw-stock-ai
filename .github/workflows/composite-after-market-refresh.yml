@@ -37,7 +37,7 @@ jobs:
           github.event.workflow_run.event == 'schedule')
          ||
          (github.event.workflow_run.name == 'Verified History Indicator Catch-Up' &&
-          github.event.workflow_run.event == 'workflow_run')
+          github.event.workflow_run.event == 'schedule')
        ))
       ||
       (github.event_name == 'workflow_dispatch' && inputs.apply == true)
