@@ -167,3 +167,14 @@ AI 台股投資系統正在建置中。
 - `linestockanalysis` 仍維持部署 ID 3；目前在正式 LINE Developers 後台使用的 Webhook URL 尚未改成新版候選閘道。
 - 資料庫已完成一部分正式來源驗證的行情與歷史回補，但現有 1,966 檔有非空收盤價的候選股票中，只有 44 檔有技術指標、SMC 與有效評分；LINE 分析須清楚告知不同資料的最新日期及覆蓋程度。
 - 下階段仍需執行經實際憑證簽章的代理回覆、舊版訊息紀錄與每日報告整合驗收，並留下可以切回原 URL 的回復策略。未驗證前不應宣稱單一 LINE 帳號新版股票指令可正式使用。
+
+## 2026-11-20 專用 PostgreSQL 最小權限角色（已在正式 Neon 建立並核對）
+
+在 `twstock` 建立 `line_stock_reader` 與 `line_stock_delivery`，二者使用 Neon 的 **read_only** 類型作為基底，撤銷初始的所有 `public` 表與序列權限及預設授權後，僅選擇性重新授權：
+
+- `line_stock_reader`：只可 SELECT `public.stock_master`、`daily_prices`、`daily_technicals`、`daily_smc`、`daily_composite_scores`；對 LINE 私人訊息表沒有 SELECT，也沒有資料寫入權限。
+- `line_stock_delivery`：只可 INSERT `line_messages` 的 `event_id`、`line_user_id`、`message_type`、`message_text`，只可 SELECT `event_id`；對 `line_reply_delivery` 有特定狀態欄位的 SELECT／INSERT／UPDATE；無權 DELETE 股票歷史，不能 SELECT LINE 訊息全文，無權讀取 `daily_prices`。
+- 已透過 `has_table_privilege`、`has_column_privilege` 及獨立角色登入 SELECT 進行驗證。此舉未修改原本的管理角色 `twstock_admin` 或 `linewebhook` 函式。
+- 資料庫內 `line_reply_delivery` 表已存在，但截至本次核對沒有已處理的真實 LINE 回覆事件。不能因此宣稱 LINE Proxy 端到端已完成。
+
+**目前尚未把這兩個角色的密碼配置到新版 Neon 候選函式的環境變數，也尚未將新的分流代理設定成 LINE Developers Webhook URL。** 配置前不可使用管理員資料庫連線取代最小權限角色。不得把密碼或連線字串寫進 GitHub 版本控制。
