@@ -1,0 +1,59 @@
+# Single-use, read-only check on the user's existing LINE account.
+# Must be deleted after validation. No webhook PUT, no user events, no pushes.
+name: LINE Release Readiness Read-Only Check (One Shot)
+on:
+  push:
+    branches: [feature/line-gateway-release-readiness]
+    paths:
+      - .github/workflows/line-release-preflight-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/feature/line-gateway-release-readiness'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      GATEWAY_URL: https://br-purple-smoke-a1t9dmzz-linestockgateway.compute.c-1.ap-southeast-1.aws.neon.tech
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify webhook management code is inspect-only
+        run: |
+          python -m unittest tests.test_line_webhook_control tests.test_line_gateway_canary -v
+          python -m py_compile scripts/line_webhook_control.py
+      - name: Inspect registered LINE webhook WITHOUT changing endpoint
+        run: |
+          if [ -z "$LINE_CHANNEL_ACCESS_TOKEN" ]; then
+            echo "::error::Required LINE token unavailable in GitHub Actions"
+            exit 1
+          fi
+          python scripts/line_webhook_control.py --action inspect > /tmp/line-inspection.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/line-inspection.json',encoding='utf-8'))
+          print('LINE Webhook active:',d.get('active'))
+          print('LINE Webhook still points to original legacy:',d.get('is_original_legacy_webhook'))
+          if not d.get('active') or not d.get('is_original_legacy_webhook'):
+              raise SystemExit('LINE endpoint changed; halt without any modifications')
+          PY
+      - name: Check isolated gateway health and unsigned request are safe
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl --silent --show-error --max-redirs 0 --max-time 20 --output /tmp/gw-health --write-out "%{http_code}" "$GATEWAY_URL/health")
+          echo "Isolated gateway health HTTP: $code"
+          test "$code" = 200
+          grep -qx 'ok' /tmp/gw-health
+          blocked=$(curl --silent --show-error --max-redirs 0 --max-time 20 --output /dev/null --write-out "%{http_code}" \
+            --header "content-type: application/json" --data '{"events":[]}' "$GATEWAY_URL/webhook")
+          echo "Unsigned gateway webhook HTTP: $blocked"
+          case "$blocked" in
+            401|503) echo "Gateway rejects unauthenticated/disabled requests." ;;
+            *) echo "::error::Gateway did not reject unsigned requests"; exit 1 ;;
+          esac
