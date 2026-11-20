@@ -12,6 +12,7 @@ from urllib3.util.retry import Retry
 sys.path.insert(0, os.path.dirname(__file__))
 from institutional_data import TPEX_URL as INSTITUTIONAL_TPEX_URL, ad_date as institutional_date
 from institutional_data import fetch_records as fetch_institutional, save_records as save_institutional
+from institutional_data import STOCKS as TRACKED_STOCKS
 from margin_data import fetch_records as fetch_margin, save_records as save_margin
 
 
@@ -49,8 +50,9 @@ def main() -> None:
     date.fromisoformat(trade_date)
     print(f"以 TPEx 官方最新快照日期 {trade_date} 作為本次交易日")
     institutional = fetch_institutional(trade_date)
-    if len(institutional) != 4:
-        raise RuntimeError(f"法人資料應為四檔，實際 {len(institutional)} 筆")
+    expected = sum(len(stocks) for stocks in TRACKED_STOCKS.values())
+    if len(institutional) != expected:
+        raise RuntimeError(f"法人資料應為 {expected} 檔，實際 {len(institutional)} 筆")
     print(f"法人資料寫入 {save_institutional(institutional)} 筆")
 
     # Exchange credit data can be published later than institutional flows.
