@@ -60,6 +60,10 @@ test('parse exact four-digit stock codes and Chinese stock names',()=>{
   assert.deepEqual(parseStockCode('聯茂'),{kind:'name',name:'聯茂',explicit:false});
   assert.deepEqual(parseStockCode('分析 聯茂'),{kind:'name',name:'聯茂',explicit:true});
   assert.deepEqual(parseStockCode('股票台積電'),{kind:'name',name:'台積電',explicit:true});
+  assert.deepEqual(parseStockCode('M31'),{kind:'name',name:'M31',explicit:false});
+  assert.deepEqual(parseStockCode('分析 M31'),{kind:'name',name:'M31',explicit:true});
+  assert.deepEqual(parseStockCode('AES-KY'),{kind:'name',name:'AES-KY',explicit:false});
+  assert.equal(parseStockCode('ABC').kind,'invalid');
   assert.equal(parseStockCode('研究報告').kind,'research');
   assert.equal(parseStockCode('清單').kind,'list');
   for(const text of ['6213;DROP','聯茂 OR 1=1','12345','0050','聯茂 台積電']) {
@@ -88,6 +92,23 @@ test('stock 6213 and name 聯茂 resolve to same complete database analysis',asy
   }
   assert.match(fromName,/非買賣指令/u);
   assert.ok(fromName.length<4900);
+});
+
+test('English-name stocks M31 and AES-KY need exact DB membership',async()=>{
+  const equities={
+    M31:{market:'tpex',stock_id:'6643',stock_name:'M31'},
+    'AES-KY':{market:'twse',stock_id:'6781',stock_name:'AES-KY'}
+  };
+  for(const name of Object.keys(equities)){
+    const r=await buildReplyText(name,async(sql,params)=>{
+      if(sql===STOCK_NAME_SQL) return {rows:[equities[params[0]]]};
+      assert.equal(sql,ANALYSIS_SQL);
+      assert.deepEqual(params,[equities[name].stock_id]);
+      return {rows:[{...stockRow,...equities[name]}]};
+    });
+    assert.match(r,new RegExp(name.replace('-','\\-'),'u'));
+    assert.match(r,new RegExp(equities[name].stock_id,'u'));
+  }
 });
 
 test('missing, repeated and excluded stock names fail closed',async()=>{
