@@ -135,7 +135,7 @@ def markdown(value):
         f"- 價格與評分資料品質異常：{value['quality_violations']} 項",
         f"- 研究模型：{value['frozen_research_model']}；樣本外平均淨超額 {value['model_holdout_mean_net_excess']*100:+.2f}%",
         "",
-        "**此驗收只核准唯讀研究 MVP，不核准獲利宣稱、買賣訊號或真實下單。**",
+        "**此驗收只核准唯讀研究 MVP，不核准獲利宣稱、買賣訊號、交易功能或真實下單。**",
         "尚待另外驗證：首次無人值守排程的真實 schedule 事件、完整股票覆蓋、LINE 頻道憑證與簽章／真實訊息 E2E。",
         "",
     ])+"\n"
