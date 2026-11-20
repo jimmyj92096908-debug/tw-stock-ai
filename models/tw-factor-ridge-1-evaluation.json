@@ -1,0 +1,44 @@
+{
+  "model_version": "tw-factor-ridge-1",
+  "dataset_scored_rows": 2753,
+  "development": {
+    "dates": 57,
+    "stocks_evaluated": 1083,
+    "model_mean_net_return": 0.00897126,
+    "model_mean_net_excess": 0.0093031,
+    "original_score_mean_net_excess": 0.0100443,
+    "positive_net_excess_fraction": 0.578947
+  },
+  "holdout": {
+    "dates": 21,
+    "stocks_evaluated": 346,
+    "model_mean_net_return": -0.03401558,
+    "model_mean_net_excess": -0.02114523,
+    "original_score_mean_net_excess": -0.02134983,
+    "positive_net_excess_fraction": 0.285714
+  },
+  "exclusions": {
+    "excluded": {
+      "bad_signal": 0,
+      "missing_adjusted_signal": 897,
+      "duplicate": 0
+    },
+    "skipped_dates": {
+      "small_universe": 0,
+      "incomplete_forward": 12,
+      "split_embargo": 6
+    }
+  },
+  "assumed_round_trip_cost_bps": 30,
+  "holdout_research_gate_passed": false,
+  "holdout_research_gate_reason": "negative_or_unstable_out_of_sample_excess",
+  "live_trading_approved": false,
+  "line_signal_delivery_approved": false,
+  "data_access": "Neon read-only SQL plus deterministic 12x12 ridge solve",
+  "warnings": [
+    "Overlapping five-session labels are dependent",
+    "Corporate actions retrospectively revise adjusted prices",
+    "Unpriced/delisted stocks bias evaluated universe",
+    "Round-trip 30bp cost is illustrative"
+  ]
+}
