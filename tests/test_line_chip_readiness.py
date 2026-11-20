@@ -118,6 +118,27 @@ class LineChipReadinessTests(unittest.TestCase):
         self.assertFalse(report["chip_valid_for_price"])
         self.assertEqual(report["assessment"], "blocked_or_inconclusive")
 
+    def test_publishable_chip_must_be_within_seven_calendar_days(self):
+        for chip_date, expected in (
+            (date(2026, 11, 13), True),
+            (date(2026, 11, 12), False),
+            (date(2026, 11, 21), False),
+        ):
+            with self.subTest(chip_date=chip_date):
+                report, _ = inspect(
+                    grants(missing_chip_select_columns=[]),
+                    dates(independently_publishable_chip_date=chip_date)
+                )
+                self.assertEqual(report["chip_valid_for_price"], expected)
+                self.assertEqual(
+                    report["assessment"] == "optional_chip_read_query_preflight_pass",
+                    expected
+                )
+        actual, _ = inspect(
+            grants(missing_chip_select_columns=[])
+        )
+        self.assertEqual(actual["chip_age_calendar_days"], 0)
+
     def test_unavailable_chip_score_is_not_invented(self):
         report, _ = inspect(
             grants(missing_chip_select_columns=[]),
