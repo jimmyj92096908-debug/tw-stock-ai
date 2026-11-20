@@ -1,0 +1,82 @@
+name: Generate Investment Research Model Report (Read Only)
+on:
+  workflow_dispatch:
+    inputs:
+      market:
+        description: "TWSE or TPEx research stock market"
+        type: choice
+        options: [twse, tpex]
+        default: twse
+      stock_id:
+        description: "Research stock code, not an order"
+        type: string
+        default: "2330"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-research-model-readonly-report
+  cancel-in-progress: false
+
+jobs:
+  model-report:
+    if: github.ref == 'refs/heads/main' && github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      INVESTMENT_MODEL_READONLY: "yes"
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python research-only dependencies
+        run: pip install -r requirements.txt
+      - name: Verify saved model gate before accessing research DB
+        run: |
+          python scripts/investment_model_pipeline.py --output /tmp/investment-research-offline.json
+          python - <<'PY'
+          import json
+          d=json.load(open("/tmp/investment-research-offline.json"))
+          assert d["abstain_from_trading"] and not d["orders_enabled"]
+          assert d["model"]["research_evidence_status"] == "INCOMPLETE_OR_FAILED"
+          PY
+      - name: Generate actual stock ranking and dated factor status from one read-only snapshot
+        env:
+          STOCK_MARKET: ${{ inputs.market }}
+          STOCK_ID: ${{ inputs.stock_id }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL missing"; exit 1; fi
+          python scripts/investment_model_pipeline.py --live-readonly --market "$STOCK_MARKET" --stock-id "$STOCK_ID" --output /tmp/investment-research-live.json
+      - name: Confirm fail-closed report and publish public-stock-only overview
+        run: |
+          python - <<'PY'
+          import json, os
+          d=json.load(open("/tmp/investment-research-live.json"))
+          assert d["data_mode"]=="existing_neon_snapshot_read_only"
+          assert d["abstain_from_trading"] is True and d["publish_line_trade_signal"] is False
+          assert d["orders_enabled"] is False and d["production_database_modified"] is False
+          s=d["stock_data"]
+          print("STOCK_RESEARCH_AUDIT stock=%s/%s price_date=%s technical_date=%s composite_date=%s chip_date=%s chip_score=%s coverage=%s model_date=%s eligible_universe=%s current_rank=%s alpha_gate=%s" % (
+            s["market"],s["stock_id"],s["price_date"],s["technical_date"],
+            s["composite_date"],s["independent_chip_date"],
+            s["independent_chip_score"],s["independent_chip_coverage"],
+            d["ranking"].get("date"),d["ranking"].get("eligible_universe",0),
+            d["ranking_matches_reference_price_date"],
+            d["model"]["research_evidence_status"]
+          ))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+            f.write("### Taiwan investment model: read-only report\n")
+            f.write("- Rank is historical research only, not a trade signal or release approval.\n")
+            f.write("- No production database modifications, LINE sends, or orders.\n")
+            f.write("- Factor dates are reported separately; the existing failed holdout is preserved.\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tw-stock-investment-model-research
+          path: /tmp/investment-research-live.json
+          if-no-files-found: error
+          retention-days: 14
