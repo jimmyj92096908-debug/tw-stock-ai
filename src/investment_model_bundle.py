@@ -13,8 +13,17 @@ from trained_factor_model import (
     FEATURE_NAMES, VERSION, research_rank,
 )
 
+# Operational descriptive-ranking coverage, NOT a probability or performance gate.
+MIN_DESCRIPTIVE_RANK_UNIVERSE = 30
+MIN_PRICED_MARKET_COVERAGE = 0.20
+
 STOCK_STATUS_SQL = """
 SELECT
+ (SELECT COUNT(*)::int FROM public.daily_prices p
+   WHERE p.trade_date = (SELECT MAX(as_of_date)
+     FROM public.daily_composite_scores WHERE total_score IS NOT NULL)
+   AND p.close IS NOT NULL AND p.close > 0 AND p.stock_id <> '1808')
+   AS ranked_date_priced_universe,
  (SELECT MAX(trade_date) FROM public.daily_prices
    WHERE market=%s AND stock_id=%s AND close IS NOT NULL) AS latest_price_date,
  (SELECT MAX(trade_date) FROM public.daily_technicals
@@ -184,6 +193,22 @@ def assemble_research_bundle(
             "abstain": True, "reason": "invalid_fitted_model"
         }
     model_date = safe_ranking.get("date")
+    rank_cohort = safe_ranking.get("eligible_universe", 0)
+    priced = stock_raw.get("ranked_date_priced_universe")
+    priced_count = int(priced) if isinstance(priced, int) and not isinstance(priced, bool) and priced >= 0 else None
+    rank_coverage = (
+        round(rank_cohort / priced_count, 6)
+        if priced_count and rank_cohort <= priced_count else None
+    )
+    descriptive_rank_ready = (
+        priced_count is not None and
+        rank_cohort >= MIN_DESCRIPTIVE_RANK_UNIVERSE and
+        rank_coverage is not None and rank_coverage >= MIN_PRICED_MARKET_COVERAGE
+    )
+    reference_stock_in_rank_cohort = any(
+        str(row.get("market")) == market and str(row.get("stock_id")) == stock_id
+        for row in ranking_rows
+    )
     latest_price = stock["price_date"]
     # Do not label an older ranking as a live/current market forecast.
     latest_ranking_is_price_current = (
@@ -196,6 +221,16 @@ def assemble_research_bundle(
         "stock_data": stock,
         "ranking": safe_ranking,
         "ranking_matches_reference_price_date": latest_ranking_is_price_current,
+        "ranked_date_priced_universe": priced_count,
+        "ranked_universe_coverage_of_priced_market": rank_coverage,
+        "reference_stock_in_rank_cohort": reference_stock_in_rank_cohort,
+        "descriptive_rank_min_universe": MIN_DESCRIPTIVE_RANK_UNIVERSE,
+        "descriptive_rank_min_coverage": MIN_PRICED_MARKET_COVERAGE,
+        "ranking_sample_status": (
+            "DESCRIPTIVE_RESEARCH_COVERAGE_MET"
+            if descriptive_rank_ready else "THIN_OR_UNKNOWN_RANKING_COHORT"
+        ),
+        "ranking_not_a_complete_market_selection": not descriptive_rank_ready,
         "overall_status": (
             "RESEARCH_ONLY_EVIDENCE_BLOCKED"
             if audit["research_evidence_problems"]
