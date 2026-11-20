@@ -1,6 +1,10 @@
 name: Verified History Indicator Catch-Up
 
 on:
+  # Independent fallback: avoids GitHub's workflow_run chaining depth limit.
+  # 03:10 Asia/Taipei Tue-Sat, after 01:50 dated TWSE history.
+  schedule:
+    - cron: "10 19 * * 1-5"
   workflow_run:
     workflows:
       - "TWSE Dated Bulk Historical Price Backfill"
@@ -26,6 +30,8 @@ jobs:
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
       (
+        github.event_name == 'schedule'
+        ||
         (github.event_name == 'workflow_run' &&
          github.event.workflow_run.conclusion == 'success' &&
          github.event.workflow_run.event == 'schedule' &&
@@ -53,6 +59,13 @@ jobs:
           python -m unittest tests.test_batch_indicator_catchup -v
       - name: Preview eligible stocks without writes
         run: python src/batch_indicator_catchup.py --per-market 20
+      - name: Mark intended production scope
+        run: |
+          echo "### Indicator catch-up (bounded)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Maximum: 20 listed + 20 OTC stocks per invocation" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Only stocks with at least 60 verified close sessions" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dry-run preview above, followed by gated apply" >> "$GITHUB_STEP_SUMMARY"
+          echo "- No LINE webhook, LINE messages, or raw price overwrites" >> "$GITHUB_STEP_SUMMARY"
       - name: Compute verified adjusted prices, technical and SMC
         env:
           STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
