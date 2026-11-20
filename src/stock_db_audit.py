@@ -143,9 +143,13 @@ WITH latest AS (
 ), coverage AS (
  SELECT r.market,r.stock_id,r.close_days,r.last_close,
         COALESCE(t.rows,0) AS technical_rows,
-        t.last_technical,
+        EXISTS(SELECT 1 FROM public.daily_technicals tday
+          WHERE tday.market=r.market AND tday.stock_id=r.stock_id
+            AND tday.trade_date=r.last_close) AS has_latest_technical,
         COALESCE(s.rows,0) AS smc_rows,
-        s.last_smc
+        EXISTS(SELECT 1 FROM public.daily_smc sday
+          WHERE sday.market=r.market AND sday.stock_id=r.stock_id
+            AND sday.trade_date=r.last_close) AS has_latest_smc
  FROM recent r
  LEFT JOIN technicals t USING(market,stock_id)
  LEFT JOIN smc s USING(market,stock_id)
@@ -153,10 +157,9 @@ WITH latest AS (
 SELECT market,
  COUNT(*)::int AS eligible,
  COUNT(*) FILTER (WHERE technical_rows<close_days OR smc_rows<close_days
-                  OR last_technical IS DISTINCT FROM last_close
-                  OR last_smc IS DISTINCT FROM last_close)::int AS pending,
+                  OR NOT has_latest_technical OR NOT has_latest_smc)::int AS pending,
  COUNT(*) FILTER (WHERE technical_rows>=close_days AND smc_rows>=close_days
-                  AND last_technical=last_close AND last_smc=last_close)::int AS complete,
+                  AND has_latest_technical AND has_latest_smc)::int AS complete,
  COUNT(*) FILTER (WHERE technical_rows=0 AND smc_rows=0)::int AS unstarted
 FROM coverage
 GROUP BY market ORDER BY market

@@ -71,7 +71,8 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             self.assertEqual(match[0]["close_days"],60)
             self.assertEqual(match[0]["technical_rows"],61)
             self.assertEqual(match[0]["smc_rows"],61)
-            self.assertEqual(match[0]["last_technical"],start+timedelta(days=58))
+            self.assertFalse(match[0]["has_latest_technical"])
+            self.assertFalse(match[0]["has_latest_smc"])
             self.assertEqual(match[0]["latest_close"],start+timedelta(days=59))
             # The actual backlog SQL must classify exactly the same stale
             # symbol; mocking this SQL hid a real CTE projection bug.
@@ -90,6 +91,36 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             self.assertNotIn("8937",
                 [r["stock_id"] for r in select_candidates(conn,"tpex",3)])
             self.assertEqual(pending_before-backlog()["tpex"]["pending"],1)
+
+            # Real 2235 case: 75 market rows, only 65 valid close prices
+            # (including NULL on Nov 20), while technical/SMC have all
+            # 75 dates. The latest VALID close is Nov 19, present in both
+            # indicator tables. A later indicator row must not flag this
+            # symbol as incomplete or trigger repeated false failures.
+            null_days={5,10,15,20,25,30,35,40,45,74}
+            source_start=date(2026,9,7)
+            for i in range(75):
+                day=source_start+timedelta(days=i)
+                close=None if i in null_days else 110
+                conn.execute("""INSERT INTO public.daily_prices
+                  (market,stock_id,trade_date,close,source)
+                  VALUES('tpex','2235',%s,%s,'ISOLATED_TEST')
+                  ON CONFLICT DO NOTHING""",(day,close))
+                conn.execute("""INSERT INTO public.daily_technicals
+                  VALUES('tpex','2235',%s) ON CONFLICT DO NOTHING""",(day,))
+                conn.execute("""INSERT INTO public.daily_smc
+                  VALUES('tpex','2235',%s) ON CONFLICT DO NOTHING""",(day,))
+            self.assertEqual(source_start+timedelta(days=74),date(2026,11,20))
+            self.assertNotIn("2235",
+                [r["stock_id"] for r in select_candidates(conn,"tpex",20)])
+            # A genuine missing indicator on last valid close (Nov 19)
+            # must become eligible even if Nov 20 has an extra indicator.
+            latest_valid=source_start+timedelta(days=73)
+            conn.execute("""DELETE FROM public.daily_technicals
+                WHERE market='tpex' AND stock_id='2235' AND trade_date=%s""",
+                (latest_valid,))
+            self.assertIn("2235",
+                [r["stock_id"] for r in select_candidates(conn,"tpex",20)])
 
             # If all 60 sessions are already covered by technical + SMC,
             # the same candidate must not be recomputed.

@@ -151,16 +151,15 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("latest_close", CANDIDATES_SQL)
         # Match selection/proof by actual latest date, not only legacy totals.
         for condition in (
-            "last_technical IS DISTINCT FROM last_close",
-            "last_smc IS DISTINCT FROM last_close",
-            "last_technical=last_close",
-            "last_smc=last_close",
+            "NOT has_latest_technical",
+            "NOT has_latest_smc",
+            "has_latest_technical AND has_latest_smc",
         ):
             self.assertIn(condition, INDICATOR_BACKLOG_SQL)
-        self.assertIn("last_technical IS DISTINCT FROM latest_close",
-                      CANDIDATES_SQL)
-        self.assertIn("last_smc IS DISTINCT FROM latest_close",
-                      CANDIDATES_SQL)
+        self.assertIn("NOT has_latest_technical",CANDIDATES_SQL)
+        self.assertIn("NOT has_latest_smc",CANDIDATES_SQL)
+        self.assertIn("tday.trade_date=r.last_close",INDICATOR_BACKLOG_SQL)
+        self.assertIn("sday.trade_date=r.last_close",INDICATOR_BACKLOG_SQL)
         for command in ("INSERT ", "UPDATE ", "DELETE ", "DROP "):
             self.assertNotIn(command, INDICATOR_BACKLOG_SQL)
 
