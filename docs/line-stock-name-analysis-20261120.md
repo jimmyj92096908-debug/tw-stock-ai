@@ -25,6 +25,6 @@
 
 ## 從 GitHub 到正式 LINE 的未完成門檻
 
-GitHub CI 測試通過／候選程式打包 `≠` Neon 新部署成功 `≠` 官方 LINE Webhook 正式切換。現有 Neon `linestockgateway` 仍缺兩項同頻道受保護憑證名稱 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`，現有程式不能代替真實密鑰。不得複製、印出或寫入版本控制。
+**目前已完成 GitHub CI 與 Neon 隔離候選部署**：2026-11-20 的 [PR #39](https://github.com/jimmyj92096908-debug/tw-stock-ai/pull/39) 已合併，89 項 Node24／PostgreSQL 測試通過；Neon `linestockgateway` **Deployment 3 已完成、但仍停用**。Neon 候選部署成功 `≠` 官方 LINE Webhook 正式切換。現有 Neon `linestockgateway` 仍缺兩項同頻道受保護憑證名稱 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`，現有程式不能代替真實密鑰。不得複製、印出或寫入版本控制。
 
 須由有權限的維運者以 LINE Developers 的正式頻道資料在 Neon 受保護設定配置，於新閘道維持 disabled 模式時部署並驗證官方簽章空事件，再用真實受控 LINE 測試帳號驗收名稱／代碼／一般訊息／去重／轉送與回復計畫，最後才切換註冊 Webhook。整個過程不影響當前舊 LINE 服務與每日報告。
