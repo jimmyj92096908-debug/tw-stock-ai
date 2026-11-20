@@ -1,8 +1,10 @@
 """Build transparent, freshness-aware composite chip scores for every stock in stock_master."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 from datetime import date
 from typing import Any
 
@@ -178,7 +180,17 @@ def _insider(cur, market: str, stock_id: str, ref_date: date):
         "pledged_ratio": round(ratio, 5), "reported_rows": int(people)}
 
 
-def calculate_all(database_url: str) -> int:
+def parse_stock_ids(value: str) -> frozenset[str]:
+    """Explicit bounded cohort for fast daily scoring; never invent a symbol."""
+    result = [token.strip() for token in value.split(",")]
+    if not result or len(result) > 40 or any(not re.fullmatch(r"[0-9]{4,6}", token) for token in result):
+        raise ValueError("stock IDs must be a comma-separated list of 1..40 numeric codes")
+    if len(result) != len(set(result)):
+        raise ValueError("duplicate stock ID in scoring cohort")
+    return frozenset(result)
+
+
+def calculate_all(database_url: str, stock_ids: frozenset[str] | None = None) -> int:
     insert = """
       INSERT INTO daily_chip_scores
         (market, stock_id, as_of_date, total_score, coverage_weight,
@@ -194,7 +206,14 @@ def calculate_all(database_url: str) -> int:
     count = 0
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT market, stock_id FROM stock_master ORDER BY market, stock_id")
+            if stock_ids is not None:
+                cur.execute(
+                    "SELECT market, stock_id FROM stock_master "
+                    "WHERE stock_id = ANY(%s) ORDER BY market, stock_id",
+                    (sorted(stock_ids),),
+                )
+            else:
+                cur.execute("SELECT market, stock_id FROM stock_master ORDER BY market, stock_id")
             stocks = cur.fetchall()
             for market, stock_id in stocks:
                 ref_date = _reference_date(cur, market, stock_id)
@@ -217,18 +236,21 @@ def calculate_all(database_url: str) -> int:
 
 def main() -> None:
     from tdcc_data import normalize_database_url
+
+    parser = argparse.ArgumentParser(description="Compute chip scores from verified saved observations")
+    parser.add_argument(
+        "--stock-ids",
+        help="Comma-separated tracked stock codes (e.g. 2330,6213,4919,7827,8937); "
+             "default: legacy all stocks",
+    )
+    args = parser.parse_args()
+    selected = parse_stock_ids(args.stock_ids) if args.stock_ids else None
     url = normalize_database_url(os.environ["DATABASE_URL"])
-    count = calculate_all(url)
-    print(f"綜合籌碼評分完成：{count} 檔股票")
-    with psycopg.connect(url) as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-              SELECT market, stock_id, as_of_date, total_score, coverage_weight,
-                     component_status
-              FROM daily_chip_scores ORDER BY market, stock_id
-            """)
-            for row in cur.fetchall():
-                print(*row)
+    count = calculate_all(url, selected)
+    print(f"綜合籌碼評分完成：{count} 檔股票；範圍 {'指定追蹤股票' if selected is not None else '所有股票'}")
+    # Do not dump up to 2,000 per-stock raw status dictionaries into Actions logs.
+    if selected:
+        print(f"指定追蹤股票數量：{len(selected)}；無有效歷史資料時分數維持 NULL")
 
 
 if __name__ == "__main__":
