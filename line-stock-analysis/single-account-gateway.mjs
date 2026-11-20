@@ -18,7 +18,22 @@ export function isStockCommandEvent(event) {
       typeof event.message.text!=='string' ||
       typeof event.webhookEventId!=='string' || !event.webhookEventId ||
       typeof event.replyToken!=='string' || !event.replyToken) return false;
-  return STOCK_KINDS.has(parseStockCode(event.message.text).kind);
+  const parsed=parseStockCode(event.message.text);
+  return STOCK_KINDS.has(parsed.kind) || (parsed.kind==='name' && parsed.explicit);
+}
+
+// A bare Chinese string is NOT automatically a stock command. The database
+// must confirm the exact published stock name first; otherwise preserve the
+// original LINE user's normal chat behavior.
+function isBareNameEvent(event) {
+  return event?.type==='message' && event.mode!=='standby' &&
+    event.source?.type==='user' && typeof event.source.userId==='string' &&
+    Boolean(event.source.userId) && event.message?.type==='text' &&
+    typeof event.message.text==='string' &&
+    typeof event.webhookEventId==='string' && Boolean(event.webhookEventId) &&
+    typeof event.replyToken==='string' && Boolean(event.replyToken) &&
+    parseStockCode(event.message.text).kind==='name' &&
+    parseStockCode(event.message.text).explicit===false;
 }
 
 function response(message,status) {
@@ -35,7 +50,7 @@ function repackage(payload,events,secret) {
 // reply tracker. forwardLegacy MUST point at a fixed trusted legacy webhook.
 // This gateway is not the installed LINE webhook and has no configured channel.
 export function createSingleAccountGateway({
-  channelSecret, stockHandler, forwardLegacy, enabled=true
+  channelSecret, stockHandler, forwardLegacy, lookupExactStockName, enabled=true
 }) {
   return async function fetchHandler(request) {
     const path=new URL(request.url).pathname;
@@ -76,8 +91,23 @@ export function createSingleAccountGateway({
     if(!Array.isArray(payload?.events) || payload.events.length>20)
       return response('Invalid events',400);
 
-    const stocks=payload.events.filter(isStockCommandEvent);
-    const legacy=payload.events.filter(event=>!isStockCommandEvent(event));
+    const stocks=[],legacy=[];
+    for (const event of payload.events) {
+      if(isStockCommandEvent(event)) {
+        stocks.push(event);
+      } else if(isBareNameEvent(event) && typeof lookupExactStockName==='function') {
+        // Only a successful exact-match SELECT may divert bare company names.
+        // Query failures return retryable 502; never silently route to a wrong
+        // handler or disclose Neon details in LINE HTTP responses.
+        let recognized;
+        try {recognized=await lookupExactStockName(parseStockCode(event.message.text).name);}
+        catch {return response('Stock name lookup temporarily unavailable',502);}
+        if(recognized===true) stocks.push(event);
+        else legacy.push(event);
+      } else {
+        legacy.push(event);
+      }
+    }
 
     // Stock processing first: if it fails, do not send the legacy subset until
     // LINE redelivers. A successfully sent stock reply will be deduplicated by

@@ -1,7 +1,7 @@
 // UNDEPLOYED candidate for one existing LINE account.
 // This file is NOT imported by index.mjs and is not deployed to any Neon function.
 // Legacy follow/non-text functionality remains unknown and is a cutover blocker.
-import { verifyLineSignature, buildReplyText } from './handler.mjs';
+import { verifyLineSignature, buildReplyText, parseStockCode } from './handler.mjs';
 import { planLineEvent } from './legacy-compatibility.mjs';
 
 const MAX_WEBHOOK_BYTES = 256000;
@@ -41,7 +41,7 @@ function response(text, status) {
 // The store may be a fake for tests; do not connect it to production until
 // the SQL migration and least-privilege role are separately approved.
 export function createSingleAccountCandidate({
-  query, store, sendReply, channelSecret, enabled = true, now = Date.now
+  query, store, sendReply, lookupExactStockName, channelSecret, enabled = true, now = Date.now
 }) {
   return async function fetchHandler(request) {
     const path = new URL(request.url).pathname;
@@ -83,7 +83,14 @@ export function createSingleAccountCandidate({
         return response('Missing event ID', 400);
       }
 
-      const plan = planLineEvent(event);
+      const parsed = parseStockCode(event.message.text);
+      let matchedBareName = false;
+      if (parsed.kind === 'name' && !parsed.explicit &&
+          typeof lookupExactStockName === 'function') {
+        try { matchedBareName = await lookupExactStockName(parsed.name) === true; }
+        catch { return response('Stock name lookup temporarily unavailable', 502); }
+      }
+      const plan = planLineEvent(event, { matchedBareName });
       if (!plan.record) return response('Invalid event record', 400);
 
       // Inbound log is idempotent and distinct from reply outcome.

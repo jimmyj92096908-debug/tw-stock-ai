@@ -5,7 +5,7 @@ import pg from 'pg';
 import { createSingleAccountCandidate } from './single-account-candidate.mjs';
 import { createSingleAccountGateway } from './single-account-gateway.mjs';
 import { createDeliveryStore } from './delivery-state.mjs';
-import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL } from './handler.mjs';
+import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL, STOCK_NAME_SQL } from './handler.mjs';
 
 const { Pool } = pg;
 let readerPool;
@@ -47,7 +47,7 @@ function writer() {
 }
 
 export function isApprovedStockReadQuery(sql) {
-  return sql===ANALYSIS_SQL || sql===RANKING_SQL || sql===DATA_STATUS_SQL;
+  return sql===ANALYSIS_SQL || sql===RANKING_SQL || sql===DATA_STATUS_SQL || sql===STOCK_NAME_SQL;
 }
 
 async function queryStock(sql,params) {
@@ -55,6 +55,13 @@ async function queryStock(sql,params) {
     throw new Error('Only vetted stock SELECT queries are permitted');
   }
   return reader().query(sql,params);
+}
+
+// The only bare-name routing read uses a vetted exact match, no ILIKE,
+// no stock data leaks or logging of message text / user identifiers.
+async function lookupExactStockName(name) {
+  const result=await queryStock(STOCK_NAME_SQL,[name]);
+  return Array.isArray(result?.rows) && result.rows.length>0;
 }
 
 const store = createDeliveryStore((sql,params)=>writer().query(sql,params));
@@ -135,11 +142,11 @@ export default {
         process.env.LINE_LOG_WRITE_DATABASE_URL && legacyUrl);
 
     const stockHandler=createSingleAccountCandidate({
-      query:queryStock,store,sendReply:replyLine,
+      query:queryStock,store,sendReply:replyLine,lookupExactStockName,
       channelSecret:secret,enabled
     });
     const gateway=createSingleAccountGateway({
-      channelSecret:secret,stockHandler,
+      channelSecret:secret,stockHandler,lookupExactStockName,
       forwardLegacy:(body,signature)=>relayLegacy(legacyUrl,body,signature),
       enabled
     });
