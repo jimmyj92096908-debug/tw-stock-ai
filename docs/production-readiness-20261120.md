@@ -123,3 +123,19 @@ Neon 新閘道環境變數須使用**受保護的部署環境**配置，不應�
 - 原本的 `linewebhook` Deployment 4、`linestockanalysis` Deployment 3、LINE Developers 目前 active URL 不變。不可將停用中閘道直接設為正式 LINE Webhook URL。
 
 **注意：** 首次正式切換不是單純修改 `LINE_SINGLE_ACCOUNT_ENABLED`；必須先安全配置剩餘兩個 LINE 憑證，確認所有簽章／資料庫權限／回覆／轉送驗收通過，再以完整原 URL 和明確回復措施進行切換。不得將 Channel Secret、Access Token 或 PostgreSQL 角色密碼貼入聊天或提交 GitHub。
+
+## 9. 正式 LINE 上線最後阻礙（實際保密設定檢查）
+
+GitHub Actions #44688708316 執行過只輸出 Boolean 的檢查，隨後已移除這個一次性 workflow；**沒有讀取或印出任何憑證值**。
+
+- GitHub Actions `LINE_CHANNEL_ACCESS_TOKEN`：已設定（可用於現有每日 LINE 報告、官方 Webhook GET 查核）。
+- GitHub Actions `LINE_CHANNEL_SECRET`：**尚未設定**。
+- GitHub Actions `NEON_API_KEY`：**尚未設定**，所以無法安全地由 GitHub CI 把既有 Secret／Token 自動同步到 Neon 新函式。
+- Neon `linestockgateway` Deployment 2 目前已安全存入專用 DB 唯讀／受限寫入連線、原始 Webhook URL 與 `LINE_SINGLE_ACCOUNT_ENABLED=false`；**尚無**此閘道專屬 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`。
+- **不可把原 `linewebhook` 或 `linestockanalysis` 的憑證直接揭露到 CI 或聊天，也不可用替代假密鑰處理 LINE 真實事件。**
+
+因此已完成能安全自動化的程式、資料庫、部署與無使用者訊息的測試；**最後的保密憑證綁定與 LINE 真實事件切換仍未完成**。需要具 Neon 控制台與 LINE Developers 控制台存取權的管理者，在 Neon `linestockgateway` 的受保護環境中設定：
+`LINE_CHANNEL_SECRET` 與 `LINE_CHANNEL_ACCESS_TOKEN`（同一個現有 LINE 官方帳號）。
+**不要貼入 ChatGPT 聊天或 GitHub 程式庫。**
+
+初次新增後仍須保留 `LINE_SINGLE_ACCOUNT_ENABLED=false`，待 LINE HMAC、舊版事件轉送、Reply API 及每日報表收件驗收完成才可啟用並切換。官方 LINE Webhook 目前仍指向原始版本，沒有被更動。
