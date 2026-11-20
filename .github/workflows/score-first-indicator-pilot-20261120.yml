@@ -1,0 +1,100 @@
+name: First Indicator To Composite Score Pilot 2026-11-20
+
+# Explicit one-time approved score refresh; PR checks never write to Neon.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/score-first-indicator-pilot-20261120.yml"
+      - "scripts/verify_scored_indicator_pilot.py"
+      - "tests/test_scored_indicator_pilot.py"
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/score-first-indicator-pilot-20261120.yml"
+
+permissions:
+  contents: read
+
+# Avoid simultaneous writes with the original authorized composite-score job.
+concurrency:
+  group: composite-score-after-market-refresh
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+      - name: Validate first indicator-to-score evidence
+        run: |
+          python -m py_compile scripts/verify_scored_indicator_pilot.py
+          python -m unittest tests.test_scored_indicator_pilot tests.test_score_after_refresh -v
+      - name: Full offline Python regression
+        run: python -m pytest -q tests
+
+  one-time-score-refresh:
+    needs: offline-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, 'ACTIVATE-ONCE-20261120-COMPOSITE-PILOT')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install official composite-score dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Demand protected database URL
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Protected DATABASE_URL not available"
+            exit 1
+          fi
+      - name: Capture first two indicator-stock scores with READ ONLY SQL
+        run: |
+          python scripts/verify_scored_indicator_pilot.py \
+            --phase before --out score-before.json
+      - name: Run existing authorized composite-score refresh
+        run: python scripts/score_after_refresh.py
+      - name: Verify both newly backfilled stocks now have valid latest-day scores
+        run: |
+          python scripts/verify_scored_indicator_pilot.py \
+            --phase after --out score-after.json --before score-before.json
+      - name: Retain observed score transition even when validation fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-indicator-to-score-evidence
+          path: |
+            score-before.json
+            score-after.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Distinguish data completion from trade signal approval
+        if: always()
+        run: |
+          {
+            echo "### One-time composite-score chain validation"
+            echo "- Rebuilt existing composite scores with the already-authorized stock scorer."
+            echo "- Before and after target-stock verification used READ ONLY SQL."
+            echo "- No AI model retraining, LINE messages, or automatic trading."
+            echo "- This one-time workflow must be removed after success."
+          } >> "$GITHUB_STEP_SUMMARY"
