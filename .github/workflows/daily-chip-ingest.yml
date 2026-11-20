@@ -10,6 +10,12 @@ on:
   schedule:
     - cron: "35 13 * * 1-5"
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "明確允許手動寫入籌碼資料及評分？預設不寫入"
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -18,7 +24,7 @@ concurrency:
 jobs:
   ingest:
     # A source push/PR is code review, never permission to write production.
-    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply == true))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
