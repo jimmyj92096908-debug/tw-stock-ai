@@ -4,7 +4,7 @@ from datetime import date
 
 from src.stock_db_audit import (
     COVERAGE_SQL, GLOBAL_DATES_SQL, SCORE_MATCH_SQL, SAMPLES_SQL,
-    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, collect_audit, format_audit, iso_date,
+    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, INDICATOR_BACKLOG_SQL, collect_audit, format_audit, iso_date,
 )
 
 
@@ -76,6 +76,11 @@ class _Cursor:
                 {"market": "tpex", "stock_id": "6488",
                  "stock_name": "環球晶", "last_price": None},
             ]
+        if self.sql == INDICATOR_BACKLOG_SQL:
+            return [
+                {"market":"tpex","eligible":21,"pending":0,"complete":21,"unstarted":0},
+                {"market":"twse","eligible":1085,"pending":1044,"complete":41,"unstarted":942},
+            ]
         if self.sql == REFRESH_STATUS_SQL:
             return [
                 {"status": "success", "total": 14},
@@ -100,7 +105,7 @@ class StockAuditTests(unittest.TestCase):
         self.assertEqual(result["latest"]["latest_score_date"], "2026-11-18")
         self.assertEqual(result["score"]["matched_price"], 17)
         self.assertEqual(result["samples"][0]["last_price"], "2026-10-30")
-        self.assertEqual(len(conn.cur.calls), 8)
+        self.assertEqual(len(conn.cur.calls), 9)
         self.assertEqual(conn.cur.calls[1][1], (date(2026, 11, 19),))
         self.assertEqual(conn.cur.calls[3][1], (["2330", "6488", "6213"],))
 
@@ -115,12 +120,16 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("至少 60 日 30 檔、120 日 20 檔、240 日 18 檔", output)
         self.assertIn("技術指標 18 檔／SMC 18 檔／有效評分 15 檔", output)
         self.assertIn("有收盤行情不等於分析指標", output)
+        self.assertIn("待補 1044", output)
+        self.assertIn("技術／SMC 待補總量：1044/1106", output)
+        self.assertEqual(result["indicator_backlog"][1]["unstarted"], 942)
+        self.assertEqual(conn.cur.calls[-1][0], INDICATOR_BACKLOG_SQL)
 
     def test_optional_refresh_table_can_be_absent(self):
         conn = _Connection(refresh_exists=False)
         snapshot = collect_audit(conn)
         self.assertEqual(snapshot["refresh_state"], [])
-        self.assertEqual(len(conn.cur.calls), 7)
+        self.assertEqual(len(conn.cur.calls), 8)
 
     def test_quality_warnings_report_flagged_rows(self):
         snapshot = collect_audit(_Connection())
@@ -132,6 +141,16 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("發現行情或評分欄位異常", output)
         self.assertIn("FROM public.daily_prices", QUALITY_SQL)
         self.assertIn("FROM public.daily_composite_scores", QUALITY_SQL)
+
+    def test_indicator_backlog_query_matches_catchup_eligibility_and_is_readonly(self):
+        from src.batch_indicator_catchup import CANDIDATES_SQL
+        for condition in ("FILTER(WHERE close IS NOT NULL)", "stock_id <> '1808'",
+                          "INTERVAL '7 days'", "COUNT(*) FILTER (WHERE technical_rows<close_days"):
+            self.assertIn(condition, INDICATOR_BACKLOG_SQL)
+        self.assertIn(">=60", INDICATOR_BACKLOG_SQL)
+        self.assertIn("latest_close", CANDIDATES_SQL)
+        for command in ("INSERT ", "UPDATE ", "DELETE ", "DROP "):
+            self.assertNotIn(command, INDICATOR_BACKLOG_SQL)
 
     def test_null_date_and_empty_composite_count_not_fabricated(self):
         self.assertIsNone(iso_date(None))
