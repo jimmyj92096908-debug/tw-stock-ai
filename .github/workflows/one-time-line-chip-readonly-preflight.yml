@@ -1,0 +1,29 @@
+name: One-Time LINE Chip Readiness Read-Only Audit
+on:
+  push:
+    branches: [feature/line-chip-readonly-e2e-20261121]
+    paths:
+      - ".github/workflows/one-time-line-chip-readonly-preflight.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install read-only client
+        run: pip install "psycopg[binary]>=3.2,<4"
+      - name: Exercise permission-guard tests offline
+        run: python -m unittest tests.test_line_chip_readiness -v
+      - name: Audit 2330 chip role grants and dates (server-enforced read only)
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::DATABASE_URL unavailable"; exit 1; fi
+          python scripts/line_chip_readiness.py
