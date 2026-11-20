@@ -144,8 +144,16 @@ def inspect_readiness(conn) -> dict:
     chip_date = _ymd(dates["independently_publishable_chip_date"])
     price_date = _ymd(dates["price_date"])
     composite_date = _ymd(dates["composite_date"])
+    # Match the candidate LINE formatter: no future scores, no scores that
+    # are more than seven calendar days behind the actual closing-price date.
+    raw_chip_date = dates["independently_publishable_chip_date"]
+    raw_price_date = dates["price_date"]
+    chip_age_days = (
+        (raw_price_date - raw_chip_date).days
+        if raw_chip_date is not None and raw_price_date is not None else None
+    )
     chip_valid_for_price = (
-        chip_date is not None and price_date is not None and chip_date <= price_date
+        chip_age_days is not None and 0 <= chip_age_days <= 7
     )
     return {
         "assessment": (
@@ -181,6 +189,7 @@ def inspect_readiness(conn) -> dict:
             round(float(dates["chip_source_coverage"]), 2)
             if dates["chip_source_coverage"] is not None else None
         ),
+        "chip_age_calendar_days": chip_age_days,
         "chip_valid_for_price": chip_valid_for_price,
         "new_gateway_enabled_verified": False,
         "webhook_cutover_approved": False,
