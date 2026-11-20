@@ -40,6 +40,10 @@ test('LINE candidate requires exact separate reader and delivery PostgreSQL user
     [make('line_stock_reader'),make('line_stock_delivery')+'&user=postgres'],
     [make('line_stock_reader')+'&options=-c%20role%3Dpostgres',make('line_stock_delivery')],
     [make('line_stock_reader')+'&dbname=postgres',make('line_stock_delivery')],
+    [make('line_stock_reader').replace('?sslmode=require&channel_binding=require',''),make('line_stock_delivery')],
+    [make('line_stock_reader').replace('sslmode=require','sslmode=disable'),make('line_stock_delivery')],
+    [make('line_stock_reader')+'&sslmode=disable',make('line_stock_delivery')],
+    [make('line_stock_reader'),make('line_stock_delivery').replace('sslmode=require','sslmode=prefer')],
     ['https://fake.example.test/postgres',make('line_stock_delivery')]
   ]) {
     assert.throws(
