@@ -1,0 +1,59 @@
+name: Composite Scores After Market Refresh (Opt-in)
+
+on:
+  workflow_run:
+    workflows:
+      - "Full Market Daily Data Rotation"
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "明確同意寫入綜合評分？預設 false，不做任何資料庫異動"
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: composite-score-after-market-refresh
+  cancel-in-progress: false
+
+jobs:
+  score:
+    # Production writes stay DISABLED unless the repo owner explicitly sets
+    # ENABLE_AUTOMATIC_COMPOSITE_SCORES=true in repository variables or
+    # manually dispatches the workflow with apply=true. No change is made here.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.repository.full_name == github.repository &&
+       vars.ENABLE_AUTOMATIC_COMPOSITE_SCORES == 'true')
+      ||
+      (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install requests "psycopg[binary]>=3.2,<4"
+      - name: Unit-test score logic and guard
+        run: |
+          python -m unittest tests.test_composite_score tests.test_score_after_refresh -v
+          python -m py_compile scripts/score_after_refresh.py
+      - name: Require configured database credential
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL is unavailable; score rebuild is stopped."
+            exit 1
+          fi
+      - name: Recompute existing composite score table
+        run: python scripts/score_after_refresh.py

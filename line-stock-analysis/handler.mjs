@@ -1,0 +1,372 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+// The current stock_master table is a candidate universe, not a verified
+// common-share classification. Keep user-requested exclusions in force.
+export const EXCLUDED_CODES = new Set(['1808']);
+export const HELP_TEXT = [
+  '台股分析查詢',
+  '請輸入 4 位數股票代碼，例如：2330',
+  '也可輸入：分析 2330、股票 6488',
+  '輸入「清單」看最新可用評分前 10 名；傳送 1～10 或「編號 1」可查詢序號。',
+  '輸入「資料狀態」查看資料覆蓋率與最新日期。',
+  '輸入「說明」可查看使用方式。',
+  '目前僅查詢資料庫已有資料；不提供即時報價或交易指令。'
+].join('\n');
+
+export function parseStockCode(input) {
+  if (typeof input !== 'string') return { kind: 'help' };
+  const normalized = input.replace(/\u3000/g, ' ').trim();
+  if (/^(說明|幫助|help|\?|使用方式)$/iu.test(normalized)) return { kind: 'help' };
+  if (/^(資料狀態|資料庫狀態|更新狀態|資料更新)$/u.test(normalized)) return { kind: 'status' };
+  if (/^(清單|排行|排名|觀察清單)$/u.test(normalized)) return { kind: 'list' };
+  const rank = /^(?:編號\s*|第\s*)?([1-9]|10)(?:\s*名)?$/u.exec(normalized);
+  if (rank) return { kind: 'rank', rank: Number(rank[1]) };
+  const match = /^(?:(?:分析|查詢|查股票|股票|代碼|編號|查股|查)\s*)?([0-9]{4})$/u.exec(normalized);
+  if (!match || match[1][0] === '0') return { kind: 'invalid' };
+  if (EXCLUDED_CODES.has(match[1])) return { kind: 'excluded', code: match[1] };
+  return { kind: 'stock', code: match[1] };
+}
+
+export function verifyLineSignature(rawBody, signature, channelSecret) {
+  if (typeof rawBody !== 'string' || typeof signature !== 'string' ||
+      !signature || typeof channelSecret !== 'string' || !channelSecret) return false;
+  const actual = Buffer.from(signature, 'base64');
+  const expected = createHmac('sha256', channelSecret).update(rawBody, 'utf8').digest();
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+// All lookups use a bound stock code. LATERAL joins fetch the most recent
+// available date per component instead of pretending every source is current.
+// Read-only summary shown by the LINE 「資料狀態」 command.
+export const DATA_STATUS_SQL = [
+  'SELECT',
+  ' (SELECT COUNT(*)::int FROM public.stock_master) AS universe,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id FROM public.daily_prices',
+  '  WHERE close IS NOT NULL GROUP BY market,stock_id',
+  ' ) z) AS priced,',
+  ' (SELECT MAX(trade_date) FROM public.daily_prices',
+  '  WHERE close IS NOT NULL) AS price_date,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id,MAX(trade_date) AS last_date',
+  '  FROM public.daily_prices WHERE close IS NOT NULL',
+  '  GROUP BY market,stock_id',
+  ' ) s WHERE s.last_date=(',
+  '  SELECT MAX(trade_date) FROM public.daily_prices',
+  '  WHERE close IS NOT NULL)) AS priced_latest,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id,MAX(trade_date) AS last_date',
+  '  FROM public.daily_prices WHERE close IS NOT NULL',
+  '  GROUP BY market,stock_id',
+  ' ) s WHERE s.last_date < (',
+  '  SELECT MAX(trade_date) FROM public.daily_prices',
+  '  WHERE close IS NOT NULL) - INTERVAL \'7 days\') AS stale_over_7_days,',
+  ' (SELECT MAX(as_of_date) FROM public.daily_composite_scores',
+  '  WHERE total_score IS NOT NULL) AS score_date,',
+  ' (SELECT COUNT(*)::int FROM public.daily_composite_scores',
+  '  WHERE total_score IS NOT NULL AND as_of_date=(',
+  '   SELECT MAX(as_of_date) FROM public.daily_composite_scores',
+  '   WHERE total_score IS NOT NULL)) AS scored_latest'
+].join('\n');
+
+export const ANALYSIS_SQL = [
+  'SELECT sm.market, sm.stock_id, sm.stock_name,',
+  ' p.trade_date AS price_date, p.close, p.price_change, p.volume,',
+  ' t.trade_date AS technical_date, t.ma5, t.ma10, t.ma13, t.ma20,',
+  ' t.ma34, t.ma55, t.ma60, t.ma120, t.ma240, t.rsi14, t.atr14,',
+  ' s.trade_date AS smc_date, s.trend_direction, s.bos_bullish,',
+  ' s.bos_bearish, s.choch_bullish, s.choch_bearish,',
+  ' s.liquidity_sweep_high, s.liquidity_sweep_low,',
+  ' s.order_block_type, s.fvg_type,',
+  ' c.as_of_date AS score_date, c.total_score, c.coverage_weight,',
+  ' c.short_term_score, c.swing_score, c.long_term_score, c.chip_score',
+  'FROM public.stock_master sm',
+  'LEFT JOIN LATERAL (',
+  ' SELECT trade_date, close, price_change, volume FROM public.daily_prices',
+  ' WHERE market=sm.market AND stock_id=sm.stock_id AND close IS NOT NULL',
+  ' ORDER BY trade_date DESC LIMIT 1',
+  ') p ON TRUE',
+  'LEFT JOIN LATERAL (',
+  ' SELECT trade_date, ma5, ma10, ma13, ma20, ma34, ma55, ma60,',
+  ' ma120, ma240, rsi14, atr14 FROM public.daily_technicals',
+  ' WHERE market=sm.market AND stock_id=sm.stock_id',
+  ' AND trade_date <= COALESCE(p.trade_date, CURRENT_DATE)',
+  ' ORDER BY trade_date DESC LIMIT 1',
+  ') t ON TRUE',
+  'LEFT JOIN LATERAL (',
+  ' SELECT trade_date, trend_direction, bos_bullish, bos_bearish,',
+  ' choch_bullish, choch_bearish, liquidity_sweep_high,',
+  ' liquidity_sweep_low, order_block_type, fvg_type FROM public.daily_smc',
+  ' WHERE market=sm.market AND stock_id=sm.stock_id',
+  ' AND trade_date <= COALESCE(p.trade_date, CURRENT_DATE)',
+  ' ORDER BY trade_date DESC LIMIT 1',
+  ') s ON TRUE',
+  'LEFT JOIN LATERAL (',
+  ' SELECT as_of_date, total_score, coverage_weight, short_term_score,',
+  ' swing_score, long_term_score, chip_score FROM public.daily_composite_scores',
+  ' WHERE market=sm.market AND stock_id=sm.stock_id',
+  ' AND as_of_date <= COALESCE(p.trade_date, CURRENT_DATE)',
+  ' ORDER BY as_of_date DESC LIMIT 1',
+  ') c ON TRUE',
+  "WHERE sm.stock_id = $1 AND sm.market IN ('twse', 'tpex')",
+  'ORDER BY sm.market LIMIT 3'
+].join('\n');
+
+
+export const RANKING_SQL = [
+  'SELECT c.market, c.stock_id, sm.stock_name, c.total_score, c.as_of_date',
+  'FROM public.daily_composite_scores c',
+  'JOIN public.stock_master sm ON sm.market=c.market AND sm.stock_id=c.stock_id',
+  'JOIN public.daily_prices p ON p.market=c.market AND p.stock_id=c.stock_id',
+  ' AND p.trade_date=c.as_of_date AND p.close IS NOT NULL',
+  'WHERE c.as_of_date=(SELECT MAX(as_of_date) FROM public.daily_composite_scores',
+  ' WHERE total_score IS NOT NULL)',
+  'AND c.total_score IS NOT NULL',
+  "AND c.stock_id <> '1808'",
+  "AND c.stock_id ~ '^[1-9][0-9]{3}$'",
+  'ORDER BY c.total_score DESC, c.market, c.stock_id',
+  'LIMIT 10'
+].join('\n');
+
+function displayDate(value) {
+  if (value == null) return '尚無';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value);
+  return /^\d{4}-\d{2}-\d{2}/u.test(raw) ? raw.slice(0, 10) : '日期未知';
+}
+
+function number(value, digits = 2) {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString('zh-TW', {
+    minimumFractionDigits: digits, maximumFractionDigits: digits
+  }) : '—';
+}
+
+function nameText(value) {
+  return String(value || '名稱未提供').replace(/[\x00-\x1f\x7f]/gu, ' ').slice(0, 35);
+}
+
+function smcEvents(row) {
+  const flags = [
+    ['bos_bullish', 'BOS 多方'], ['bos_bearish', 'BOS 空方'],
+    ['choch_bullish', 'CHOCH 多方'], ['choch_bearish', 'CHOCH 空方'],
+    ['liquidity_sweep_high', '掃過高點流動性'],
+    ['liquidity_sweep_low', '掃過低點流動性']
+  ];
+  const found = flags.filter(([key]) => row[key] === true).map(([, label]) => label);
+  return found.length ? found.join('、') : '無已標記事件';
+}
+
+export function formatStockAnalysis(row) {
+  const market = row.market === 'twse' ? '上市' : '上櫃';
+  const id = String(row.stock_id || '');
+  const head = id + ' ' + nameText(row.stock_name) + '（' + market + '）';
+  const priceDate = displayDate(row.price_date);
+  if (row.close === null || row.close === undefined) {
+    return [
+      '台股資料分析｜' + head,
+      '目前資料庫沒有可用的收盤行情，無法產生分析。',
+      '資料庫股票名單仍為候選，普通股分類尚待完整驗證。',
+      '非即時報價或投資建議。'
+    ].join('\n');
+  }
+
+  const change = row.price_change == null ? '—' :
+    ((Number(row.price_change) > 0 ? '+' : '') + number(row.price_change));
+  const lines = [
+    '台股資料分析｜' + head,
+    '收盤交易日：' + priceDate,
+    '收盤：' + number(row.close) + '｜漲跌：' + change + ' 元',
+    '成交量：' + number(row.volume, 0) + ' 股',
+    '',
+    '【技術指標｜' + displayDate(row.technical_date) + '】'
+  ];
+
+  if (row.technical_date == null) {
+    lines.push('尚無技術指標資料');
+  } else {
+    const mas = [5, 10, 13, 20, 34, 55, 60, 120, 240]
+      .map(n => 'MA' + n + ' ' + number(row['ma' + n]));
+    lines.push(mas.slice(0, 3).join('｜'));
+    lines.push(mas.slice(3, 6).join('｜'));
+    lines.push(mas.slice(6, 9).join('｜'));
+    lines.push('RSI14：' + number(row.rsi14, 1) +
+               '｜ATR14：' + number(row.atr14));
+  }
+
+  lines.push('', '【SMC｜' + displayDate(row.smc_date) + '】');
+  if (row.smc_date == null) {
+    lines.push('尚無 SMC 分析資料');
+  } else {
+    const trend = Number(row.trend_direction) === 1 ? '多方' :
+      Number(row.trend_direction) === -1 ? '空方' : '中性／不明';
+    lines.push('趨勢：' + trend);
+    lines.push('事件：' + smcEvents(row));
+    lines.push('Order Block：' + (row.order_block_type || '尚無'));
+    lines.push('FVG：' + (row.fvg_type || '尚無'));
+  }
+
+  lines.push('', '【綜合評分｜' + displayDate(row.score_date) + '】');
+  if (row.score_date == null || row.total_score == null) {
+    lines.push('尚無達可用條件的綜合評分');
+  } else {
+    const coverage = row.coverage_weight == null ? '—' :
+      number(Number(row.coverage_weight) * 100, 0) + '%';
+    lines.push('總分：' + number(row.total_score, 1) + '｜因子覆蓋：' + coverage);
+    lines.push('短／波／長：' + number(row.short_term_score, 1) + '／' +
+      number(row.swing_score, 1) + '／' + number(row.long_term_score, 1));
+    lines.push('籌碼分數：' + number(row.chip_score, 1));
+  }
+
+  const observationTime = Date.parse(priceDate + 'T00:00:00Z');
+  if (Number.isFinite(observationTime) && Date.now() - observationTime > 7 * 86400000) {
+    lines.push('', '注意：最新可用行情距今已超過 7 日，請確認資料是否更新。');
+  }
+  const mismatched = [
+    row.technical_date, row.smc_date, row.score_date
+  ].filter(Boolean).some(value => displayDate(value) !== priceDate);
+  if (mismatched) lines.push('', '注意：部分指標日期與收盤交易日不同，請勿視為當日訊號。');
+  lines.push('', '僅呈現資料庫已有的歷史資料；並非即時報價。');
+  lines.push('商品分類尚待核驗；非買賣指令，不保證獲利。');
+  return lines.join('\n').slice(0, 4900);
+}
+
+export function formatDataStatus(row) {
+  if (!row) return '目前無法讀取資料庫更新狀態，請稍後再試。';
+  const universe = Number(row.universe);
+  const priced = Number(row.priced);
+  const scored = Number(row.scored_latest);
+  if (![universe, priced, scored].every(Number.isFinite) ||
+      universe < 0 || priced < 0 || scored < 0 || priced > universe) {
+    return '目前無法讀取有效的資料庫統計，請稍後再試。';
+  }
+  const fresh = row.priced_latest == null ? null : Number(row.priced_latest);
+  const stale = row.stale_over_7_days == null ? null : Number(row.stale_over_7_days);
+  if ((fresh !== null && (!Number.isInteger(fresh) || fresh < 0 || fresh > priced)) ||
+      (stale !== null && (!Number.isInteger(stale) || stale < 0 || stale > priced))) {
+    return '目前無法讀取有效的資料庫統計，請稍後再試。';
+  }
+  const coverage = universe ? (100 * priced / universe).toFixed(1) : '0.0';
+  const lines = [
+    '台股資料庫更新狀態',
+    '最新收盤行情：' + displayDate(row.price_date),
+    '最新綜合評分：' + displayDate(row.score_date),
+    '候選股票：' + number(universe, 0) + ' 檔',
+    '已有行情：' + number(priced, 0) + ' 檔（' + coverage + '%）',
+    '尚無行情：' + number(universe - priced, 0) + ' 檔',
+    '最新評分資料筆數：' + number(scored, 0),
+    '注意：資料覆蓋率不是交易所完整股票數；不提供即時報價。',
+    '未覆蓋或資料過期的股票，不應視為當日有效分析。'
+  ];
+  if (fresh !== null) {
+    lines.splice(5, 0, '最新行情交易日有資料：' + number(fresh, 0) + ' 檔');
+  }
+  if (stale !== null) {
+    lines.splice(fresh !== null ? 6 : 5, 0,
+      '最後行情落後超過 7 日：' + number(stale, 0) + ' 檔');
+  }
+  return lines.join('\n');
+}
+
+export async function buildReplyText(text, query) {
+  const parsed = parseStockCode(text);
+  if (parsed.kind === 'help') return HELP_TEXT;
+  if (parsed.kind === 'invalid') return '無法辨識股票代碼或清單編號。\n' + HELP_TEXT;
+  if (parsed.kind === 'excluded') return '代碼 1808 已依設定排除，不提供分析。';
+  if (parsed.kind === 'status') {
+    const result = await query(DATA_STATUS_SQL, []);
+    return formatDataStatus(Array.isArray(result?.rows) ? result.rows[0] : null);
+  }
+
+  let code = parsed.code;
+  let selectedMarket = null;
+  if (parsed.kind === 'rank' || parsed.kind === 'list') {
+    const ranking = await query(RANKING_SQL, []);
+    const list = Array.isArray(ranking?.rows) ? ranking.rows : [];
+    const date = list.length ? displayDate(list[0].as_of_date) : '尚無';
+    if (!list.length) return '目前沒有可用的觀察清單評分，請改用四位數股票代碼。';
+    if (parsed.kind === 'list') {
+      const items = list.map((row, i) =>
+        (i + 1) + '. ' + row.stock_id + ' ' + nameText(row.stock_name) +
+        '｜' + number(row.total_score, 1) + ' 分'
+      );
+      return [
+        '評分觀察清單｜資料日：' + date,
+        ...items,
+        '',
+        '回傳 1～10 的序號即可查詢（例如：1、編號 2）。',
+        '清單僅列評分當日有收盤價的候選股票；可能與先前報告不同。',
+        '候選股票分類未完全確認；非即時報價或買賣建議。'
+      ].join('\n').slice(0, 4900);
+    }
+    const selected = list[parsed.rank - 1];
+    if (!selected) return '最新清單只有 ' + list.length +
+      ' 檔；請傳送「清單」查看目前可查的序號。';
+    code = String(selected.stock_id);
+    selectedMarket = String(selected.market);
+    if (EXCLUDED_CODES.has(code)) return '此股票已排除，無法分析。';
+  }
+
+  const result = await query(ANALYSIS_SQL, [code]);
+  let rows = Array.isArray(result?.rows) ? result.rows : [];
+  if (selectedMarket) rows = rows.filter(r => r.market === selectedMarket);
+  if (rows.length === 0) {
+    return '找不到 ' + code + ' 的可用上市／上櫃候選資料。\n' +
+      '請確認代碼或資料是否已建立。';
+  }
+  if (rows.length > 1) {
+    return code + ' 在不同市場有重複代碼，暫不自動選擇，避免分析錯誤。';
+  }
+  return (selectedMarket ? '清單編號 ' + parsed.rank + '｜' : '') +
+    formatStockAnalysis(rows[0]);
+}
+
+function response(text, status) {
+  return new Response(text, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+}
+
+// The caller injects an explicitly read-only DB query and LINE Reply API transport.
+// No webhook events, user identifiers or message bodies are written to Neon.
+export function createWebhookHandler({ query, sendReply, channelSecret, enabled = true }) {
+  return async function fetchHandler(request) {
+    const pathname = new URL(request.url).pathname;
+    if (request.method === 'GET' && pathname === '/health') return response('ok', 200);
+    if (pathname !== '/' && pathname !== '/webhook') return response('Not found', 404);
+    if (request.method !== 'POST') return response('Method not allowed', 405);
+    if (!enabled || !channelSecret) return response('Service unavailable', 503);
+    const contentLength = Number(request.headers.get('content-length'));
+    if (Number.isFinite(contentLength) && contentLength > 256000) return response('Payload too large', 413);
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, 'utf8') > 256000) return response('Payload too large', 413);
+    if (!verifyLineSignature(rawBody, request.headers.get('x-line-signature'), channelSecret)) {
+      return response('Unauthorized', 401);
+    }
+
+    let payload;
+    try { payload = JSON.parse(rawBody); } catch { return response('Invalid JSON', 400); }
+    if (!Array.isArray(payload?.events) || payload.events.length > 20) {
+      return response('Invalid events', 400);
+    }
+    try {
+      for (const event of payload.events) {
+        if (!event || typeof event.replyToken !== 'string' || !event.replyToken) continue;
+        if (event.type !== 'message' && event.type !== 'follow') continue;
+        let message = HELP_TEXT;
+        if (event.type === 'message' && event.message?.type === 'text') {
+          try {
+            message = await buildReplyText(event.message.text, query);
+          } catch {
+            message = '目前無法讀取分析資料，請稍後再試。';
+          }
+        }
+        await sendReply(event.replyToken, message.slice(0, 4900));
+      }
+    } catch {
+      return response('Temporary reply failure', 502);
+    }
+    return response('OK', 200);
+  };
+}

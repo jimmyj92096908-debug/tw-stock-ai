@@ -1,0 +1,18 @@
+{
+  "name": "tw-stock-ai-line-analysis",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Read-only LINE Taiwan stock code analysis endpoint",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "bundle": "node build.mjs",
+    "bundle:candidate": "node build-candidate.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

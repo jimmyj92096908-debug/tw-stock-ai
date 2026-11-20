@@ -33,13 +33,24 @@ def load_report(database_url: str) -> dict[str, Any]:
                 GROUP BY market ORDER BY market
             """, (latest,))
             prices = {r["market"]: int(r["stocks"]) for r in cur.fetchall()}
+            # The price ingestion and composite-score jobs finish at different
+            # times. Use the latest completed score date, never silently
+            # mislabel yesterday's ratings as today's.
+            cur.execute("""
+                SELECT MAX(as_of_date) AS score_date
+                FROM public.daily_composite_scores
+                WHERE as_of_date <= %s AND total_score IS NOT NULL
+            """, (latest,))
+            score_date = cur.fetchone()["score_date"]
             cur.execute("""
                 SELECT COUNT(*) AS rows,
                        COUNT(*) FILTER (WHERE total_score IS NOT NULL) AS scored,
-                       COUNT(*) FILTER (WHERE chip_score IS NOT NULL) AS chip_integrated,
-                       AVG(coverage_weight) AS avg_coverage
+                       COUNT(*) FILTER (WHERE chip_score IS NOT NULL
+                           AND total_score IS NOT NULL) AS chip_integrated,
+                       AVG(coverage_weight) FILTER (
+                           WHERE total_score IS NOT NULL) AS avg_coverage
                 FROM public.daily_composite_scores WHERE as_of_date=%s
-            """, (latest,))
+            """, (score_date,))
             score_stats = cur.fetchone()
             cur.execute("""
                 SELECT MAX(trade_date) AS latest_date, COUNT(*) AS rows
@@ -64,7 +75,7 @@ def load_report(database_url: str) -> dict[str, Any]:
                 WHERE p.trade_date=%s AND p.close IS NOT NULL AND c.total_score IS NOT NULL
                 ORDER BY c.total_score DESC, p.market, p.stock_id
                 LIMIT 10
-            """, (latest,))
+            """, (score_date,))
             top = cur.fetchall()
             cur.execute("""
                 SELECT DISTINCT line_user_id
@@ -73,7 +84,8 @@ def load_report(database_url: str) -> dict[str, Any]:
             """)
             recipients = [r["line_user_id"] for r in cur.fetchall()]
     return {
-        "trade_date": latest, "universe": universe, "prices": prices,
+        "trade_date": latest, "score_date": score_date,
+        "universe": universe, "prices": prices,
         "scores": dict(score_stats), "institutional": dict(institutional),
         "margin": dict(margin), "top": [dict(r) for r in top],
         "recipients": recipients,
@@ -94,6 +106,10 @@ def format_report(data: dict[str, Any]) -> str:
     total_universe = sum(universe.values())
     total_prices = sum(prices.values())
     scores = data["scores"]
+    score_date = data.get("score_date", data["trade_date"])
+    if isinstance(score_date, date):
+        score_date = score_date.isoformat()
+    score_label = str(score_date) if score_date else "尚無可用評分"
     avg_cov = float(scores["avg_coverage"] or 0) * 100
     inst = data["institutional"]
     margin = data["margin"]
@@ -101,6 +117,7 @@ def format_report(data: dict[str, Any]) -> str:
     lines = [
         "AI 台股投資作戰系統｜每日資料報告",
         f"行情交易日：{trade_date}",
+        f"綜合評分資料日：{score_label}",
         "",
         f"行情覆蓋：{total_prices:,}/{total_universe:,} 檔股票",
         f"  上市：{prices.get('twse', 0):,}/{universe.get('twse', 0):,}",
@@ -126,6 +143,11 @@ def format_report(data: dict[str, Any]) -> str:
                 f" 短/波/長 {_fmt_num(row['short_term_score'])}/"
                 f"{_fmt_num(row['swing_score'])}/{_fmt_num(row['long_term_score'])}"
             )
+    if score_date and str(score_date) != str(trade_date):
+        lines += [
+            "",
+            "注意：最新評分與最新行情不是同一交易日；清單收盤價採評分當日資料。",
+        ]
     lines += [
         "",
         "注意：目前日 K 僅覆蓋部分股票；分數不是獲利保證或自動交易指令。",

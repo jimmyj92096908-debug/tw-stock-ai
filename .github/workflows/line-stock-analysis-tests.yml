@@ -1,0 +1,81 @@
+name: LINE Stock Code Analysis Tests
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+    paths:
+      - "line-stock-analysis/**"
+      - ".github/workflows/line-stock-analysis-tests.yml"
+  pull_request:
+    paths:
+      - "line-stock-analysis/**"
+      - ".github/workflows/line-stock-analysis-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: line_ci_test
+          POSTGRES_USER: line_ci_test
+          POSTGRES_PASSWORD: ci-disposable-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U line_ci_test -d line_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install LINE function dependencies
+        working-directory: line-stock-analysis
+        run: npm install --no-audit --no-fund
+      - name: Test LINE stock command and signed webhook
+        working-directory: line-stock-analysis
+        env:
+          # Disconnected, ephemeral PostgreSQL service started above. NEVER Neon.
+          LINE_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
+        run: npm test
+      - name: Check syntax of runtime entrypoints (candidate is not deployed)
+        run: |
+          node --check line-stock-analysis/index.mjs
+          node --check line-stock-analysis/single-account-entry.mjs
+          node --check line-stock-analysis/single-account-candidate.mjs
+          node --check line-stock-analysis/single-account-gateway.mjs
+          node --check line-stock-analysis/delivery-state.mjs
+      - name: Build self-contained Neon Node.js function
+        working-directory: line-stock-analysis
+        run: npm run bundle
+      - name: Verify bundled function has valid syntax
+        run: node --check line-stock-analysis/dist/index.mjs
+      - name: Build disabled single-account candidate (never deployed or uploaded)
+        working-directory: line-stock-analysis
+        run: npm run bundle:candidate
+      - name: Check disabled candidate bundle and fail-closed behavior
+        working-directory: line-stock-analysis
+        run: |
+          node --check candidate-dist/index.mjs
+          node --input-type=module -e "import candidate from './candidate-dist/index.mjs'; const r = await candidate.fetch(new Request('https://example.invalid/webhook', {method: 'POST', body: '{\"events\":[]}'})); if (r.status !== 503) process.exit(1);"
+      - name: Package deployment artifact (does not deploy)
+        run: |
+          cd line-stock-analysis/dist
+          zip -q deployment.zip index.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: line-stock-analysis-neon-deployment
+          path: line-stock-analysis/dist/deployment.zip
+          if-no-files-found: error
+          retention-days: 7

@@ -124,6 +124,24 @@ def combine_scores(components, minimum_coverage=MIN_COVERAGE, weights=WEIGHTS):
     score = round(sum(weights[k]*v for k,v in available.items())/coverage,2)
     return (score if coverage >= minimum_coverage else None), coverage
 
+SCORABLE_STOCKS_SQL = """
+SELECT DISTINCT t.market,t.stock_id
+FROM daily_technicals t
+JOIN daily_prices p USING (market,stock_id,trade_date)
+WHERE p.close IS NOT NULL
+ORDER BY t.market,t.stock_id
+"""
+
+LATEST_VALID_TECH_SQL = """
+SELECT p.trade_date,p.close,t.ma5,t.ma10,t.ma13,t.ma20,
+       t.ma34,t.ma55,t.ma60,t.ma120,t.ma240,
+       t.rsi14,t.volume_ma5,t.volume_ma20
+FROM daily_prices p
+JOIN daily_technicals t USING (market,stock_id,trade_date)
+WHERE p.market=%s AND p.stock_id=%s AND p.close IS NOT NULL
+ORDER BY p.trade_date DESC LIMIT 1
+"""
+
 def calculate_all(database_url):
     upsert = """INSERT INTO daily_composite_scores
     (market,stock_id,as_of_date,total_score,coverage_weight,technical_score,smc_score,chip_score,
@@ -139,14 +157,10 @@ def calculate_all(database_url):
     count=0
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
-            cur.execute("""SELECT DISTINCT market,stock_id FROM daily_prices
-                           WHERE stock_id IN ('6213','8937','4919','7827') ORDER BY market,stock_id""")
+            cur.execute(SCORABLE_STOCKS_SQL)
             stocks=cur.fetchall()
             for market,stock_id in stocks:
-                cur.execute("""SELECT p.trade_date,p.close,t.ma5,t.ma10,t.ma13,t.ma20,t.ma34,t.ma55,t.ma60,t.ma120,t.ma240,
-                    t.rsi14,t.volume_ma5,t.volume_ma20
-                    FROM daily_prices p LEFT JOIN daily_technicals t USING (market,stock_id,trade_date)
-                    WHERE p.market=%s AND p.stock_id=%s ORDER BY p.trade_date DESC LIMIT 1""",(market,stock_id))
+                cur.execute(LATEST_VALID_TECH_SQL,(market,stock_id))
                 tr=cur.fetchone()
                 if not tr: continue
                 keys=("trade_date","close","ma5","ma10","ma13","ma20","ma34","ma55","ma60","ma120","ma240","rsi14","volume_ma5","volume_ma20")
@@ -161,7 +175,8 @@ def calculate_all(database_url):
                 smc_row=dict(zip(smc_keys,sr)) if sr else None
                 smc,s_status=smc_score(smc_row)
                 cur.execute("""SELECT total_score,coverage_weight,as_of_date FROM daily_chip_scores
-                    WHERE market=%s AND stock_id=%s ORDER BY as_of_date DESC LIMIT 1""",(market,stock_id))
+                    WHERE market=%s AND stock_id=%s AND as_of_date<=%s
+                    ORDER BY as_of_date DESC LIMIT 1""",(market,stock_id,tr[0]))
                 cr=cur.fetchone()
                 chip=None
                 chip_status={"status":"MISSING"}
@@ -170,6 +185,8 @@ def calculate_all(database_url):
                 elif cr:
                     chip_status={"status":"INSUFFICIENT_SOURCE_COVERAGE","as_of_date":str(cr[2]),"source_coverage":float(cr[1])}
                 total,coverage=combine_scores({"technical":tech,"smc":smc,"chip":chip})
+                if total is None:
+                    continue  # Score requires a minimum of verified factor coverage.
                 horizon_results={}
                 for horizon in HORIZONS:
                     ht,ht_status=horizon_technical_score(tech_row,horizon)
