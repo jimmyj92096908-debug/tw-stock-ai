@@ -40,6 +40,27 @@ function response(message,status) {
   return new Response(message,{status,headers:{'content-type':'text/plain; charset=utf-8'}});
 }
 
+// LINE redelivery is handled across requests by persistent delivery state.
+// Within a *single* signed batch, however, reusing one webhookEventId or
+// replyToken across different events could split a single reply between
+// stock and legacy handlers. Reject the entire ambiguous batch before any
+// downstream SQL/HTTP work. Do not require IDs on unknown legacy events:
+// the previous handler owns their compatibility behavior.
+export function hasDuplicateReplyIdentity(events) {
+  const ids=new Set(),tokens=new Set();
+  for(const event of events) {
+    for(const [field,seen] of [
+      ['webhookEventId',ids],['replyToken',tokens]
+    ]) {
+      const value=event?.[field];
+      if(typeof value!=='string' || value.length===0) continue;
+      if(seen.has(value)) return true;
+      seen.add(value);
+    }
+  }
+  return false;
+}
+
 function repackage(payload,events,secret) {
   const body=JSON.stringify({...payload,events});
   const signature=createHmac('sha256',secret).update(body,'utf8').digest('base64');
@@ -90,6 +111,8 @@ export function createSingleAccountGateway({
     try {payload=JSON.parse(rawBody);}catch{return response('Invalid JSON',400);}
     if(!Array.isArray(payload?.events) || payload.events.length>20)
       return response('Invalid events',400);
+    if(hasDuplicateReplyIdentity(payload.events))
+      return response('Duplicate event identity',400);
 
     const stocks=[],legacy=[];
     for (const event of payload.events) {
