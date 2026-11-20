@@ -23,6 +23,25 @@ class LiveDataWorkflowGuardTests(unittest.TestCase):
         self.assertIn("github.repository == 'jimmyj92096908-debug/tw-stock-ai'", workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
 
+    def test_dated_twse_history_is_limited_and_manual_default_is_dry_run(self):
+        workflow=self._read("daily-twse-dated-history.yml")
+        self.assertIn('cron: "50 17 * * 1-5"',workflow)
+        self.assertIn("default: false",workflow)
+        self.assertIn('STOCK_TWSE_HISTORY_WRITE_ENABLED: "yes"',workflow)
+        self.assertIn("--apply --batch-days 8 --lookback-days 366",workflow)
+        self.assertIn("github.ref == 'refs/heads/main'",workflow)
+        self.assertIn("tests.test_twse_dated_history",workflow)
+
+    def test_indicator_requires_successful_scheduled_history_and_deep_sessions(self):
+        workflow=self._read("daily-indicator-catchup.yml")
+        self.assertIn('TWSE Dated Bulk Historical Price Backfill',workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'",workflow)
+        self.assertIn("github.event.workflow_run.event == 'schedule'",workflow)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'",workflow)
+        self.assertIn("--apply --per-market 20",workflow)
+        self.assertIn('STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"',workflow)
+        self.assertIn("default: false",workflow)
+
     def test_score_recompute_requires_successful_official_feed(self):
         workflow = self._read("composite-after-market-refresh.yml")
         self.assertIn('Official Taiwan Market Daily Snapshot (Authorized)', workflow)

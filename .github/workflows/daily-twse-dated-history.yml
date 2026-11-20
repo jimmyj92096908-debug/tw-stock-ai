@@ -1,0 +1,51 @@
+name: TWSE Dated Bulk Historical Price Backfill
+
+on:
+  schedule:
+    # 01:50 Asia/Taipei Tue-Sat, after official market snapshot.
+    - cron: "50 17 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "手動是否回補缺漏交易日？預設只預覽"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-dated-twse-history
+  cancel-in-progress: false
+
+jobs:
+  historical-market:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate parser, session cap and no-overwrite guarantees
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m py_compile src/twse_dated_history.py
+          python -m unittest tests.test_twse_dated_history tests.test_official_market_feed -v
+      - name: Preview one official dated session without writes
+        run: python src/twse_dated_history.py --batch-days 1 --lookback-days 366
+      - name: Import at most 8 official TWSE dates with explicit write gate
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_TWSE_HISTORY_WRITE_ENABLED: "yes"
+        run: python src/twse_dated_history.py --apply --batch-days 8 --lookback-days 366
+      - name: Show manual dry-run result
+        if: github.event_name == 'workflow_dispatch' && inputs.apply != true
+        run: echo "Dry run only; market history not modified."
