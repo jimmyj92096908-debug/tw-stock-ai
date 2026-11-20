@@ -1,7 +1,10 @@
 import unittest
 from datetime import date
+from unittest.mock import patch
+import os
+import sys
 
-from src.send_line_report import format_report
+from src.send_line_report import format_report, validate_send_readiness, main
 
 
 class LineReportTests(unittest.TestCase):
@@ -79,6 +82,62 @@ class LineReportTests(unittest.TestCase):
         self.assertIn("綜合評分資料日：尚無可用評分", message)
         self.assertIn("目前沒有符合條件", message)
 
+
+    def test_live_push_blocks_partial_day_before_send(self):
+        data = {
+            "prices": {"twse": 5, "tpex": 6},
+            "universe": {"twse": 1093, "tpex": 898},
+            "previous_prices_count": 1966,
+        }
+        with self.assertRaisesRegex(RuntimeError, "阻止 LINE 推播"):
+            validate_send_readiness(data)
+
+    def test_normal_coverage_passes_send_gate(self):
+        data = {
+            "prices": {"twse": 1090, "tpex": 876},
+            "universe": {"twse": 1093, "tpex": 898},
+            "previous_prices_count": 1108,
+        }
+        self.assertIsNone(validate_send_readiness(data))
+
+    def test_missing_previous_day_severely_incomplete_still_blocks(self):
+        data = {
+            "prices": {"twse": 5, "tpex": 6},
+            "universe": {"twse": 1093, "tpex": 898},
+            "previous_prices_count": 0,
+        }
+        with self.assertRaisesRegex(RuntimeError, "阻止 LINE 推播"):
+            validate_send_readiness(data)
+
+    def test_live_main_never_calls_line_push_if_prices_incomplete(self):
+        data = {
+            "prices": {"twse": 5, "tpex": 6},
+            "universe": {"twse": 1093, "tpex": 898},
+            "previous_prices_count": 1966,
+        }
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://placeholder.invalid/test",
+                                     "LINE_CHANNEL_ACCESS_TOKEN": "dummy-token"}), \
+             patch.object(sys, "argv", ["send_line_report.py"]), \
+             patch("src.send_line_report.load_report", return_value=data), \
+             patch("src.send_line_report.format_report", return_value="Offline report"), \
+             patch("src.send_line_report.send_report") as push:
+            with self.assertRaisesRegex(RuntimeError, "阻止 LINE 推播"):
+                main()
+            push.assert_not_called()
+
+    def test_dry_run_still_prints_partial_data_without_line_push(self):
+        data = {
+            "prices": {"twse": 5, "tpex": 6},
+            "universe": {"twse": 1093, "tpex": 898},
+            "previous_prices_count": 1966,
+        }
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://placeholder.invalid/test"}), \
+             patch.object(sys, "argv", ["send_line_report.py", "--dry-run"]), \
+             patch("src.send_line_report.load_report", return_value=data), \
+             patch("src.send_line_report.format_report", return_value="Offline report"), \
+             patch("src.send_line_report.send_report") as push:
+            self.assertIsNone(main())
+            push.assert_not_called()
 
 
 if __name__ == "__main__":
