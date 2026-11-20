@@ -6,6 +6,8 @@
 
 開啟 [First-Stage Research Report (Read-Only)](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/workflows/first-stage-report.yml)，選擇主分支 `main`，按 **Run workflow**。工作流程也預定每週二至週六台灣時間 04:45 執行，使用**現有** GitHub Actions 受保護的 `DATABASE_URL`。
 
+此外，已授權的正式市場行情或技術／SMC 排程成功後，會自動重算綜合評分；**只有該自動綜合評分工作流程成功時**，研究報告也會接著唯讀重新產生一次。它仍保留原有週二至週六台灣時間 04:45 的獨立排程，作為前段排程延遲或事件沒有觸發時的補充；兩種研究報告執行均不寫入 Neon。這段串接不會在綜合評分工作失敗、手動評分、PR 或其他不可信來源成功時自動出版報告。
+
 工作流程先跑獨立格式檢查及完整 Python 測試，通過後才會：唯讀查詢行情健康度、用已保存的模型係數重新排名、組合報告、上傳 **twstock-first-stage-research-report**。打開該次執行紀錄，在 Artifacts 點報告壓縮檔，解壓縮後用瀏覽器開啟 `research-report.html`；`research-report.md` 同時顯示在 Actions 的 Summary，`research-report.json` 可供程式讀取。
 
 工作流程不需要 LINE 密碼、LINE 使用者 ID 或新 Webhook；不修改任何 Neon 資料表，SQL 使用 `SET TRANSACTION READ ONLY`。如資料庫密碼不存在、資料日期不一致或模型風險閘門不符，執行會失敗並留下明確原因，**不發布假報告**。

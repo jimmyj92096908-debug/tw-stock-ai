@@ -5,17 +5,27 @@ on:
     paths:
       - "scripts/render_first_stage_report.py"
       - "tests/test_first_stage_report.py"
+      - "tests/test_report_after_score_trigger.py"
       - ".github/workflows/first-stage-report.yml"
   push:
     branches: ["main"]
     paths:
       - "scripts/render_first_stage_report.py"
       - "tests/test_first_stage_report.py"
+      - "tests/test_report_after_score_trigger.py"
       - ".github/workflows/first-stage-report.yml"
   workflow_dispatch:
   schedule:
-    # 04:45 Asia/Taipei Tuesday-Saturday after overnight official data jobs.
+    # 04:45 Asia/Taipei Tuesday-Saturday fallback, including cron delays.
     - cron: "45 20 * * 1-5"
+  # Only after a successful AUTOMATIC composite refresh, never after a
+  # failed workflow or an unapproved manual score job. The source is a
+  # workflow_run on the scheduled indicator or official market snapshot;
+  # this report remains non-writing and does not spawn another workflow.
+  workflow_run:
+    workflows:
+      - "Composite Scores After Verified Official Snapshot"
+    types: [completed]
 
 permissions:
   contents: read
@@ -40,7 +50,7 @@ jobs:
       - name: Compile and verify read-only report rendering
         run: |
           python -m py_compile scripts/render_first_stage_report.py
-          python -m unittest tests.test_first_stage_report -v
+          python -m unittest tests.test_first_stage_report tests.test_report_after_score_trigger -v
       - name: Run existing full Python regression tests
         env:
           PYTHONPATH: src
@@ -51,7 +61,19 @@ jobs:
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
-      github.event_name != 'pull_request'
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'schedule' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name == 'Composite Scores After Verified Official Snapshot' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.repository.full_name == github.repository &&
+          github.event.workflow_run.event == 'workflow_run'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
