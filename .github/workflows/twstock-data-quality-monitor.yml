@@ -64,6 +64,12 @@ jobs:
           if universe<=0: raise SystemExit("No candidate stocks; audit invalid")
           q=audit["quality"]
           ready=audit["analysis_readiness"]
+          backlog=audit["indicator_backlog"]
+          pending=sum(int(m["pending"]) for m in backlog)
+          eligible=sum(int(m["eligible"]) for m in backlog)
+          if any(int(m["eligible"])!=int(m["pending"])+int(m["complete"])
+                 or int(m["unstarted"])>int(m["pending"]) for m in backlog):
+              raise SystemExit("Indicator backlog inconsistent; audit invalid")
           fields=(
               "invalid_close","negative_volume","inverted_high_low",
               "close_above_high","close_below_low","future_price_date",
@@ -80,6 +86,9 @@ jobs:
               f"- Technical/SMC stocks: {ready['technical_stocks']:,}/{ready['smc_stocks']:,}",
               f"- Stocks with score: {ready['scored_stocks']:,} of {covered:,} historical-price stocks",
               f"- Scored on latest global price date: {ready['scored_latest_price_day']:,}",
+              f"- Fresh 60+ session indicator backlog: {pending:,}/{eligible:,} eligible TWSE/TPEx stocks",
+              *[f"- {m['market']} indicators pending/complete: {m['pending']}/{m['complete']} (unstarted {m['unstarted']})" for m in backlog],
+              "- Pending counts are real read-only DB state, not an assertion that any backfill occurred.",
               f"- Basic invalid OHLC/score checks: {bad}",
               "- This is a read-only database integrity check, not an investment recommendation."
           ]
