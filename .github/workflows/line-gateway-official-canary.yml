@@ -1,0 +1,41 @@
+name: LINE Gateway Official Signed Test (Manual Only)
+on:
+  workflow_dispatch:
+    inputs:
+      run_test:
+        description: "Send one official signed empty test event to the isolated gateway (never changes LINE Webhook URL)"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && inputs.run_test != true
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Preview only. No LINE call was made; set run_test=true after the new Neon gateway credentials are configured."
+
+  signed-empty-event:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main' && inputs.run_test == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_CANARY_TEST_ENABLED: "yes"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate opt-in and no-mutation contract offline
+        run: python -m unittest tests.test_line_gateway_canary -v
+      - name: Ask LINE to send one signed empty test event to isolated gateway
+        run: |
+          if [ -z "$LINE_CHANNEL_ACCESS_TOKEN" ]; then
+            echo "::error::LINE_CHANNEL_ACCESS_TOKEN unavailable"
+            exit 1
+          fi
+          python scripts/line_gateway_canary.py --apply
