@@ -36,7 +36,7 @@ class LiveDataWorkflowGuardTests(unittest.TestCase):
         workflow=self._read("daily-indicator-catchup.yml")
         # A second automatic workflow_run source could write twice/day.
         self.assertIn('cron: "10 19 * * 1-5"',workflow)
-        self.assertNotIn("\\n  workflow_run:",workflow)
+        self.assertNotIn("\n  workflow_run:",workflow)
         self.assertIn("github.event_name == 'schedule'",workflow)
         self.assertIn("github.ref == 'refs/heads/main'",workflow)
         self.assertIn("github.repository == 'jimmyj92096908-debug/tw-stock-ai'",workflow)
