@@ -4,7 +4,7 @@ from datetime import date
 
 from src.stock_db_audit import (
     COVERAGE_SQL, GLOBAL_DATES_SQL, SCORE_MATCH_SQL, SAMPLES_SQL,
-    REFRESH_STATUS_SQL, QUALITY_SQL, collect_audit, format_audit, iso_date,
+    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, collect_audit, format_audit, iso_date,
 )
 
 
@@ -40,6 +40,13 @@ class _Cursor:
             return {
                 "score_date": date(2026, 11, 18),
                 "scored": 18, "matched_price": 17, "missing_price": 1,
+            }
+        if self.sql == ANALYSIS_READINESS_SQL:
+            return {
+                "history_60d": 30, "history_120d": 20,
+                "history_240d": 18, "technical_stocks": 18,
+                "smc_stocks": 18, "scored_stocks": 15,
+                "scored_latest_price_day": 12,
             }
         if self.sql == QUALITY_SQL:
             return {
@@ -93,7 +100,7 @@ class StockAuditTests(unittest.TestCase):
         self.assertEqual(result["latest"]["latest_score_date"], "2026-11-18")
         self.assertEqual(result["score"]["matched_price"], 17)
         self.assertEqual(result["samples"][0]["last_price"], "2026-10-30")
-        self.assertEqual(len(conn.cur.calls), 7)
+        self.assertEqual(len(conn.cur.calls), 8)
         self.assertEqual(conn.cur.calls[1][1], (date(2026, 11, 19),))
         self.assertEqual(conn.cur.calls[3][1], (["2330", "6488", "6213"],))
 
@@ -105,12 +112,15 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("價格資料品質：共 49,392 筆；異常條件命中 0 次", output)
         self.assertIn("評分資料品質：共 37,118 筆；異常條件命中 0 次", output)
         self.assertIn("最新行情日與最新評分日不同", output)
+        self.assertIn("至少 60 日 30 檔、120 日 20 檔、240 日 18 檔", output)
+        self.assertIn("技術指標 18 檔／SMC 18 檔／有效評分 15 檔", output)
+        self.assertIn("有收盤行情不等於分析指標", output)
 
     def test_optional_refresh_table_can_be_absent(self):
         conn = _Connection(refresh_exists=False)
         snapshot = collect_audit(conn)
         self.assertEqual(snapshot["refresh_state"], [])
-        self.assertEqual(len(conn.cur.calls), 6)
+        self.assertEqual(len(conn.cur.calls), 7)
 
     def test_quality_warnings_report_flagged_rows(self):
         snapshot = collect_audit(_Connection())
