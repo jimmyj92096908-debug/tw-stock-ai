@@ -97,6 +97,25 @@ WITH p AS (
 SELECT * FROM p CROSS JOIN s
 """
 
+
+ANALYSIS_READINESS_SQL = """
+SELECT
+ (SELECT COUNT(*)::int FROM (SELECT market,stock_id FROM public.daily_prices
+   WHERE close IS NOT NULL GROUP BY market,stock_id HAVING COUNT(*) >= 60) x) AS history_60d,
+ (SELECT COUNT(*)::int FROM (SELECT market,stock_id FROM public.daily_prices
+   WHERE close IS NOT NULL GROUP BY market,stock_id HAVING COUNT(*) >= 120) x) AS history_120d,
+ (SELECT COUNT(*)::int FROM (SELECT market,stock_id FROM public.daily_prices
+   WHERE close IS NOT NULL GROUP BY market,stock_id HAVING COUNT(*) >= 240) x) AS history_240d,
+ (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_technicals) AS technical_stocks,
+ (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_smc) AS smc_stocks,
+ (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_composite_scores
+   WHERE total_score IS NOT NULL) AS scored_stocks,
+ (SELECT COUNT(DISTINCT (market,stock_id))::int FROM public.daily_composite_scores
+   WHERE total_score IS NOT NULL
+     AND as_of_date = (SELECT MAX(trade_date) FROM public.daily_prices WHERE close IS NOT NULL)
+ ) AS scored_latest_price_day
+"""
+
 REFRESH_STATUS_SQL = """
 SELECT CASE WHEN last_attempt_at IS NULL THEN 'never_attempted'
   ELSE last_status END AS status, COUNT(*)::int AS total
@@ -135,6 +154,8 @@ def collect_audit(conn: Any) -> dict[str, Any]:
             refresh = [dict(row) for row in cur.fetchall()]
         cur.execute(QUALITY_SQL)
         quality = dict(cur.fetchone())
+        cur.execute(ANALYSIS_READINESS_SQL)
+        readiness = dict(cur.fetchone())
 
     return {
         "latest": {name: iso_date(value) for name, value in dict(dates).items()},
@@ -146,6 +167,7 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         ],
         "refresh_state": refresh,
         "quality": quality,
+        "analysis_readiness": readiness,
     }
 
 
@@ -200,6 +222,19 @@ def format_audit(audit: dict[str, Any]) -> str:
         )
         if price_issue_count or score_issue_count:
             lines.append("警告：發現行情或評分欄位異常，請先排查來源資料。")
+    readiness = audit.get("analysis_readiness")
+    if readiness is not None:
+        lines.append(
+            "歷史行情完整度：至少 60 日 {history_60d} 檔、"
+            "120 日 {history_120d} 檔、240 日 {history_240d} 檔".format(**readiness)
+        )
+        lines.append(
+            "技術指標 {technical_stocks} 檔／SMC {smc_stocks} 檔／"
+            "有效評分 {scored_stocks} 檔；最新行情日有評分 "
+            "{scored_latest_price_day} 檔".format(**readiness)
+        )
+        if readiness["scored_stocks"] < total_priced:
+            lines.append("注意：有收盤行情不等於分析指標／評分已補齊。")
     if latest["latest_price_date"] != latest["latest_score_date"]:
         lines.append("提醒：最新行情日與最新評分日不同，請勿混用。")
     if total_universe and total_priced < total_universe:
