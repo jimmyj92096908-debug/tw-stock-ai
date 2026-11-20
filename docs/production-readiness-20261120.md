@@ -1,0 +1,112 @@
+# 台股 AI 專案：正式環境與 LINE 整合驗收（2026-11-20）
+
+> 本文件依實際 Neon、LINE Messaging API、GitHub Actions 查詢及 CI 結果整理。文件中的查核結果有時間性；**程式已合併不代表 LINE 已正式切換**。
+
+## 1. 現行架構
+
+```text
+台灣證交所 TWSE / 櫃買中心 TPEx 官方資料
+              │
+              ▼
+  GitHub Actions 限額下載＋資料日期校驗
+              │
+              ▼
+       Neon PostgreSQL twstock
+       ├── stock_master
+       ├── daily_prices
+       ├── daily_adjusted_prices
+       ├── daily_technicals
+       ├── daily_smc
+       ├── daily_composite_scores
+       ├── line_messages (原本日報收件者資料來源)
+       └── line_reply_delivery (Webhook 回覆去重狀態)
+              │
+      ┌───────┴────────────────┐
+      ▼                        ▼
+GitHub Actions LINE 日報    LINE 股票查詢候選閘道
+（原流程保留）           linestockgateway (預設停用)
+                               │
+                   ┌───────────┴────────────┐
+                   ▼                        ▼
+              股票指令                    其他事件
+           讀取 twstock               轉送原 linewebhook
+```
+
+**目前正式 LINE Developers Webhook URL 仍指向原始函式**，新閘道不會收到真實事件。
+
+## 2. 正式資料庫已核對數據
+
+| 分類 | 2026-11-20 核對結果 |
+| --- | ---: |
+| 候選股票名單 | 1,991 |
+| 至少一個有效收盤行情日 | 1,968 |
+| 日 K 明細 | 121,832 |
+| 至少 60 個有效收盤日 | 1,104 |
+| 至少 120 個有效收盤日 | 38 |
+| 至少 240 個有效收盤日 | 38 |
+| 有技術指標 | 144 |
+| 有 SMC | 144 |
+| 曾有有效綜合評分 | 144 |
+| 最新可用行情與綜合評分日期 | 2026-11-19 |
+
+**歷史價格覆蓋 ≠ 全部指標完整**。部分股票只有 60 日，可計算某些短／中期指標，無法據此聲稱具有完整 120／240 日訊號。新版 LINE `資料狀態` 指令已分別標示以上涵蓋情況。
+
+## 3. 已建置且保留的排程
+
+- `daily-official-market-snapshot.yml`：官方每日全市場價格補入（不能造價）。
+- `daily-twse-dated-history.yml`：有配額的證交所全市場歷史日期回補，每次最多 8 個日期；手動預設 dry run。
+- `daily-bounded-history-enrichment.yml`：有配額的逐檔歷史資料補齊，避免影響官方來源。
+- `daily-indicator-catchup.yml`：已儲存至少 60 個有效行情日後才補調整價格、技術指標與 SMC。
+- `composite-after-market-refresh.yml`：於符合來源／分支／工作成功條件後重算評分；手動預設不寫入。
+- `daily-line-report.yml`：原本 LINE 日報排程，沿用原有收件者紀錄、去重與每日報表。
+- `twstock-data-quality-monitor.yml`：唯讀檢查資料涵蓋、基本 OHLC、評分與日期異常；增加**獨立排程**，避免 GitHub `workflow_run` 連鎖觸發深度限制使監控漏跑。
+
+GitHub cron 是已設定的工作，不代表未來每次都已成功；請以 GitHub Actions 的成功／失敗紀錄為準。
+
+## 4. LINE 正式端點（已從官方 GET API 直接查核）
+
+- LINE Messaging API `GET /v2/bot/channel/webhook/endpoint` 實際回傳 `active=true`。
+- 目前正式 Webhook：`https://br-purple-smoke-a1t9dmzz-linewebhook.compute.c-1.ap-southeast-1.aws.neon.tech/`，原本 `linewebhook` Deployment 4。
+- 新版隔離閘道：`https://br-purple-smoke-a1t9dmzz-linestockgateway.compute.c-1.ap-southeast-1.aws.neon.tech/`，Deployment 1。
+- 新閘道已部署 Node.js 24 自包含程式；**未配置正式執行憑證、預設不啟用**：`GET /health` 為 HTTP 200；無效／未啟用的 `POST /webhook` 為 HTTP 503。尚無實際 LINE 回覆。
+- 舊版 HMAC 空事件驗證：無效簽章 HTTP 401、有效簽章 HTTP 200，未送出 LINE 訊息。
+
+## 5. 正式啟用所需安全設定（尚未完成）
+
+Neon 新閘道環境變數須使用**受保護的部署環境**配置，不應出現在 GitHub 原始碼、CI 輸出、日誌或聊天紀錄。
+
+| 環境變數 | 用途 |
+| --- | --- |
+| `LINE_CHANNEL_SECRET` | 同一個官方帳號的 LINE 簽章驗證 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | 官方帳號 Reply API |
+| `LINE_STOCK_READ_DATABASE_URL` | Neon `line_stock_reader`（股票表 SELECT） |
+| `LINE_LOG_WRITE_DATABASE_URL` | Neon `line_stock_delivery`（必要訊息欄位和回覆狀態） |
+| `LINE_LEGACY_WEBHOOK_URL` | 上列已確認的原始 `linewebhook` 完整 URL |
+| `LINE_SINGLE_ACCOUNT_ENABLED` | 預設不設；驗收通過才改 `true` |
+
+已在 Neon 正式資料庫驗證專用讀、寫角色的欄位層級權限；查詢角色無權讀 LINE 私人訊息，收件寫入角色無權 SELECT 訊息全文或刪除行情。 `line_reply_delivery` 表已存在，但正式使用者事件的端到端流程還沒通過。
+
+**不能使用 Neon 管理員 DATABASE_URL 冒充受限角色，更不能把憑證印進 GitHub Actions log。**
+
+## 6. 安全上線順序
+
+1. 確認正式 DB 備份分支、舊版原始 URL、原本每日報告 CI 及收件者紀錄正常。
+2. 只在獨立 `linestockgateway` 函式內配置受保護的 LINE／PostgreSQL 專用憑證；不改原始 `linewebhook` 或 LINE Developers 設定。
+3. 測試新閘道 HMAC：無效簽章 401；官方空事件測試 200；混合事件可重新簽名轉送舊函式；錯誤時不可靜默吞事件。
+4. 由實際管理者控制的測試 LINE 帳號驗證 `2330`、`清單`、`1`、`資料狀態`、`說明`、`1808` 排除及一般文字的回覆；檢查 event ID 去重、有效 token、原本 LINE User ID 日報收件紀錄。
+5. 確認可以重跑每日報告 dry run、原始 Webhook 可回復，再用 LINE 官方設定 API 切換到新閘道。保留 LINE Webhook redelivery 原本設定。
+6. 如遇真實事件無回覆，**先將 LINE 官方 Webhook URL 恢復上列原始 URL**；先維護使用者收件體驗，再排查新閘道，勿只關掉閘道 enable flag（會造成 503）。
+
+為確保回復能力，新增：
+- `scripts/line_webhook_control.py`：預設只用官方 API 查詢既有 Webhook 是否仍為原版；`restore` 需 `--apply` 及額外寫入 gate，目標 URL 永遠固定在已核實原址，修改後重新 GET 驗證。
+- `.github/workflows/line-webhook-inspect-restore.yml`：**只有手動觸發**，預設 `inspect`、`apply=false`；回復需明確選擇 `restore` 且 apply true；不存在自動切換至未經驗證端點的流程。
+- 對應 `tests/test_line_webhook_control.py` 和 `tests/test_line_webhook_workflow.py` 無網路安全測試。
+
+## 7. 專案可用範圍與尚待完成
+
+- **已可實際使用：** 正式 twstock 資料、行情回補與計算排程、原本 LINE Webhook／每日報告、可在資料庫讀取的股票分析 SQL、資料監控。
+- **已部署但尚未對外啟用：** 與原本 LINE 帳號整合的分流閘道 `linestockgateway`，其原始碼、獨立 bundle 與 CI。
+- **阻礙完全上線：** 新閘道受保護憑證尚未設定，因此無法做真實 LINE Reply API 的端到端驗收，也尚未將 LINE 官方 Webhook URL 切換。無法用「空事件 HMAC 測試成功」替代真實指令及每日報表收件者驗收。
+- **長期資料工作：** 補齊更多 120／240 個交易日的官方歷史行情；目前 144 檔具有效評分、並非 1,968 檔全部有可信分析資料。
+
+此文件以**最小權限、保留舊版功能、可回復、資料不足明示**為正式上線門檻。

@@ -1,6 +1,11 @@
 name: TW Stock Data Quality Monitor (Read-Only)
 
 on:
+  # Independent scheduled fallback. GitHub limits the depth of workflow_run
+  # chains; a source -> indicator -> score -> audit chain can otherwise stop.
+  schedule:
+    # 04:00 Asia/Taipei Tue-Sat, after the limited overnight history pipeline.
+    - cron: "0 20 * * 1-5"
   workflow_run:
     workflows:
       - "Composite Scores After Verified Official Snapshot"
@@ -22,6 +27,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (
         github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_run' &&
          github.event.workflow_run.conclusion == 'success' &&
          github.event.workflow_run.head_branch == 'main' &&

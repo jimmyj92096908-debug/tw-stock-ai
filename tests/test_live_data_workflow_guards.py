@@ -55,6 +55,10 @@ class LiveDataWorkflowGuardTests(unittest.TestCase):
         workflow = self._read("twstock-data-quality-monitor.yml")
         self.assertIn("TW Stock Data Quality Monitor (Read-Only)", workflow)
         self.assertIn("Composite Scores After Verified Official Snapshot", workflow)
+        # A -> B -> C -> D workflow_run chain exceeds GitHub's supported
+        # nesting; keep an independent read-only schedule as a fallback.
+        self.assertIn('cron: "0 20 * * 1-5"', workflow)
+        self.assertIn("github.event_name == 'schedule'", workflow)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
         self.assertIn("python src/stock_db_audit.py --json", workflow)
         self.assertIn("covered/universe < 0.95", workflow)

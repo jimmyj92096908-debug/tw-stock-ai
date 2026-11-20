@@ -69,6 +69,17 @@ jobs:
         run: |
           node --check candidate-dist/index.mjs
           node --input-type=module -e "import candidate from './candidate-dist/index.mjs'; const r = await candidate.fetch(new Request('https://example.invalid/webhook', {method: 'POST', body: '{\"events\":[]}'})); if (r.status !== 503) process.exit(1);"
+      - name: Package disabled single-account gateway candidate for controlled staging
+        working-directory: line-stock-analysis
+        run: |
+          cd candidate-dist
+          zip -q ../single-account-gateway-candidate.zip index.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: line-single-account-gateway-candidate-NOT-DEPLOYED
+          path: line-stock-analysis/single-account-gateway-candidate.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Package deployment artifact (does not deploy)
         run: |
           cd line-stock-analysis/dist
