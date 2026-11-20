@@ -57,6 +57,7 @@ jobs:
           covered=sum(int(r["priced"]) for r in rows)
           if universe<=0: raise SystemExit("No candidate stocks; audit invalid")
           q=audit["quality"]
+          ready=audit["analysis_readiness"]
           fields=(
               "invalid_close","negative_volume","inverted_high_low",
               "close_above_high","close_below_low","future_price_date",
@@ -68,6 +69,11 @@ jobs:
               f"- Candidate stocks with history: {covered:,}/{universe:,} ({covered/universe:.1%})",
               f"- Last price date: {audit['latest']['latest_price_date']}",
               f"- Last score date: {audit['latest']['latest_score_date']}",
+              f"- Stocks with 60 real trading sessions: {ready['history_60d']:,}",
+              f"- Stocks with 120/240 sessions: {ready['history_120d']:,}/{ready['history_240d']:,}",
+              f"- Technical/SMC stocks: {ready['technical_stocks']:,}/{ready['smc_stocks']:,}",
+              f"- Stocks with score: {ready['scored_stocks']:,} of {covered:,} historical-price stocks",
+              f"- Scored on latest global price date: {ready['scored_latest_price_day']:,}",
               f"- Basic invalid OHLC/score checks: {bad}",
               "- This is a read-only database integrity check, not an investment recommendation."
           ]
