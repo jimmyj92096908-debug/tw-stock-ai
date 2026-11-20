@@ -110,3 +110,16 @@ Neon 新閘道環境變數須使用**受保護的部署環境**配置，不應�
 - **長期資料工作：** 補齊更多 120／240 個交易日的官方歷史行情；目前 144 檔具有效評分、並非 1,968 檔全部有可信分析資料。
 
 此文件以**最小權限、保留舊版功能、可回復、資料不足明示**為正式上線門檻。
+
+## 8. 2026-11-20 最新增量：資料庫角色連線已安全設定到獨立閘道
+
+本節取代以上第 4、5、7 節中「全部環境變數尚未配置」的早期狀態。
+
+- `PR #12` 已通過三組 CI（LINE、Python、隔離 PostgreSQL）並正式合併 `main`，合併 commit `501c72125cca5f8ad0cf82ad90889148e2fd1fe7`。
+- 已利用 Neon 專用連線能力，將 `line_stock_reader`（唯讀分析）和 `line_stock_delivery`（限欄位寫入與回覆狀態）之 **twstock 專用連線字串**，直接存入 Neon `linestockgateway` 受保護環境；沒有輸出到 GitHub、程式碼或維運文件。
+- 同步設定已經官方 API 查核的舊版 `LINE_LEGACY_WEBHOOK_URL`；目前 `LINE_SINGLE_ACCOUNT_ENABLED=false`。
+- 新版 `linestockgateway` Deployment 2 **已完成部署**；設定後再做外部 HTTP 驗收成功（GitHub Actions #44688374960）：`GET /health` 仍為 200，`POST /webhook` 因未啟用仍為 503。測試過後移除一次性工作流程。
+- 已完成四項環境配置：`LINE_STOCK_READ_DATABASE_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_LEGACY_WEBHOOK_URL`、`LINE_SINGLE_ACCOUNT_ENABLED=false`。**只剩原 LINE 官方帳號 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` 尚未安全綁定到這支新函式**，以及真正啟用並完成封包簽章、LINE Reply API 和轉送測試。
+- 原本的 `linewebhook` Deployment 4、`linestockanalysis` Deployment 3、LINE Developers 目前 active URL 不變。不可將停用中閘道直接設為正式 LINE Webhook URL。
+
+**注意：** 首次正式切換不是單純修改 `LINE_SINGLE_ACCOUNT_ENABLED`；必須先安全配置剩餘兩個 LINE 憑證，確認所有簽章／資料庫權限／回覆／轉送驗收通過，再以完整原 URL 和明確回復措施進行切換。不得將 Channel Secret、Access Token 或 PostgreSQL 角色密碼貼入聊天或提交 GitHub。
