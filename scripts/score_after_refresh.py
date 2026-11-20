@@ -1,7 +1,8 @@
-"""Opt-in composite-score job runner; no work unless explicitly executed.
+"""Existing composite-score writer invoked only by authorized CI triggers.
 
-The accompanying workflow is disabled by default and cannot auto-write to the
-Neon database without an authorized repository setting change.
+The workflow is permitted after a successful scheduled verified market/indicator
+refresh on main or an explicitly opted-in manual dispatch. The code itself
+requires a database URL and never provides LINE or trade signals.
 """
 from __future__ import annotations
 

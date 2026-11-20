@@ -1,8 +1,8 @@
 name: Verified History Indicator Catch-Up
 
 on:
-  # Proposed WRITE-enabled independent cron; NOT active until separately
-  # reviewed and merged. It processes one bounded 20/market batch per run.
+  # Owner-authorized production WRITE cron (merged PR #26, 2026-11-20).
+  # At most 20 stocks per market per run, with per-stock savepoint rollback.
   # 03:10 Asia/Taipei Tue-Sat, after official 01:50 dated history.
   schedule:
     - cron: "10 19 * * 1-5"
