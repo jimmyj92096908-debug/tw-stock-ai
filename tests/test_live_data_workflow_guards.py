@@ -25,9 +25,9 @@ class LiveDataWorkflowGuardTests(unittest.TestCase):
 
     def test_dated_twse_history_is_limited_and_manual_default_is_dry_run(self):
         workflow=self._read("daily-twse-dated-history.yml")
-        self.assertIn("cron: \\"50 17 * * 1-5\\"",workflow)
+        self.assertIn('cron: "50 17 * * 1-5"',workflow)
         self.assertIn("default: false",workflow)
-        self.assertIn("STOCK_TWSE_HISTORY_WRITE_ENABLED: \\"yes\\"",workflow)
+        self.assertIn('STOCK_TWSE_HISTORY_WRITE_ENABLED: "yes"',workflow)
         self.assertIn("--apply --batch-days 8 --lookback-days 366",workflow)
         self.assertIn("github.ref == 'refs/heads/main'",workflow)
         self.assertIn("tests.test_twse_dated_history",workflow)
@@ -39,7 +39,7 @@ class LiveDataWorkflowGuardTests(unittest.TestCase):
         self.assertIn("github.event.workflow_run.event == 'schedule'",workflow)
         self.assertIn("github.event.workflow_run.head_branch == 'main'",workflow)
         self.assertIn("--apply --per-market 20",workflow)
-        self.assertIn("STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: \\"yes\\"",workflow)
+        self.assertIn('STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"',workflow)
         self.assertIn("default: false",workflow)
 
     def test_score_recompute_requires_successful_official_feed(self):
