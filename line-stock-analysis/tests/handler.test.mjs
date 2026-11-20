@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
-  ANALYSIS_SQL, RANKING_SQL, EXCLUDED_CODES, HELP_TEXT, parseStockCode,
+  ANALYSIS_SQL, RANKING_SQL, STANDALONE_CHIP_SQL, EXCLUDED_CODES, HELP_TEXT, parseStockCode,
   verifyLineSignature, formatStockAnalysis, buildReplyText, createWebhookHandler
 } from '../handler.mjs';
 
@@ -122,6 +122,76 @@ test('missing price or technical data never become fabricated scores', () => {
   assert.match(incomplete, /尚無技術指標資料/u);
   assert.match(incomplete, /尚無 SMC 分析資料/u);
   assert.match(incomplete, /尚無達可用條件/u);
+});
+
+test('standalone chip annotation requires opt-in and exact bound market/code/date', async () => {
+  const main = stock({
+    price_date: '2026-11-20', technical_date: '2026-11-19',
+    score_date: '2026-11-19', total_score: '26.98',
+    chip_score: null
+  });
+  const queries = [];
+  const query = async (sql, params) => {
+    queries.push({ sql, params });
+    if (sql === ANALYSIS_SQL) return { rows: [main] };
+    if (sql === STANDALONE_CHIP_SQL) {
+      return { rows: [{
+        standalone_chip_date: '2026-11-20',
+        standalone_chip_score: '40.65',
+        standalone_chip_coverage: '0.65',
+        standalone_institutional_score: '29.05',
+        standalone_margin_score: '59.21'
+      }] };
+    }
+    throw Error('Unexpected query');
+  };
+
+  const disabled = await buildReplyText('2330', query);
+  assert.equal(queries.length, 1);
+  assert.doesNotMatch(disabled, /獨立籌碼評分/u);
+
+  const enabled = await buildReplyText('2330', query, { standaloneChipEnabled: true });
+  assert.equal(queries.length, 3);
+  assert.equal(queries[2].sql, STANDALONE_CHIP_SQL);
+  assert.deepEqual(queries[2].params, ['twse', '2330', '2026-11-20']);
+  assert.match(enabled, /綜合評分｜2026-11-19/u);
+  assert.match(enabled, /獨立籌碼評分｜2026-11-20/u);
+  assert.match(enabled, /40\.65/u);
+  assert.match(enabled, /65%/u);
+  assert.match(enabled, /29\.05／59\.21/u);
+  assert.match(enabled, /尚未納入上方較舊日期的綜合評分/u);
+  assert.match(enabled, /26\.98|27\.0/u);
+  assert.match(STANDALONE_CHIP_SQL, /as_of_date <= \$3::date/u);
+  assert.doesNotMatch(STANDALONE_CHIP_SQL, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/iu);
+});
+
+test('optional chip reader errors cannot break existing stock replies', async () => {
+  const main = stock({ price_date: '2026-11-20', score_date: '2026-11-19' });
+  const result = await buildReplyText('2330', async (sql) => {
+    if (sql === ANALYSIS_SQL) return { rows: [main] };
+    if (sql === STANDALONE_CHIP_SQL) throw Error('permission denied for chip score');
+    throw Error('Unexpected SQL');
+  }, { standaloneChipEnabled: true });
+  assert.match(result, /台股資料分析｜2330 台積電/u);
+  assert.match(result, /綜合評分/u);
+  assert.doesNotMatch(result, /permission denied/u);
+  assert.doesNotMatch(result, /獨立籌碼評分/u);
+});
+
+test('future-dated chip results and insufficient source coverage are not passed as valid', () => {
+  const main = stock({price_date: '2026-11-20',score_date: '2026-11-19'});
+  const future = formatStockAnalysis({
+    ...main, standalone_chip_date: '2026-11-21',
+    standalone_chip_score: '40.65', standalone_chip_coverage: '0.65'
+  });
+  assert.doesNotMatch(future, /獨立籌碼評分/u);
+
+  const insufficient = formatStockAnalysis({
+    ...main, standalone_chip_date: '2026-11-20',
+    standalone_chip_score: '40.65', standalone_chip_coverage: '0.25'
+  });
+  assert.match(insufficient, /尚無符合有效覆蓋門檻的獨立籌碼分數/u);
+  assert.doesNotMatch(insufficient, /籌碼分數：40\.65/u);
 });
 
 test('stock lookup returns no-data, ambiguity and manual exclusion messages', async () => {
