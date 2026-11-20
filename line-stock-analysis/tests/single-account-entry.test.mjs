@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import candidate, { scopedStockUrl, isApprovedStockReadQuery, relayLegacy } from '../single-account-entry.mjs';
-import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL } from '../handler.mjs';
+import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL, STOCK_NAME_SQL } from '../handler.mjs';
 
 test('separate read/write database URLs are forced to twstock without dropping TLS params',()=>{
   const url=new URL(scopedStockUrl(
@@ -32,8 +32,8 @@ test('unapproved entrypoint is disabled by default, without reading DB or sendin
   }
 });
 
-test('readonly gateway accepts only three reviewed SELECT statements',()=>{
-  for (const sql of [ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL]) {
+test('readonly gateway accepts only four reviewed SELECT statements',()=>{
+  for (const sql of [ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL, STOCK_NAME_SQL]) {
     assert.equal(isApprovedStockReadQuery(sql),true);
     assert.ok(sql.trimStart().startsWith('SELECT'));
   }
