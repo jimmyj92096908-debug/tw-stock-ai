@@ -30,6 +30,48 @@ class HistoryBackfillTests(unittest.TestCase):
         fetch.assert_not_called()
         write.assert_not_called()
 
+    def test_verify_sources_never_writes_to_db_even_if_write_gate_set(self):
+        conn = MagicMock()
+        day = date(2026, 11, 19)
+        gaps = [{"date": day, "institutional_missing": True,
+                 "margin_missing": True}]
+        inst = [{"market": "twse", "stock_id": "2330", "trade_date": day.isoformat()}]
+        margin = [{"market": "twse", "stock_id": "2330", "trade_date": day.isoformat()}]
+        with patch.dict(os.environ, {"CHIP_HISTORY_WRITE_ENABLED": "yes"}), \
+             patch("src.chip_history_backfill.psycopg.connect", return_value=conn), \
+             patch("src.chip_history_backfill.plan_gaps", return_value=gaps), \
+             patch("src.chip_history_backfill.fetch_missing_twse",
+                   return_value=(inst, margin)) as fetch, \
+             patch("src.chip_history_backfill.apply_missing") as write:
+            result = backfill.run("postgresql://invalid.example/db",
+                                  verify_sources=True)
+        self.assertEqual(result["mode"], "verify_sources")
+        self.assertEqual(result["verified_institutional"], 1)
+        self.assertEqual(result["verified_margin"], 1)
+        self.assertEqual(result["inserted_institutional"], 0)
+        self.assertEqual(result["inserted_margin"], 0)
+        fetch.assert_called_once()
+        write.assert_not_called()
+
+    def test_verify_sources_rejects_incomplete_official_preflight(self):
+        conn = MagicMock()
+        gap = [{"date": date(2026, 11, 19),
+                "institutional_missing": True, "margin_missing": False}]
+        with patch("src.chip_history_backfill.psycopg.connect", return_value=conn), \
+             patch("src.chip_history_backfill.plan_gaps", return_value=gap), \
+             patch("src.chip_history_backfill.fetch_missing_twse", return_value=([], [])), \
+             patch("src.chip_history_backfill.apply_missing") as write:
+            with self.assertRaisesRegex(RuntimeError, "coverage does not match"):
+                backfill.run("postgresql://invalid.example/db", verify_sources=True)
+        write.assert_not_called()
+
+    def test_verify_mode_and_apply_are_mutually_exclusive(self):
+        with patch("src.chip_history_backfill.psycopg.connect") as connect:
+            with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+                backfill.run("postgresql://invalid.example/db",
+                             apply=True, verify_sources=True)
+            connect.assert_not_called()
+
     def test_apply_requires_explicit_second_gate_before_connecting(self):
         with patch.dict(os.environ, {"CHIP_HISTORY_WRITE_ENABLED": "no"}), \
              patch("src.chip_history_backfill.psycopg.connect") as connect:
