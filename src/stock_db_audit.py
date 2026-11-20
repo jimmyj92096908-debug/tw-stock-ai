@@ -129,7 +129,7 @@ WITH latest AS (
  GROUP BY market,stock_id
  HAVING COUNT(*) FILTER(WHERE close IS NOT NULL)>=60
 ), recent AS (
- SELECT q.market,q.stock_id,q.close_days
+ SELECT q.market,q.stock_id,q.close_days,q.last_close
  FROM qualified q CROSS JOIN latest l
  WHERE q.last_close >= l.newest - INTERVAL '7 days'
 ), technicals AS (
