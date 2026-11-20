@@ -1,4 +1,4 @@
-"""Offline checks for the opt-in composite-score workflow runner."""
+"""Offline checks for the approved, verified-snapshot composite-score runner."""
 import io
 import os
 import unittest
@@ -31,10 +31,10 @@ class ScoreAfterRefreshTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "DATABASE_URL"):
                 score_after_refresh.main()
 
-    def test_workflow_cannot_auto_write_without_explicit_opt_in(self):
+    def test_workflow_only_auto_writes_after_verified_official_snapshot(self):
         path = Path(__file__).resolve().parents[1] / ".github/workflows/composite-after-market-refresh.yml"
         workflow = path.read_text(encoding="utf-8")
-        self.assertIn("vars.ENABLE_AUTOMATIC_COMPOSITE_SCORES == 'true'", workflow)
+        self.assertIn('Official Taiwan Market Daily Snapshot (Authorized)', workflow)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
         self.assertIn("github.event.workflow_run.head_branch == 'main'", workflow)
         self.assertIn("github.event.workflow_run.repository.full_name == github.repository", workflow)
