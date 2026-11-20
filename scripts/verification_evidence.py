@@ -11,7 +11,7 @@ import sys
 import time
 
 SUITES = {
-    "python": [("python-unit", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"])],
+    "python": [("python-pytest-and-unittest", [sys.executable, "-m", "pytest", "-q", "tests"])],
     "line": [
         ("line-tests-and-isolated-postgres", ["npm", "test"]),
         ("line-bundle", ["npm", "run", "bundle"]),
@@ -37,11 +37,11 @@ def run(suite, root, output, timeout):
             # Never save raw stdout/stderr: tests could accidentally log sensitive content.
             completed = subprocess.run(command, cwd=workdir, capture_output=True, timeout=timeout, check=False, env=env)
             status, code = ("passed" if completed.returncode == 0 else "failed"), completed.returncode
-            if status == "failed" and name == "python-unit":
+            if status == "failed" and name == "python-pytest-and-unittest":
                 # Keep only unittest case identifiers and failure summary.
                 # Do not print exception messages, stack traces, SQL, or user data.
                 output_text = completed.stderr.decode("utf-8", errors="replace")
-                patterns = (r"^(?:ERROR|FAIL): ([\w.]+) \(", r"^FAILED \((?:failures|errors)=\d+")
+                patterns = (r"^(?:ERROR|FAIL): ([\w.]+) \(", r"^FAILED \((?:failures|errors)=\d+", r"^FAILED tests/[a-zA-Z0-9_./:-]+", r"^ERROR tests/[a-zA-Z0-9_./:-]+")
                 for line in output_text.splitlines():
                     if any(re.match(p, line) for p in patterns):
                         print("diagnostic: " + line[:180], flush=True)
