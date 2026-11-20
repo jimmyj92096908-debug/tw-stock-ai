@@ -5,7 +5,7 @@ import pg from 'pg';
 import { createSingleAccountCandidate } from './single-account-candidate.mjs';
 import { createSingleAccountGateway } from './single-account-gateway.mjs';
 import { createDeliveryStore } from './delivery-state.mjs';
-import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL, STOCK_NAME_SQL } from './handler.mjs';
+import { ANALYSIS_SQL, RANKING_SQL, DATA_STATUS_SQL, STOCK_NAME_SQL, STANDALONE_CHIP_SQL } from './handler.mjs';
 
 const { Pool } = pg;
 let readerPool;
@@ -47,7 +47,8 @@ function writer() {
 }
 
 export function isApprovedStockReadQuery(sql) {
-  return sql===ANALYSIS_SQL || sql===RANKING_SQL || sql===DATA_STATUS_SQL || sql===STOCK_NAME_SQL;
+  return sql===ANALYSIS_SQL || sql===RANKING_SQL || sql===DATA_STATUS_SQL ||
+    sql===STOCK_NAME_SQL || sql===STANDALONE_CHIP_SQL;
 }
 
 async function queryStock(sql,params) {
@@ -143,7 +144,8 @@ export default {
 
     const stockHandler=createSingleAccountCandidate({
       query:queryStock,store,sendReply:replyLine,lookupExactStockName,
-      channelSecret:secret,enabled
+      channelSecret:secret,enabled,
+      standaloneChipEnabled: process.env.LINE_CHIP_SCORE_DETAILS_ENABLED === 'true'
     });
     const gateway=createSingleAccountGateway({
       channelSecret:secret,stockHandler,lookupExactStockName,
