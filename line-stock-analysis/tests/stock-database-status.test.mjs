@@ -16,7 +16,9 @@ test('database status is an explicit LINE command, not an accidental stock code'
 test('status formatter exposes price date, score date and missing coverage',async()=>{
   const data={
     universe:1991,priced:40,priced_latest:25,stale_over_7_days:10,price_date:'2026-11-19',
-    score_date:'2026-11-18',scored_latest:18
+    score_date:'2026-11-18',scored_latest:18,
+    history_60d:30,history_120d:20,history_240d:10,
+    technical_stocks:25,smc_stocks:24,scored_stocks:18
   };
   const msg=formatDataStatus(data);
   assert.match(msg,/2026-11-19/u);
@@ -26,6 +28,10 @@ test('status formatter exposes price date, score date and missing coverage',asyn
   assert.match(msg,/最後行情落後超過 7 日：10 檔/u);
   assert.match(msg,/尚無行情：1,951 檔/u);
   assert.match(msg,/最新評分資料筆數：18/u);
+  assert.match(msg,/歷史行情 ≥60／120／240 日：30／20／10 檔/u);
+  assert.match(msg,/技術指標／SMC：25／24 檔/u);
+  assert.match(msg,/已有有效評分：18 檔/u);
+  assert.match(msg,/有收盤行情不等於完整分析/u);
   assert.match(msg,/不是交易所完整股票數/u);
   const calls=[];
   const reply=await buildReplyText('資料狀態',async(sql,params)=>{
@@ -40,7 +46,21 @@ test('status formatter is explicit on missing or corrupt data',()=>{
   assert.match(formatDataStatus({universe:0,priced:0,scored_latest:0}),/0\.0%/u);
   assert.match(formatDataStatus({universe:2,priced:5,scored_latest:1}),/無法讀取有效/u);
   assert.match(formatDataStatus({universe:'x',priced:0,scored_latest:0}),/無法讀取有效/u);
+  assert.match(formatDataStatus({
+    universe:100,priced:50,scored_latest:10,
+    history_60d:60,history_120d:20,history_240d:10,
+    technical_stocks:30,smc_stocks:30,scored_stocks:10
+  }),/無法讀取有效/u);
+  assert.match(formatDataStatus({
+    universe:100,priced:50,scored_latest:10,
+    history_60d:40,history_120d:20
+  }),/無法讀取有效/u);
   assert.match(DATA_STATUS_SQL,/COUNT\(\*\)::int FROM public\.stock_master/u);
+  assert.match(DATA_STATUS_SQL,/HAVING COUNT\(\*\) >= 60/u);
+  assert.match(DATA_STATUS_SQL,/HAVING COUNT\(\*\) >= 120/u);
+  assert.match(DATA_STATUS_SQL,/HAVING COUNT\(\*\) >= 240/u);
+  assert.match(DATA_STATUS_SQL,/public\.daily_technicals/u);
+  assert.match(DATA_STATUS_SQL,/public\.daily_smc/u);
   assert.match(RANKING_SQL,/JOIN public\.daily_prices p/u);
   assert.match(RANKING_SQL,/p\.trade_date=c\.as_of_date AND p\.close IS NOT NULL/u);
 });
@@ -61,6 +81,8 @@ test('disposable Postgres agrees on real status SQL and excludes unpriced rankin
   try {
     await client.query("CREATE TABLE public.stock_master (market TEXT NOT NULL,stock_id TEXT NOT NULL,stock_name TEXT NOT NULL,PRIMARY KEY(market,stock_id))");
     await client.query("CREATE TABLE public.daily_prices (market TEXT NOT NULL,stock_id TEXT NOT NULL,trade_date DATE NOT NULL,close NUMERIC,PRIMARY KEY(market,stock_id,trade_date))");
+    await client.query("CREATE TABLE public.daily_technicals (market TEXT NOT NULL,stock_id TEXT NOT NULL,trade_date DATE NOT NULL,PRIMARY KEY(market,stock_id,trade_date))");
+    await client.query("CREATE TABLE public.daily_smc (market TEXT NOT NULL,stock_id TEXT NOT NULL,trade_date DATE NOT NULL,PRIMARY KEY(market,stock_id,trade_date))");
     await client.query("CREATE TABLE public.daily_composite_scores (market TEXT NOT NULL,stock_id TEXT NOT NULL,as_of_date DATE NOT NULL,total_score NUMERIC,PRIMARY KEY(market,stock_id,as_of_date))");
     await client.query("INSERT INTO public.stock_master VALUES ('twse','2330','台積電'),('twse','1101','測試水泥'),('twse','6213','測試電子'),('tpex','6488','測試矽晶'),('twse','1808','排除標的')");
     await client.query("INSERT INTO public.daily_prices VALUES ('twse','2330','2026-11-18',1400),('twse','1101','2026-11-18',28),('twse','6213','2026-11-18',NULL),('twse','6213','2026-11-19',NULL),('twse','1808','2026-11-18',15)");
@@ -69,6 +91,12 @@ test('disposable Postgres agrees on real status SQL and excludes unpriced rankin
     const status=(await client.query(DATA_STATUS_SQL)).rows[0];
     assert.equal(status.universe,5);
     assert.equal(status.priced,3);
+    assert.equal(status.history_60d,0);
+    assert.equal(status.history_120d,0);
+    assert.equal(status.history_240d,0);
+    assert.equal(status.technical_stocks,0);
+    assert.equal(status.smc_stocks,0);
+    assert.equal(status.scored_stocks,5);
     assert.equal(status.priced_latest,3); // Latest valid price date is 11/18, not the null-only 11/19 row.
     assert.equal(status.stale_over_7_days,0);
     assert.equal(status.scored_latest,5);
