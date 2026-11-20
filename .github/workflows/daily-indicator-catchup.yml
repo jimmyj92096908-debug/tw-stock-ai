@@ -1,0 +1,59 @@
+name: Verified History Indicator Catch-Up
+
+on:
+  workflow_run:
+    workflows:
+      - "TWSE Dated Bulk Historical Price Backfill"
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "手動是否補計技術／SMC 指標？預設只預覽"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  indicators:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'schedule' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.repository.full_name == github.repository)
+        ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Verify 60-session history threshold, bounded batch and secrecy
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m py_compile src/batch_indicator_catchup.py
+          python -m unittest tests.test_batch_indicator_catchup -v
+      - name: Preview eligible stocks without writes
+        run: python src/batch_indicator_catchup.py --per-market 20
+      - name: Compute verified adjusted prices, technical and SMC
+        env:
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
+        run: python src/batch_indicator_catchup.py --apply --per-market 20
