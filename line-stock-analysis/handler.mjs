@@ -189,6 +189,19 @@ export const ANALYSIS_SQL = [
 ].join('\n');
 
 
+// Optional second query: do not modify stored composite scores or read raw
+// personal data. Reader role needs a separately approved, column-only GRANT.
+export const STANDALONE_CHIP_SQL = [
+  'SELECT as_of_date AS standalone_chip_date,',
+  ' total_score AS standalone_chip_score,',
+  ' coverage_weight AS standalone_chip_coverage,',
+  ' institutional_score AS standalone_institutional_score,',
+  ' margin_score AS standalone_margin_score',
+  ' FROM public.daily_chip_scores',
+  ' WHERE market=$1 AND stock_id=$2 AND as_of_date <= $3::date',
+  ' ORDER BY as_of_date DESC LIMIT 1'
+].join('\n');
+
 export const RANKING_SQL = [
   'SELECT c.market, c.stock_id, sm.stock_name, c.total_score, c.as_of_date',
   'FROM public.daily_composite_scores c',
@@ -349,7 +362,34 @@ export function formatStockAnalysis(row) {
     lines.push('技術／SMC：' + number(row.technical_score, 1) + '／' +
       number(row.smc_score, 1));
     lines.push('籌碼分數：' + number(row.chip_score, 1));
-    if (row.chip_score == null) lines.push('籌碼資料不足，未納入完整評分。');
+    if (row.chip_score == null) {
+      lines.push('此綜合評分日期的籌碼資料不足，未納入完整評分。');
+    }
+  }
+
+  // A newer independently verified chip score is NOT retroactively merged
+  // into the older composite score. Show its source date and coverage.
+  const independentChipDate = row.standalone_chip_date == null ? null :
+    displayDate(row.standalone_chip_date);
+  const independentScore = row.standalone_chip_score == null ? null :
+    Number(row.standalone_chip_score);
+  const independentCoverage = row.standalone_chip_coverage == null ? null :
+    Number(row.standalone_chip_coverage);
+  if (independentChipDate && independentChipDate <= priceDate) {
+    lines.push('', '【獨立籌碼評分｜' + independentChipDate + '】');
+    if (Number.isFinite(independentScore) && independentScore >= 0 &&
+        independentScore <= 100 && Number.isFinite(independentCoverage) &&
+        independentCoverage >= 0.5 && independentCoverage <= 1) {
+      lines.push('籌碼分數：' + number(independentScore, 2) +
+        '｜來源覆蓋：' + number(independentCoverage * 100, 0) + '%');
+      lines.push('法人／融資：' + number(row.standalone_institutional_score, 2) +
+        '／' + number(row.standalone_margin_score, 2));
+      if (row.score_date == null || independentChipDate > displayDate(row.score_date)) {
+        lines.push('此為獨立籌碼結果，尚未納入上方較舊日期的綜合評分。');
+      }
+    } else {
+      lines.push('尚無符合有效覆蓋門檻的獨立籌碼分數。');
+    }
   }
 
   lines.push(...stockInterpretation(row, priceDate));
@@ -440,7 +480,7 @@ export function formatDataStatus(row) {
   return lines.join('\n');
 }
 
-export async function buildReplyText(text, query) {
+export async function buildReplyText(text, query, { standaloneChipEnabled = false } = {}) {
   const parsed = parseStockCode(text);
   if (parsed.kind === 'help') return HELP_TEXT;
   if (parsed.kind === 'research') return formatResearchModelStatus();
@@ -509,8 +549,22 @@ export async function buildReplyText(text, query) {
   if (rows.length > 1) {
     return code + ' 在不同市場有重複代碼，暫不自動選擇，避免分析錯誤。';
   }
+  let selectedRow = rows[0];
+  if (standaloneChipEnabled && selectedRow.price_date != null &&
+      selectedRow.close != null) {
+    // Do not disrupt a functioning stock reply if this optional scoped read
+    // lacks privileges or the chip table is temporarily inaccessible.
+    try {
+      const chip = await query(STANDALONE_CHIP_SQL,
+        [selectedRow.market, selectedRow.stock_id, selectedRow.price_date]);
+      const details = Array.isArray(chip?.rows) ? chip.rows[0] : null;
+      if (details) selectedRow = { ...selectedRow, ...details };
+    } catch {
+      // Fail open for the independently optional annotation only.
+    }
+  }
   return (parsed.kind === 'rank' ? '清單編號 ' + parsed.rank + '｜' :
-    queriedByName ? '名稱查詢｜' : '') + formatStockAnalysis(rows[0]);
+    queriedByName ? '名稱查詢｜' : '') + formatStockAnalysis(selectedRow);
 }
 
 function response(text, status) {
@@ -519,7 +573,10 @@ function response(text, status) {
 
 // The caller injects an explicitly read-only DB query and LINE Reply API transport.
 // No webhook events, user identifiers or message bodies are written to Neon.
-export function createWebhookHandler({ query, sendReply, channelSecret, enabled = true }) {
+export function createWebhookHandler({
+  query, sendReply, channelSecret, enabled = true,
+  standaloneChipEnabled = false
+}) {
   return async function fetchHandler(request) {
     const pathname = new URL(request.url).pathname;
     if (request.method === 'GET' && pathname === '/health') return response('ok', 200);
@@ -546,7 +603,8 @@ export function createWebhookHandler({ query, sendReply, channelSecret, enabled 
         let message = HELP_TEXT;
         if (event.type === 'message' && event.message?.type === 'text') {
           try {
-            message = await buildReplyText(event.message.text, query);
+            message = await buildReplyText(event.message.text, query,
+              { standaloneChipEnabled });
           } catch {
             message = '目前無法讀取分析資料，請稍後再試。';
           }
