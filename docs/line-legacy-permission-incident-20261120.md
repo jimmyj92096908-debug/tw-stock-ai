@@ -53,3 +53,23 @@ REVOKE SELECT (id) ON TABLE public.line_messages FROM line_stock_delivery;
 請用原本 LINE 個人帳號向原版官方帳號送出一次 `你好`，觀察是否有回覆。查核 Neon 原版 `linewebhook` 同時段日誌是否仍報 `permission denied`，再確認是否產生資料庫文字收件紀錄。若錯誤仍存在，下一步應取得原始 `INSERT` SQL 或加入不洩漏使用者訊息的受控角色／SQL 稽核；不得在沒有證據下授予 `SELECT *`、整表 `INSERT` 或 `SUPERUSER`。
 
 這份紀錄不含 LINE token、Channel secret、Postgres 密碼、完整連線字串、訊息文字或使用者 ID。
+
+
+## 2026-11-20 22:49 失敗後追查／第二項最小授權
+
+- 使用者在 22:49 傳送「你好」仍未收到回覆；Neon 原版 `linewebhook` 於 `2026-11-20T14:49:37Z` 再次記錄 `Database insert failed: permission denied for table line_messages`，因此**第一項 `SELECT(id)` 授權並未完成修復**。
+- 第二項最小授權已套用，僅允許寫入接收時間，不允許讀取私人訊息：
+
+```sql
+GRANT INSERT (received_at) ON TABLE public.line_messages TO line_stock_delivery;
+```
+
+- 以 `line_stock_delivery` 身分使用 `EXPLAIN`（不實際寫入）確認 `INSERT (line_user_id,message_type,message_text,received_at) ... RETURNING id` 的計畫階段已可通過。
+- 複查：`created_at` 的 INSERT 權限仍為 false；`line_user_id` 與 `message_text` 的 SELECT 仍為 false；整張 `line_messages` 的 SELECT 仍為 false。
+- 回復本項權限（如後續確認並無需要）：
+
+```sql
+REVOKE INSERT (received_at) ON TABLE public.line_messages FROM line_stock_delivery;
+```
+
+**本項仍為候選修復，尚未收到新的真實 LINE 回覆驗證。不能把 EXPLAIN 通過當成真實訊息正常。** 原版 SQL 未知，若後續仍報錯，不可擴增私人訊息全文讀取權限來碰運氣。
