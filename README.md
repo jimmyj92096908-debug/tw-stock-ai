@@ -4,6 +4,24 @@
 
 > **狀態（2026-11-20）**：行情匯入、歷史回補、技術指標、SMC、綜合評分、資料品質稽核、原本的 LINE 日報已具備正式執行程式與自動化。單一 LINE 官方帳號的**新版股票指令仍未切換正式 Webhook**，不可宣稱使用者現在就能收到新版分析。所有資訊均為歷史資料整理，不是即時報價或下單指令。
 
+## 第一階段：立即使用的研究報告（已在正式 Neon 實測）
+
+**可以直接使用：** [最新研究報告執行清單](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/workflows/first-stage-report.yml)。選擇最新的 `completed / success` 執行，在 **Artifacts** 下載 `twstock-first-stage-research-report`，解壓縮後開啟 `research-report.html`。同時提供 Markdown 和 JSON。此報告是歷史研究用途，不是即時報價或買賣訊號。
+
+**從真實資料到研究報告的完整鏈路：**
+
+```text
+TWSE / TPEx 官方行情 → 有效歷史收盤 → 調整行情／技術指標／SMC
+                 → 綜合評分 → 已保存的訓練模型排名 → HTML / MD / JSON
+```
+
+- **已驗收：** 2026-11-20 正式 Neon 受控批次成功，且指標補算後綜合評分與研究報告均已成功更新；一次性驗收通道完成後會移除。查看 [真實批次 #44725314839](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44725314839) 及 [報告 #44726935466](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44726935466)。
+- **已設定：** 台灣時間週二至週六 03:10，每市場每批最多 20 檔的自動技術／SMC 補算；有效補算後重算綜合評分，成功後以唯讀方式刷新報告，另保留 04:45 獨立報告排程。每次是否真正執行，必須以 GitHub Actions 的 `schedule` 事件及 Neon 補算前後證據核對；不能只憑已合併程式宣稱完成。
+- **資料覆蓋提醒：** 有歷史行情不等於技術／SMC 或綜合評分已補齊。請以**最新**報告中的 `indicator_pending`、`indicator_complete`、`scored_stocks` 與日期判斷；固定在 README 的數字可能過時。
+- **尚未完成：** 新版 LINE Webhook 尚未正式切換。候選 Neon 閘道仍缺同一頻道受保護的 LINE Channel Secret / Channel Access Token 和真實端到端驗收，不能把候選程式測試通過當作 LINE 已上線。研究模型樣本外績效仍未過關，交易訊號與自動下單維持關閉。
+
+詳見 [研究報告使用說明](docs/first-stage-research-report.md)、[真實補算驗收](docs/authorized-next-20-indicator-batch-20261120.md)、[LINE 正式上線門檻](docs/line-production-readiness-20261120.md)。
+
 ## 系統架構
 
 ```text
