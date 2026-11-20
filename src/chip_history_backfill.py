@@ -153,7 +153,10 @@ def apply_missing(conn, inst_rows: list[dict], margin_rows: list[dict]) -> tuple
 
 
 def run(database_url: str, stock_id: str = "2330", days: int = 25,
-        *, apply: bool = False, session=None) -> dict:
+        *, apply: bool = False, verify_sources: bool = False, session=None) -> dict:
+    """Preview gaps, source-verify without writes, or explicitly apply official rows."""
+    if apply and verify_sources:
+        raise ValueError("--apply and --verify-sources are mutually exclusive")
     validate_options(stock_id, days, apply)
     if not database_url:
         raise RuntimeError("DATABASE_URL is required")
@@ -164,12 +167,20 @@ def run(database_url: str, stock_id: str = "2330", days: int = 25,
         result = {"stock_id": stock_id, "actual_price_sessions": len(gaps),
                   "missing_institutional": missing_inst, "missing_margin": missing_margin,
                   "inserted_institutional": 0, "inserted_margin": 0,
-                  "mode": "apply" if apply else "preview"}
-        if not apply:
+                  "mode": "apply" if apply else "verify_sources" if verify_sources else "preview",
+                  "verified_institutional": 0, "verified_margin": 0}
+        if not apply and not verify_sources:
             return result
         if not gaps:
             raise RuntimeError("No saved real-price sessions; refusing history repair")
+        # All source responses are validated before the first database write.
         inst_rows, margin_rows = fetch_missing_twse(stock_id, gaps, session=session)
+        if len(inst_rows) != missing_inst or len(margin_rows) != missing_margin:
+            raise RuntimeError("Official response coverage does not match planned missing sessions")
+        result["verified_institutional"] = len(inst_rows)
+        result["verified_margin"] = len(margin_rows)
+        if verify_sources:
+            return result  # Explicit read-only mode, even if a write env-var is set.
         result["inserted_institutional"], result["inserted_margin"] = apply_missing(
             conn, inst_rows, margin_rows)
         return result
@@ -179,10 +190,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Preview or explicitly backfill actual TWSE chip sessions")
     parser.add_argument("--stock", choices=sorted(TRACKED_TWSE), default="2330")
     parser.add_argument("--days", type=int, default=25)
-    parser.add_argument("--apply", action="store_true", help="Requires separately authorized DB write gate")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--verify-sources", action="store_true",
+                      help="Fetch and validate official missing-day records; never write to DB")
+    mode.add_argument("--apply", action="store_true",
+                      help="Requires separate authorization and CHIP_HISTORY_WRITE_ENABLED=yes")
     args = parser.parse_args()
     result = run(os.environ.get("DATABASE_URL", ""),
-                 stock_id=args.stock, days=args.days, apply=args.apply)
+                 stock_id=args.stock, days=args.days,
+                 apply=args.apply, verify_sources=args.verify_sources)
     for key, value in result.items():
         print(f"{key}: {value}")
 
