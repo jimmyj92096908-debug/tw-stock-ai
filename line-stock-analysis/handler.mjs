@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { formatResearchModelStatus } from './research-model-status.mjs';
 
 // The current stock_master table is a candidate universe, not a verified
 // common-share classification. Keep user-requested exclusions in force.
@@ -9,6 +10,7 @@ export const HELP_TEXT = [
   '也可輸入：分析 2330、股票 6488',
   '輸入「清單」看最新可用評分前 10 名；傳送 1～10 或「編號 1」可查詢序號。',
   '輸入「資料狀態」查看資料覆蓋率與最新日期。',
+  '輸入「模型狀態」或「研究報告」查看已訓練模型的驗收與唯讀研究報告入口。',
   '輸入「說明」可查看使用方式。',
   '目前僅查詢資料庫已有資料；不提供即時報價或交易指令。'
 ].join('\n');
@@ -18,6 +20,7 @@ export function parseStockCode(input) {
   const normalized = input.replace(/\u3000/g, ' ').trim();
   if (/^(說明|幫助|help|\?|使用方式)$/iu.test(normalized)) return { kind: 'help' };
   if (/^(資料狀態|資料庫狀態|更新狀態|資料更新)$/u.test(normalized)) return { kind: 'status' };
+  if (/^(模型狀態|研究報告|研究模型|AI模型)$/iu.test(normalized)) return { kind: 'research' };
   if (/^(清單|排行|排名|觀察清單)$/u.test(normalized)) return { kind: 'list' };
   const rank = /^(?:編號\s*|第\s*)?([1-9]|10)(?:\s*名)?$/u.exec(normalized);
   if (rank) return { kind: 'rank', rank: Number(rank[1]) };
@@ -329,6 +332,7 @@ export function formatDataStatus(row) {
 export async function buildReplyText(text, query) {
   const parsed = parseStockCode(text);
   if (parsed.kind === 'help') return HELP_TEXT;
+  if (parsed.kind === 'research') return formatResearchModelStatus();
   if (parsed.kind === 'invalid') return '無法辨識股票代碼或清單編號。\n' + HELP_TEXT;
   if (parsed.kind === 'excluded') return '代碼 1808 已依設定排除，不提供分析。';
   if (parsed.kind === 'status') {

@@ -19,6 +19,14 @@
 6. **每日推播容錯**：對單一收件者被 LINE 拒絕（HTTP 400/404/422）的情況，繼續處理剩餘收件者，但把工作結果標示為失敗供維運追查；已成功推送的人仍記錄到原有 `line_messages`，同一天重跑會跳過已完成者。401、403、429 或伺服器錯誤會立即中斷，避免未經授權或配額不足時繼續大量傳送。
 7. **整合自動測試**：新增實際一次性 PostgreSQL + 模擬簽章/LINE API/舊版代理的整合測試，確認「收件寫入成功、回覆失敗、重新交付、只回覆一次、舊訊息仍轉送原系統」全流程。CI 的 PostgreSQL 測試採序列化，避免共用 `public` 模擬表發生測試競爭。**此測試沒有使用正式 LINE 使用者、回覆 Token 或寫入正式 Neon。**
 
+## 研究模型狀態指令（候選閘道，尚未正式啟用）
+
+新版候選 LINE 股票查詢增加 `模型狀態`、`研究報告`、`研究模型`、`AI模型` 的私聊指令。指令內容由已合併至主分支的 `models/tw-factor-ridge-1-research.json` 和 `models/tw-factor-ridge-1-evaluation.json` 產生，**不是即時模型預測或下單指示**。會明白呈現模型版本、研究資料期間、未通過的樣本外績效，以及最新已產生的 GitHub Actions 研究報告入口。
+
+這條路由在 `single-account-gateway.mjs` 只處理經簽章驗證、符合完整私聊回覆契約的訊息；一般文字、群組、追蹤與非文字事件仍由原有 `linewebhook` 負責。當模型評估與已存模型版本不符，或有人把驗證狀態改成允許交易時，此指令會**拒絕呈現成功**，而不是給出錯誤信號。
+
+這只是**程式碼及離線 E2E 驗收**，不是官方 LINE 用戶已收到回覆；原本的 `linewebhook` Deployment 4 沒有被替換。正式切換仍需要受保護的 Channel Secret 與 Access Token、官方已簽章測試、真實測試帳號的受控端到端驗收和可回復方案。
+
 ## 仍未通過的正式啟用門檻
 
 **不能以以上測試直接宣稱已正式上線。** Neon `linestockgateway` 目前部署環境只列出 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`，仍**缺少兩項必備密鑰名稱** `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`。由於現有工具不會以明文顯示 LINE 金鑰，不能替使用者從舊函式讀出或複製兩個密鑰，更不能把它們放進 GitHub 版本控制。
