@@ -72,6 +72,16 @@ jobs:
           (github.event_name == 'schedule' ||
            (github.event_name == 'workflow_dispatch' && inputs.apply == true))
         run: python scripts/indicator_schedule_probe.py --output indicator-after.json
+      - name: Confirm actual coverage progressed before permitting successful downstream score refresh
+        if: >-
+          success() &&
+          (github.event_name == 'schedule' ||
+           (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+        run: |
+          python scripts/indicator_batch_reconcile.py \
+            --before indicator-before.json \
+            --after indicator-after.json \
+            --output indicator-progress-proof.json
       - name: Retain aggregate before/after evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,5 +90,6 @@ jobs:
           path: |
             indicator-before.json
             indicator-after.json
+            indicator-progress-proof.json
           if-no-files-found: ignore
           retention-days: 14
