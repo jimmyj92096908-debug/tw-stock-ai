@@ -22,7 +22,7 @@ SELECT current_user AS effective_user, session_user AS login_user,
        has_table_privilege(current_user,'public.daily_chip_scores','SELECT')
          AS table_wide_chip_select,
        ARRAY(
-         SELECT c.column_name FROM information_schema.columns c
+         SELECT c.column_name::text FROM information_schema.columns c
          WHERE c.table_schema='public' AND c.table_name='daily_chip_scores'
            AND has_column_privilege(
              current_user,'public.daily_chip_scores',c.column_name,'SELECT'
@@ -79,7 +79,10 @@ export async function verifyActualReader(client) {
       throw Error('Connected login, database or read-only mode is not approved');
     }
 
-    const actual = [...new Set(role.actual_chip_columns || [])].sort();
+    if (!Array.isArray(role.actual_chip_columns)) {
+      throw Error('Unexpected PostgreSQL ACL array representation');
+    }
+    const actual = [...new Set(role.actual_chip_columns)].sort();
     const expected = [...REQUIRED_CHIP_COLUMNS].sort();
     const missing = expected.filter(col => !actual.includes(col));
     const extra = actual.filter(col => !expected.includes(col));
