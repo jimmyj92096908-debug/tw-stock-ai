@@ -23,11 +23,18 @@ SUITES = {
 def run(suite, root, output, timeout):
     workdir = root / "line-stock-analysis" if suite == "line" else root
     checks = []
+    env = os.environ.copy()
+    # Match the project's documented PYTHONPATH=src test invocation while
+    # retaining root imports used by tests that import from src.*.
+    paths = [str(root), str(root / "src")]
+    if env.get("PYTHONPATH"):
+        paths.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(paths)
     for name, command in SUITES[suite]:
         start = time.monotonic()
         try:
             # Never save raw stdout/stderr: tests could accidentally log sensitive content.
-            completed = subprocess.run(command, cwd=workdir, capture_output=True, timeout=timeout, check=False)
+            completed = subprocess.run(command, cwd=workdir, capture_output=True, timeout=timeout, check=False, env=env)
             status, code = ("passed" if completed.returncode == 0 else "failed"), completed.returncode
         except subprocess.TimeoutExpired:
             status, code = "timeout", None
