@@ -182,7 +182,7 @@ class BoundedHistoryTests(TestCase):
         self.assertEqual(enrichment.count_months(window),6)
         with (
             patch.object(enrichment.psycopg,"connect",return_value=FakeConnection()),
-            patch.object(enrichment,"plan_download_windows",return_value=window),
+            patch.object(enrichment,"plan_bounded_windows",return_value=window),
         ):
             with self.assertRaisesRegex(ValueError,"window exceeded"):
                 enrichment.execute("fake",today=date(2026,11,20))
