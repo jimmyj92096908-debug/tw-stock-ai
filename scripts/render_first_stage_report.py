@@ -57,6 +57,30 @@ def build_summary(audit, ranking, evaluation, *, generated_at=None):
         raise ValueError("No valid ranked research stocks")
     errors = sum(_int(audit["quality"].get(key, 0) or 0) for key in QUALITY_FIELDS)
     readiness = audit["analysis_readiness"]
+    # Backlog is a distinct metric from price coverage or factor scores.
+    # Fail rather than silently presenting an obsolete report without it.
+    pending_rows = audit.get("indicator_backlog")
+    if not isinstance(pending_rows, list) or not pending_rows:
+        raise ValueError("Missing fresh indicator backlog evidence")
+    totals = {"eligible": 0, "pending": 0, "complete": 0, "unstarted": 0}
+    markets_seen = set()
+    backlog_by_market = []
+    for row in pending_rows:
+        market = row.get("market")
+        if market not in ("twse", "tpex") or market in markets_seen:
+            raise ValueError("Indicator backlog has invalid or duplicate markets")
+        markets_seen.add(market)
+        item = {"market": market}
+        for metric in totals:
+            item[metric] = _int(row[metric])
+            totals[metric] += item[metric]
+        if (item["pending"] + item["complete"] != item["eligible"] or
+                item["unstarted"] > item["pending"]):
+            raise ValueError("Inconsistent indicator backlog counters")
+        backlog_by_market.append(item)
+    # 20 stocks per market per job is the current bounded processing cap;
+    # this is a mathematical minimum for successful jobs, not a forecast.
+    min_batches = max((item["pending"] + 19) // 20 for item in backlog_by_market)
     warnings = [
         "僅供歷史資料研究；非即時行情、買賣建議或自動交易訊號。",
         "樣本外績效未通過驗收；LINE 交易訊號與正式新閘道均未啟用。",
@@ -68,6 +92,11 @@ def build_summary(audit, ranking, evaluation, *, generated_at=None):
         warnings.append("行情／評分資料品質條件有異常，請先排查。")
     if priced < total:
         warnings.append("並非全市場資料完全覆蓋。")
+    if totals["pending"]:
+        warnings.append(
+            f"至少 60 日且近期有行情的股票仍有 {totals['pending']:,} 檔技術／SMC 未完整補算；"
+            "行情覆蓋率不能當成模型涵蓋率。"
+        )
     if generated_at is None:
         generated_at = datetime.now(timezone.utc).isoformat()
     return {
@@ -86,6 +115,12 @@ def build_summary(audit, ranking, evaluation, *, generated_at=None):
         "history120_stocks": _int(readiness["history_120d"]),
         "history240_stocks": _int(readiness["history_240d"]),
         "quality_violations": errors,
+        "indicator_backlog_by_market": backlog_by_market,
+        "indicator_eligible": totals["eligible"],
+        "indicator_pending": totals["pending"],
+        "indicator_complete": totals["complete"],
+        "indicator_unstarted": totals["unstarted"],
+        "minimum_batches_at_20_per_market": min_batches,
         "research_eligible_universe": _int(ranking["eligible_universe"]),
         "research_ranked": stocks,
         "holdout_dates": _int(evaluation["holdout"]["dates"]),
@@ -112,8 +147,20 @@ def markdown_report(report):
         f"| 技術指標／SMC／有效評分 | {report['technical_stocks']:,} / {report['smc_stocks']:,} / {report['scored_stocks']:,} 檔 |",
         f"| 至少 60／120／240 日歷史 | {report['history60_stocks']:,} / {report['history120_stocks']:,} / {report['history240_stocks']:,} 檔 |",
         f"| 資料品質異常條件命中 | {report['quality_violations']:,} |",
+        f"| 近期且達 60 日可補指標股票 | {report['indicator_eligible']:,} 檔 |",
+        f"| 技術／SMC 尚待補算 | {report['indicator_pending']:,} 檔（其中兩者都未開始 {report['indicator_unstarted']:,}） |",
+        f"| 以每市場每次最多 20 檔計算的最少批次 | {report['minimum_batches_at_20_per_market']:,} 次（非完成時間預測） |",
         f"| 模型樣本外日期 | {report['holdout_dates']} |",
         f"| 樣本外平均五日超額報酬（30bp 假設成本） | {float(report['holdout_mean_net_excess'])*100:+.2f}% |",
+        "",
+        "## 各市場補算覆蓋",
+        "",
+        "| 市場 | 近期符合 60 日行情 | 待補 | 已補齊 | 兩類均未開始 |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        *[
+            f"| {item['market']} | {item['eligible']:,} | {item['pending']:,} | {item['complete']:,} | {item['unstarted']:,} |"
+            for item in report["indicator_backlog_by_market"]
+        ],
         "",
         "## 最新歷史研究排名（不是買賣建議）",
         f"模型：{_safe_cell(report['model_version'])}｜符合研究條件 {report['research_eligible_universe']:,} 檔",
@@ -173,6 +220,7 @@ table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:11px
 <div class="tile">有效行情<div class="number">{report['stocks_with_prices']:,} / {report['candidate_stocks']:,}</div><small>覆蓋 {report['price_coverage_pct']:.2f}%</small></div>
 <div class="tile">已評分股票<div class="number">{report['scored_stocks']:,}</div><small>技術 {report['technical_stocks']:,}、SMC {report['smc_stocks']:,}</small></div>
 <div class="tile">60／120／240 日<div class="number">{report['history60_stocks']:,} / {report['history120_stocks']:,} / {report['history240_stocks']:,}</div><small>真實交易日歷史檔數</small></div>
+<div class="tile">待補技術／SMC<div class="number">{report['indicator_pending']:,} / {report['indicator_eligible']:,}</div><small>兩類都未開始 {report['indicator_unstarted']:,} 檔；最少 {report['minimum_batches_at_20_per_market']:,} 批次（非時程）</small></div>
 <div class="tile">研究樣本外超額<div class="number">{float(report['holdout_mean_net_excess'])*100:+.2f}%</div><small>每組五日、30bps 假設成本，非策略績效</small></div>
 </div>
 <h2>最新歷史研究排名</h2>
