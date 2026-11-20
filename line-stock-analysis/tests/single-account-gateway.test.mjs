@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
-  createSingleAccountGateway, isStockCommandEvent
+  createSingleAccountGateway, isStockCommandEvent, hasDuplicateReplyIdentity
 } from '../single-account-gateway.mjs';
 import { verifyLineSignature } from '../handler.mjs';
 import { validateLegacyWebhookUrl } from '../single-account-entry.mjs';
@@ -153,4 +153,58 @@ test('stock-like events without a complete LINE reply contract stay on legacy pa
   assert.equal(stockCalls.length,0);
   assert.equal(legacyCalls.length,1);
   assert.equal(legacyCalls[0].payload.events.length,malformed.length);
+});
+
+
+test('a duplicate event ID across stock and legacy fails before either handler',async()=>{
+  const {handler,stockCalls,legacyCalls}=harness();
+  const sameId=[
+    textEvent('2330','same-event'),
+    textEvent('你好','same-event')
+  ];
+  assert.equal(hasDuplicateReplyIdentity(sameId),true);
+  const {request}=signed({events:sameId});
+  const result=await handler(request);
+  assert.equal(result.status,400);
+  assert.match(await result.text(),/Duplicate event identity/u);
+  assert.equal(stockCalls.length,0);
+  assert.equal(legacyCalls.length,0);
+});
+
+test('a duplicate reply token across distinct event IDs also fails before splitting',async()=>{
+  const {handler,stockCalls,legacyCalls}=harness();
+  const first=textEvent('2330','event-1');
+  const second={...textEvent('你好','event-2'),replyToken:first.replyToken};
+  assert.equal(hasDuplicateReplyIdentity([first,second]),true);
+  assert.equal((await handler(signed({events:[first,second]}).request)).status,400);
+  assert.equal(stockCalls.length,0);
+  assert.equal(legacyCalls.length,0);
+});
+
+test('distinct reply identities route normally and duplicate IDs on distinct deliveries remain retryable',async()=>{
+  const {handler,stockCalls,legacyCalls}=harness();
+  const events=[textEvent('2330','stock-event'),textEvent('你好','old-event')];
+  assert.equal(hasDuplicateReplyIdentity(events),false);
+  const first=await handler(signed({events}).request);
+  assert.equal(first.status,200);
+  assert.equal(stockCalls.length,1);
+  assert.equal(legacyCalls.length,1);
+  // Cross-request redelivery remains the persisted stock handler's job,
+  // not a blanket rejection by the batch-level uniqueness validator.
+  const replay=await handler(signed({events}).request);
+  assert.equal(replay.status,200);
+  assert.equal(stockCalls.length,2);
+  assert.equal(legacyCalls.length,2);
+});
+
+test('missing legacy event IDs remain forwarded to the original webhook',async()=>{
+  const {handler,stockCalls,legacyCalls}=harness();
+  const legacy=[
+    {...textEvent('你好','l1'),webhookEventId:undefined},
+    {type:'follow',replyToken:undefined}
+  ];
+  assert.equal(hasDuplicateReplyIdentity(legacy),false);
+  assert.equal((await handler(signed({events:legacy}).request)).status,200);
+  assert.equal(stockCalls.length,0);
+  assert.equal(legacyCalls.length,1);
 });
