@@ -1,0 +1,174 @@
+name: One-Time Authorized 2330 Chip Score Only
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/one-time-authorized-2330-chip-score.yml"
+
+permissions:
+  contents: read
+
+# Prevent collision with routine chip computations.
+concurrency:
+  group: tw-stock-daily-chip-ingest
+  cancel-in-progress: false
+
+jobs:
+  score-only-2330:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install score-only dependencies
+        run: pip install "psycopg[binary]>=3.2,<4" requests
+      - name: Check current score calculator and safeguards offline
+        run: |
+          python -m unittest tests.test_chip_score tests.test_chip_history_backfill -v
+          python -m py_compile src/chip_score.py
+      - name: Compute ONLY 2330 and atomically insert verified chip score
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import date
+          from decimal import Decimal
+
+          import psycopg
+          from chip_score import (
+              _reference_date, _institutional, _margin, _tdcc, _insider,
+              publishable_score,
+          )
+          from tdcc_data import normalize_database_url
+
+          url = os.getenv("DATABASE_URL", "")
+          if not url:
+              raise RuntimeError("DATABASE_URL missing")
+          url = normalize_database_url(url)
+          market, stock = "twse", "2330"
+          target = date(2026, 11, 20)
+
+          def fingerprint(cur, table, where=""):
+              # Audit every pre-existing non-target chip row and composite score.
+              # Only return count/hash, never row contents or LINE identities.
+              if table not in ("daily_chip_scores", "daily_composite_scores"):
+                  raise ValueError("Unexpected table")
+              cur.execute(
+                  "SELECT COUNT(*)::bigint, "
+                  "md5(COALESCE(string_agg(md5(to_jsonb(t)::text),'|' "
+                  "ORDER BY t.market,t.stock_id,t.as_of_date),'')) "
+                  f"FROM public.{table} t {where}"
+              )
+              return cur.fetchone()
+
+          with psycopg.connect(url, connect_timeout=20) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("SET LOCAL statement_timeout = '45s'")
+                  cur.execute(
+                      "SELECT market,stock_id FROM public.stock_master WHERE stock_id=%s",
+                      (stock,),
+                  )
+                  if cur.fetchall() != [(market,stock)]:
+                      raise RuntimeError("Stock master scope is not exactly twse 2330")
+
+                  cur.execute(
+                      "SELECT as_of_date,to_jsonb(c)::text "
+                      "FROM public.daily_chip_scores c "
+                      "WHERE market=%s AND stock_id=%s ORDER BY as_of_date",
+                      (market,stock),
+                  )
+                  previously_saved = cur.fetchall()
+                  if len(previously_saved) != 1 or previously_saved[0][0] != date(2026,10,30):
+                      raise RuntimeError("Unexpected old 2330 chip score state; abort rather than overwrite")
+
+                  protected_chip_before = fingerprint(
+                      cur, "daily_chip_scores",
+                      "WHERE NOT (t.market='twse' AND t.stock_id='2330')"
+                  )
+                  composite_before = fingerprint(cur, "daily_composite_scores")
+
+                  ref = _reference_date(cur,market,stock)
+                  if ref != target:
+                      raise RuntimeError(f"Reference date is not approved 2026-11-20: {ref}")
+                  inst, inst_status = _institutional(cur,market,stock,ref)
+                  margin, margin_status = _margin(cur,market,stock,ref)
+                  tdcc, tdcc_status = _tdcc(cur,market,stock,ref)
+                  insider, insider_status = _insider(cur,market,stock,ref)
+                  components = {
+                      "institutional":inst,"margin":margin,
+                      "tdcc":tdcc,"insider":insider,
+                  }
+                  total,coverage = publishable_score(components)
+                  statuses = {
+                      "institutional":inst_status, "margin":margin_status,
+                      "tdcc":tdcc_status, "insider":insider_status,
+                  }
+
+                  if inst_status.get("status")!="AVAILABLE" or margin_status.get("status")!="AVAILABLE":
+                      raise RuntimeError("Insufficient valid institutional or margin history")
+                  if tdcc is not None or insider is not None:
+                      raise RuntimeError("Source scope changed: expected absent TDCC and insider")
+                  if total is None or coverage != 0.65:
+                      raise RuntimeError("Unexpected score coverage; refusing score write")
+                  if any(not isinstance(value,(int,float)) or not 0 <= value <= 100
+                         for value in (inst,margin,total)):
+                      raise RuntimeError("Invalid component scoring range")
+
+                  print(
+                      "AUTHORIZED_SCORE_PREFLIGHT stock=twse/2330 as_of=2026-11-20 "
+                      f"coverage={coverage:.2f} institutional_status={inst_status['status']} "
+                      f"margin_status={margin_status['status']} "
+                      f"tdcc_status={tdcc_status['status']} insider_status={insider_status['status']}"
+                  )
+                  cur.execute(
+                      """
+                      INSERT INTO public.daily_chip_scores
+                      (market,stock_id,as_of_date,total_score,coverage_weight,
+                       institutional_score,margin_score,tdcc_score,insider_score,
+                       component_status,calculated_at)
+                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,now())
+                      ON CONFLICT (market,stock_id,as_of_date) DO NOTHING
+                      RETURNING market,stock_id,as_of_date,total_score,coverage_weight,
+                                institutional_score,margin_score
+                      """,
+                      (market,stock,ref,total,coverage,inst,margin,tdcc,insider,
+                       json.dumps(statuses,ensure_ascii=False)),
+                  )
+                  inserted = cur.fetchall()
+                  if len(inserted)!=1 or inserted[0][:3] != (market,stock,target):
+                      raise RuntimeError("Expected exactly one new 2330 score row; rolling back")
+                  row=inserted[0]
+                  if row[3] != Decimal(str(total)) or row[4] != Decimal("0.65"):
+                      raise RuntimeError("Stored total or 65% coverage mismatch")
+                  if row[5] != Decimal(str(inst)) or row[6] != Decimal(str(margin)):
+                      raise RuntimeError("Stored component mismatch")
+
+                  cur.execute(
+                      "SELECT as_of_date,to_jsonb(c)::text "
+                      "FROM public.daily_chip_scores c "
+                      "WHERE market=%s AND stock_id=%s AND as_of_date<>%s ORDER BY as_of_date",
+                      (market,stock,target),
+                  )
+                  if cur.fetchall()!=previously_saved:
+                      raise RuntimeError("Previously saved 2330 chip rows changed; rolling back")
+                  if fingerprint(cur,"daily_chip_scores",
+                                 "WHERE NOT (t.market='twse' AND t.stock_id='2330')") != protected_chip_before:
+                      raise RuntimeError("Non-2330 chip score row changed; rolling back")
+                  if fingerprint(cur,"daily_composite_scores") != composite_before:
+                      raise RuntimeError("Composite scores changed; rolling back")
+                  print(
+                      "AUTHORIZED_SCORE_COMMIT stock=twse/2330 date=2026-11-20 "
+                      f"score={total:.2f} coverage=0.65 "
+                      f"institutional_score={inst:.2f} margin_score={margin:.2f} "
+                      "new_rows=1 previous_2330_rows_unchanged=true "
+                      "other_chip_scores_unchanged=true composite_unchanged=true"
+                  )
+          PY
