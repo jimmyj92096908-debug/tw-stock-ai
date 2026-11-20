@@ -53,3 +53,21 @@ python src/chip_history_backfill.py --stock 2330 --days 25 --verify-sources
 ```
 
 已核對 TWSE 2026-11-18、2026-11-19 兩個交易日的 T86 與 MI_MARGN 官方 JSON：均 HTTP 200、官方日期吻合，兩個來源每日期均可解析一筆 2330 有效資料。這是**四項指定日期來源檢查通過**，不是整批 25 日已驗證或正式回補已完成。整批驗證結果必須以專用 GitHub Actions 實際紀錄為準。
+
+
+## 25 個交易日實際來源驗證完成（唯讀）
+
+2026-11-20 夜間 GitHub Actions [#44769215229](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44769215229) 已成功執行：
+
+```text
+actual_price_sessions: 25
+missing_institutional: 24
+missing_margin: 24
+mode: verify_sources
+verified_institutional: 24
+verified_margin: 24
+inserted_institutional: 0
+inserted_margin: 0
+```
+
+每個缺漏項目都從官方 TWSE 以指定歷史日期查詢，核對 JSON 日期及 2330 的唯一解析紀錄；未發送 LINE、未改正式 Webhook、未新增資料庫紀錄。此結果表示來源已經**可回補**，不代表已**完成回補**。正式寫入仍須另外明確授權，依最小缺口新增、禁止覆寫，然後重新核對原始表、籌碼分項及綜合分項。
