@@ -24,7 +24,7 @@ def _session():
                   respect_retry_after_header=True)
     session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
-STOCKS = {"twse": {"6213", "4919", "7827"}, "tpex": {"8937"}}
+STOCKS = {"twse": {"2330", "6213", "4919", "7827"}, "tpex": {"8937"}}
 
 def to_int(value):
     text = str(value if value is not None else "").replace(",", "").strip()
