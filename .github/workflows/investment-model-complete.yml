@@ -1,0 +1,71 @@
+name: Investment Model End-to-End Research Acceptance
+
+on:
+  push:
+    branches:
+      - "feature/complete-investment-model-research-bundle-*"
+    paths:
+      - "src/investment_model_bundle.py"
+      - "scripts/investment_model_pipeline.py"
+      - "tests/test_investment_model_bundle.py"
+      - ".github/workflows/investment-model-complete.yml"
+  pull_request:
+    paths:
+      - "src/investment_model_bundle.py"
+      - "scripts/investment_model_pipeline.py"
+      - "tests/test_investment_model_bundle.py"
+      - "models/tw-factor-ridge-1-*.json"
+      - ".github/workflows/investment-model-complete.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install model dependencies (no Neon credentials)
+        run: pip install -r requirements.txt
+      - name: Compile model pipeline
+        run: |
+          python -m py_compile src/investment_model_bundle.py
+          python -m py_compile scripts/investment_model_pipeline.py
+      - name: Test models, provenance, time alignment and no-trading gates
+        run: |
+          python -m unittest -v \
+            tests.test_investment_model_bundle \
+            tests.test_trained_factor_model \
+            tests.test_fitted_artifact_consistency \
+            tests.test_factor_model_v2 \
+            tests.test_composite_score \
+            tests.test_chip_score
+      - name: Execute end-to-end offline research model
+        run: |
+          python scripts/investment_model_pipeline.py --output /tmp/research-model-summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("/tmp/research-model-summary.json").read_text())
+          assert report["abstain_from_trading"] is True
+          assert report["publish_line_trade_signal"] is False
+          assert report["orders_enabled"] is False
+          assert report["data_mode"] == "offline_committed_evidence_only"
+          assert report["model"]["research_evidence_status"] == "INCOMPLETE_OR_FAILED"
+          assert report["model"]["holdout_net_excess"] < 0
+          assert not report["ranking"]["stocks"]
+          print("Verified offline model gate; no live research data is invented.")
+          PY
+      - name: Document boundary
+        if: always()
+        run: |
+          echo "### Whole investment research model acceptance" >> "$GITHUB_STEP_SUMMARY"
+          echo "- No production credentials, SQL writes, LINE messages or broker orders were used." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Existing trained model has negative and non-pristine out-of-sample evidence; deployment/trading gates remain disabled." >> "$GITHUB_STEP_SUMMARY"

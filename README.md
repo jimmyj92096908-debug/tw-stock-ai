@@ -77,6 +77,20 @@ Neon PostgreSQL · twstock
 
 驗證狀態：**模型程式完成，但樣本外績效不通過**。模型已使用 57 個開發日期訓練，21 個已知樣本外日期的平均扣假設成本超額報酬約 -2.11 個百分點，且這段樣本外區間曾在早期版本被檢視過，尚不能稱獨立投資績效證明。所有最新排名均屬研究成果，內建 `abstain=true`、`live_trading_approved=false`，沒有自動下單或 LINE 交易訊號。
 
+## 統一投資研究模型執行入口
+
+可使用 `scripts/investment_model_pipeline.py` 完整執行**模型證據驗證 → 歷史排名 → 個股籌碼／綜合評分日期核對 → JSON 研究報告**。預設完全離線，不需 Neon 或 LINE 密碼：
+
+```bash
+python scripts/investment_model_pipeline.py --output research-model-status.json
+```
+
+若已取得適當的唯讀資料庫憑證，可經明確環境旗標 `INVESTMENT_MODEL_READONLY=yes` 以單一 PostgreSQL 唯讀快照查詢實際 2330 資料，輸出 `research-model-live.json`，不會寫入 Neon 或發送 LINE。
+
+**模型研究程式已具備完整執行入口，但不是獲利績效已驗收。** 目前保存的 21 個樣本外觀察日，模型淨超額表現約 -2.11 個百分點，且不是全新未檢視的保留樣本，所以系統會持續輸出 `abstain_from_trading=true` 並封鎖買賣訊號與自動下單。不得用不存在的未來資料宣稱已達到正式交易上線標準。
+
+[統一研究模型完整使用說明與驗收門檻](docs/investment-model-complete.md)。
+
 ## LINE 指令（新版功能完成正式切換後才適用）
 
 | 指令 | 預定回覆 |
