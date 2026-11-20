@@ -35,7 +35,8 @@ Linux／GitHub Actions 使用方式相同，僅需以 shell 環境變數設定�
 
 - 預設 `offline` 只讀取 Repo 已保存的公開模型 JSON：明確標示 `offline_stock_data_is_not_live=true`，**不會編造最新股票價格或當日排名**。
 - `--live-readonly` 需有 `INVESTMENT_MODEL_READONLY=yes` 及 DATABASE_URL，會於單一 PostgreSQL `REPEATABLE READ, READ ONLY` 交易中執行原有的同日 `LATEST_MODEL_SQL` 和公開股票資料狀態查詢。連線帶 `default_transaction_read_only=on`，資料庫伺服器拒絕寫入，**不查詢 `line_messages`、不匯出使用者資訊、不更新任何分析表**。
-- 即使最新綜合評分日比行情日舊，仍只能標示為歷史研究排名（`ranking_matches_reference_price_date=false`），不能說是當日即時選股。
+- 即使最新綜合評分日比行情日舊，仍只能標示為歷史研究排名，不能說是當日即時選股；`ranking_matches_reference_price_date` 只表示**排名日期與查詢個股的行情日是否相同**，不是該個股已被納入當日排名。請另外檢查 `reference_stock_in_rank_cohort`。
+- 另計算該排名日期實際有有效價格的股票數（`ranked_date_priced_universe`）與已完成同日綜合評分且符合研究模型門檻的股票數（`ranking.eligible_universe`）。如果少於 **30 檔**或不足同日有效行情股票的 **20%**，輸出 `ranking_sample_status=THIN_OR_UNKNOWN_RANKING_COHORT`；這是避免小樣本冒充全市場的**描述性資料覆蓋警示**，不是模型績效門檻，也不能取代樣本外驗證。
 - 獨立籌碼評分僅在來源覆蓋至少 50%、不晚於參考行情日且距行情日不超過七個日曆天時展示。若獨立籌碼評分日比綜合評分新，會明示 `new_chip_not_in_older_composite=true`，**絕不將 11/20 的 2330 籌碼分數併入 11/19 的舊綜合評分**。
 
 ## 已證實的真實模型限制：不是「通過」的投資訊號
@@ -76,3 +77,10 @@ Linux／GitHub Actions 使用方式相同，僅需以 shell 環境變數設定�
 研究模型可完成編碼、測試與唯讀驗收；**不能捏造**尚未發生的未來驗證資料或正向樣本外績效。若要將研究結果進一步變為真正會發送 LINE 交易提示或執行交易的服務，仍需另行完成新的外部樣本、費用／滑價與交易限制核對、正式發布核准。正式 Neon 指標／綜合評分寫入、資料權限 GRANT、LINE Function 部署與 Webhook 切換均不在此 PR 操作範圍。
 
 相關文件：[已訓練模型](trained-factor-model.md) · [LINE 上線門檻](line-production-readiness-20261120.md) · [最小讀取權限](line-chip-reader-grant-runbook.md)。
+
+
+## 實際 Neon 端到端唯讀實測（2026-11-21）
+
+[一次性真實研究模型驗收 #44797342734](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44797342734) 成功，且輸出 [JSON 研究報告 Artifact](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44797342734/artifacts/14658653878)。當時 2330 行情／獨立籌碼日期為 **2026-11-20**，籌碼分數 **40.65**、覆蓋 **65%**；技術與綜合評分仍是 **2026-11-19**。
+
+最新全市場研究排名的來源分數日期為 **2026-11-20**，但當時僅 **7 檔**股票符合當日研究模型排名資格；這不能被當成整個上市／上櫃市場的有效完整排名，亦不能由此推導 2330 已取得 11/20 的綜合評分。因此在完成正式資料日與市場覆蓋率修補以前，先將排名標記為**稀疏樣本**，繼續 `abstain=true`。一次性驗收的程式不會保留在主分支；未來如需重新執行可以使用手動 `Generate Investment Research Model Report (Read Only)` 工作流程，無自動推播。
