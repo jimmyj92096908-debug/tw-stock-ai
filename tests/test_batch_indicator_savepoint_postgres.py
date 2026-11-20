@@ -55,7 +55,8 @@ class IndicatorSavepointPostgresTests(unittest.TestCase):
             if market != "twse":
                 return []
             return [
-                {"market":"twse", "stock_id":sid,"close_days":60}
+                {"market":"twse", "stock_id":sid,"close_days":60,
+                 "latest_close":days[-1]}
                 for sid in ("1001","1002")
             ]
 
@@ -120,7 +121,8 @@ class IndicatorSavepointPostgresTests(unittest.TestCase):
                     """)
         observations = [date(2026,8,1)+timedelta(days=i) for i in range(60)]
         selected = [
-            {"market":"twse","stock_id":str(1000+i),"close_days":60}
+            {"market":"twse","stock_id":str(1000+i),"close_days":60,
+             "latest_close":observations[-1]}
             for i in range(20)
         ]
 

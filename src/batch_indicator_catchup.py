@@ -37,18 +37,30 @@ WITH priced AS (
  SELECT p.market,p.stock_id,p.close_days,p.latest_close,
    (SELECT COUNT(*)::int FROM public.daily_technicals t
     WHERE t.market=p.market AND t.stock_id=p.stock_id) AS technical_rows,
+   (SELECT MAX(t.trade_date) FROM public.daily_technicals t
+    WHERE t.market=p.market AND t.stock_id=p.stock_id) AS last_technical,
    (SELECT COUNT(*)::int FROM public.daily_smc s
-    WHERE s.market=p.market AND s.stock_id=p.stock_id) AS smc_rows
+    WHERE s.market=p.market AND s.stock_id=p.stock_id) AS smc_rows,
+   (SELECT MAX(s.trade_date) FROM public.daily_smc s
+    WHERE s.market=p.market AND s.stock_id=p.stock_id) AS last_smc
  FROM priced p
 )
-SELECT market,stock_id,close_days,latest_close,technical_rows,smc_rows
+SELECT market,stock_id,close_days,latest_close,technical_rows,smc_rows,
+       last_technical,last_smc
 FROM analysis
-WHERE (technical_rows < close_days OR smc_rows < close_days)
+WHERE (technical_rows < close_days OR smc_rows < close_days
+       OR last_technical IS DISTINCT FROM latest_close
+       OR last_smc IS DISTINCT FROM latest_close)
   AND latest_close >= (
       SELECT MAX(trade_date) FROM public.daily_prices
       WHERE close IS NOT NULL
   ) - INTERVAL '7 days'
-ORDER BY CASE WHEN technical_rows=0 OR smc_rows=0 THEN 0 ELSE 1 END,
+-- Finish tracked symbols first, then unblock never-computed stocks. The
+-- date predicate also catches symbols whose old indicator row COUNT is
+-- misleadingly greater than their valid price count (e.g. 8937).
+ORDER BY CASE WHEN stock_id IN ('2330','6213','4919','7827','8937')
+              THEN 0 ELSE 1 END,
+         CASE WHEN technical_rows=0 OR smc_rows=0 THEN 0 ELSE 1 END,
          close_days DESC, stock_id
 LIMIT %s
 """
@@ -57,10 +69,16 @@ VERIFY_SQL="""
 SELECT
   (SELECT COUNT(*)::int FROM public.daily_adjusted_prices
    WHERE market=%s AND stock_id=%s) AS adjusted_rows,
+  (SELECT MAX(trade_date) FROM public.daily_adjusted_prices
+   WHERE market=%s AND stock_id=%s) AS adjusted_last,
   (SELECT COUNT(*)::int FROM public.daily_technicals
    WHERE market=%s AND stock_id=%s) AS technical_rows,
+  (SELECT MAX(trade_date) FROM public.daily_technicals
+   WHERE market=%s AND stock_id=%s) AS technical_last,
   (SELECT COUNT(*)::int FROM public.daily_smc
-   WHERE market=%s AND stock_id=%s) AS smc_rows
+   WHERE market=%s AND stock_id=%s) AS smc_rows,
+  (SELECT MAX(trade_date) FROM public.daily_smc
+   WHERE market=%s AND stock_id=%s) AS smc_last
 """
 
 def select_candidates(conn,market,limit):
@@ -98,16 +116,17 @@ def run(database_url: str, *, apply=False, per_market=12) -> list[dict]:
                             technical=calculate_technical_stock(conn,market,stock["stock_id"])
                             smc=calculate_smc_stock(conn,market,stock["stock_id"])
                             with conn.cursor() as cur:
-                                cur.execute(VERIFY_SQL,(market,stock["stock_id"],
-                                                        market,stock["stock_id"],
-                                                        market,stock["stock_id"]))
+                                cur.execute(VERIFY_SQL,((market,stock["stock_id"])*6))
                                 verification=cur.fetchone()
                             if min(adjusted,technical,smc)<MIN_VERIFIED_PRICE_DAYS:
                                 raise RuntimeError("Insufficient indicators from verified history")
                             if (verification["adjusted_rows"]<stock["close_days"] or
                                 verification["technical_rows"]<stock["close_days"] or
-                                verification["smc_rows"]<stock["close_days"]):
-                                raise RuntimeError("Stored indicator coverage below valid price history")
+                                verification["smc_rows"]<stock["close_days"] or
+                                verification["adjusted_last"] != stock["latest_close"] or
+                                verification["technical_last"] != stock["latest_close"] or
+                                verification["smc_last"] != stock["latest_close"]):
+                                raise RuntimeError("Stored indicator count/date coverage below latest valid history")
                             item.update({"status":"verified",
                                          "technical_rows":verification["technical_rows"],
                                          "smc_rows":verification["smc_rows"]})
