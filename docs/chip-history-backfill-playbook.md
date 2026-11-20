@@ -87,3 +87,19 @@ inserted_margin: 0
 - 一次性 `.github/workflows/one-time-authorized-2330-chip-history-import.yml` 已刪除，保留 Actions 歷史日誌供稽核；過程沒有呼叫 LINE API、變更 Webhook、啟用 LINE 股票閘道或啟用自動下單。
 
 **下一步（尚未執行）：** 使用固定 2330 股票範圍重新計算籌碼分數，驗證新 `daily_chip_scores` 有效覆蓋，之後才評估是否重新計算綜合分數。因這兩步會修改不同的正式評分表，與這次僅新增原始籌碼歷史資料的授權範圍不同。
+
+
+## 2026-11-21 00:19（Asia/Taipei）：2330 籌碼正式評分單筆更新驗收
+
+使用者再次明確授權：**僅**針對 `twse/2330` 使用已驗證的 25 個交易日籌碼原始資料計算並更新 `public.daily_chip_scores`，核對分數、資料來源覆蓋率；不得修改 `daily_composite_scores`、其他股票資料、LINE Webhook 或額外發送 LINE 訊息。
+
+- 一次性 GitHub Actions：[#44772227603](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44772227603)，結論 `success`，19 項離線檢查通過。
+- 前置資料檢查：`stock_master` 中 `2330` 只有 `twse` 一筆；最新可用籌碼來源及行情參照日均為 **2026-11-20**；先前同股唯一歷史籌碼評分為 2026-10-30 的 NULL 分數。
+- 重用現有 `src/chip_score.py` 的 `_reference_date`、`_institutional`、`_margin`、`_tdcc`、`_insider`、`publishable_score` 算法，沒有變更權重或不足資料門檻。計算結果：**籌碼總分 40.65／100，來源覆蓋率 0.65**，法人分項 29.05、融資融券分項 59.21；TDCC 及 insider 無來源，分項 NULL。兩個有效分項狀態為 `AVAILABLE`，資料日均為 2026-11-20。
+- 唯一正式寫入目標：`public.daily_chip_scores` 的 (`market='twse'`, `stock_id='2330'`, `as_of_date='2026-11-20'`) **新增一筆**；採 `ON CONFLICT (market,stock_id,as_of_date) DO NOTHING`，避免覆寫已存在紀錄。只有分項可用且覆蓋率精確符合 65% 時才允許提交。
+- 同一個交易中對其他股票的籌碼評分、整張 `daily_composite_scores` 建立列數與內容指紋，比對前後一致，原版 2330 2026-10-30 籌碼紀錄亦原樣保留。GitHub 驗收日誌：`AUTHORIZED_SCORE_COMMIT stock=twse/2330 date=2026-11-20 score=40.65 coverage=0.65 institutional_score=29.05 margin_score=59.21 new_rows=1 previous_2330_rows_unchanged=true other_chip_scores_unchanged=true composite_unchanged=true`。
+- 正式 Neon 獨立查詢確認新列 `total_score=40.65`、`coverage_weight=0.65`，法人 `AVAILABLE`、margin `AVAILABLE`，TDCC/insider `MISSING`；其他股票籌碼評分仍 34 列，未重新計算。
+- 一次性 `.github/workflows/one-time-authorized-2330-chip-score.yml` 已刪除，避免再次觸發；保留該 Actions 歷史日誌供稽核。
+- **尚未執行**：`daily_composite_scores` 的 2330 重新計算；LINE 新版股票回覆長期啟用；額外 LINE 推播。不要把新的 `daily_chip_scores` 分數誤說成已出現在舊的綜合評分或目前正式 LINE 回覆中。
+
+> 本次結果僅供研究用途。籌碼總分 40.65 是現行規則加權值，非已驗證的市場預測能力，也不是交易指令。
