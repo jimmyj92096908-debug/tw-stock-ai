@@ -8,6 +8,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from src.batch_indicator_catchup import select_candidates
+from src.stock_db_audit import INDICATOR_BACKLOG_SQL
 
 
 URL=os.getenv("STOCK_CI_POSTGRES_URL")
@@ -72,6 +73,13 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             self.assertEqual(match[0]["smc_rows"],61)
             self.assertEqual(match[0]["last_technical"],start+timedelta(days=58))
             self.assertEqual(match[0]["latest_close"],start+timedelta(days=59))
+            # The actual backlog SQL must classify exactly the same stale
+            # symbol; mocking this SQL hid a real CTE projection bug.
+            def backlog():
+                return {x["market"]:x for x in
+                        conn.execute(INDICATOR_BACKLOG_SQL).fetchall()}
+            pending_before=backlog()["tpex"]["pending"]
+            self.assertGreaterEqual(pending_before,1)
             # Restoring the latest real session clears this pending status;
             # excess older rows must not falsely keep it in the queue.
             latest=start+timedelta(days=59)
@@ -81,6 +89,7 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
               VALUES('tpex','8937',%s) ON CONFLICT DO NOTHING""",(latest,))
             self.assertNotIn("8937",
                 [r["stock_id"] for r in select_candidates(conn,"tpex",3)])
+            self.assertEqual(pending_before-backlog()["tpex"]["pending"],1)
 
             # If all 60 sessions are already covered by technical + SMC,
             # the same candidate must not be recomputed.
