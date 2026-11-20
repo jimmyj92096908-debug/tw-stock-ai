@@ -35,6 +35,14 @@
 
 這個工作流程**不會**呼叫 LINE API 發送訊息、官方簽章測試 POST、Webhook 設定 PUT、Neon 部署、資料庫讀寫或真實使用者資料。只有在正式憑證與真實簽章／事件驗收完成，才能另行審查切換。健康檢查 200 不能當作候選服務可接收真實 LINE 事件的證據。
 
+## 候選關閉狀態下的官方簽章空事件（程式碼驗收）
+
+根據 LINE 官方驗證規格，Webhook 連線檢查會傳送有 `destination` 且 `events: []` 的 POST，端點應回 HTTP 200。本專案候選閘道的**新程式碼**允許僅在正確 `x-line-signature`、有目的地、`events` 確認為空陣列、大小符合上限時回 200；即使 `LINE_SINGLE_ACCOUNT_ENABLED=false`，也不會觸碰股票資料庫、回覆 API、收件人紀錄或舊版 Webhook。
+
+在候選仍關閉時，任何非空、未簽章、被竄改、超大、格式不合法或缺少 Channel Secret 的請求仍被拒絕（HTTP 503 或 413）。**這不是授權新閘道服務真實 LINE 事件。** 原有已啟用模式的事件路由與空事件交付給舊服務行為維持不變。
+
+此修正僅在 GitHub 候選程式碼與離線測試中生效；目前 Neon `linestockgateway` Deployment 2 **並未因合併 GitHub 程式碼而自動更新**。維運者需另行審查並以受保護設定部署候選版本，才可執行官方手動 `line-gateway-official-canary.yml` 的 `run_test=true`。不能把任何離線簽章測試報告寫成真實 LINE Canary 成功。
+
 ## 仍未通過的正式啟用門檻
 
 **不能以以上測試直接宣稱已正式上線。** Neon `linestockgateway` 目前部署環境只列出 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`，仍**缺少兩項必備密鑰名稱** `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`。由於現有工具不會以明文顯示 LINE 金鑰，不能替使用者從舊函式讀出或複製兩個密鑰，更不能把它們放進 GitHub 版本控制。
