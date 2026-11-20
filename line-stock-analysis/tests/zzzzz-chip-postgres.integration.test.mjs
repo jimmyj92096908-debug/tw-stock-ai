@@ -67,6 +67,7 @@ test('only the seven chip columns are readable, and LINE keeps score dates separ
       ('twse','2330','2026-10-30',NULL,0,NULL,NULL,'{}'),
       ('twse','2330','2026-11-20',40.65,0.65,29.05,59.21,'{"no":"private"}'),
       ('twse','2330','2026-11-21',99.99,1,99,99,'{}'),
+      ('twse','2330','2026-11-22',NULL,0,NULL,NULL,'{}'),
       ('twse','6213','2026-11-20',77.77,0.75,70,65,'{}')`);
     await admin.query('GRANT USAGE ON SCHEMA ' + schema + ' TO ' + readRole);
     await admin.query(`GRANT SELECT
@@ -90,10 +91,14 @@ test('only the seven chip columns are readable, and LINE keeps score dates separ
     // A newer date may not be borrowed for an older close or composite day.
     const older = (await readAsRole(verifiedQuery,
       ['twse','2330','2026-11-19'])).rows;
-    assert.equal(older.length, 1);
-    assert.equal(older[0].standalone_chip_date.toISOString().slice(0, 10),
-      '2026-10-30');
-    assert.equal(older[0].standalone_chip_score, null);
+    // A stored invalid result must never look like a usable factor.
+    assert.equal(older.length, 0);
+    const newestValid = (await readAsRole(verifiedQuery,
+      ['twse','2330','2026-11-22'])).rows;
+    assert.equal(newestValid.length, 1);
+    assert.equal(newestValid[0].standalone_chip_date.toISOString().slice(0,10),
+      '2026-11-21');
+    assert.equal(Number(newestValid[0].standalone_chip_score),99.99);
 
     // Exact bound symbol prevents accidental cross-stock score borrowing.
     const other = (await readAsRole(verifiedQuery,
