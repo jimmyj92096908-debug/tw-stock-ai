@@ -1,0 +1,83 @@
+# ONE-TIME user-authorized repair to finalize scoring after 29 successful
+# indicator savepoints. Automatically removes on subsequent branch commit.
+name: One-Time Owner-Approved Composite Score Follow-Through
+on:
+  push:
+    branches: [feature/owner-approved-score-rebuild-after-2235-fix-20261121]
+    paths:
+      - ".github/workflows/one-time-owner-score-followthrough-20261121.yml"
+permissions:
+  contents: read
+concurrency:
+  group: composite-score-after-market-refresh
+  cancel-in-progress: false
+jobs:
+  score-followthrough:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/feature/owner-approved-score-rebuild-after-2235-fix-20261121'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+      INVESTMENT_MODEL_READONLY: "yes"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install score builder and research model dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test all relevant score and NULL-price date guards
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing protected DATABASE_URL"; exit 1; fi
+          python -m py_compile src/stock_db_audit.py src/batch_indicator_catchup.py src/composite_score.py scripts/score_after_refresh.py
+          python -m unittest -v tests.test_composite_score tests.test_score_after_refresh tests.test_stock_db_audit tests.test_batch_indicator_catchup tests.test_indicator_schedule_probe
+      - name: Capture actual pre-score data coverage under READ ONLY
+        run: |
+          python scripts/indicator_schedule_probe.py --output indicator-score-before.json
+          python scripts/investment_model_pipeline.py --live-readonly --market twse --stock-id 2330 --output model-score-before.json
+          python - <<'PY'
+          import json
+          p=json.load(open("indicator-score-before.json"))
+          by={x["market"]:x for x in p["markets"]}
+          assert p["latest_price_date"]=="2026-11-20"
+          assert by["tpex"]["eligible"]>=22
+          assert by["tpex"]["pending"]==0, "TPEx must be complete on latest valid close"
+          assert by["twse"]["complete"]>=32
+          m=json.load(open("model-score-before.json"))
+          assert m["abstain_from_trading"] is True and not m["orders_enabled"]
+          assert m["ranking"]["eligible_universe"]>=29
+          PY
+      - name: Recompute audited existing composite scores (no price/LINE changes)
+        run: python scripts/score_after_refresh.py
+      - name: Validate model rank coverage increased and data dates remain consistent
+        run: |
+          python scripts/investment_model_pipeline.py --live-readonly --market twse --stock-id 2330 --output model-score-after.json
+          python - <<'PY'
+          import json
+          b=json.load(open("model-score-before.json"))
+          a=json.load(open("model-score-after.json"))
+          assert a["abstain_from_trading"] and not a["orders_enabled"] and not a["publish_line_trade_signal"]
+          assert a["model"]["research_evidence_status"]=="INCOMPLETE_OR_FAILED"
+          assert a["stock_data"]["price_date"]==b["stock_data"]["price_date"]
+          assert a["stock_data"]["technical_matches_latest_price"]
+          assert a["stock_data"]["composite_matches_latest_price"]
+          old=b["ranking"]["eligible_universe"]
+          new=a["ranking"]["eligible_universe"]
+          assert new>old, "Cohort coverage did not rise after scoring verified 29 stock saves"
+          print("SCORE_FOLLOWTHROUGH_READONLY_VERIFIED as_of=%s old_ranked=%d new_ranked=%d price_date=%s score_date=%s chip_score=%s abstain=true no_line_message=true no_orders=true" % (
+            a["ranking"]["date"],old,new,a["stock_data"]["price_date"],
+            a["stock_data"]["composite_date"],a["stock_data"]["independent_chip_score"]
+          ))
+          PY
+      - name: Retain synthetic-free, public-equity audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-approved-score-followthrough-evidence
+          path: |
+            indicator-score-before.json
+            model-score-before.json
+            model-score-after.json
+          if-no-files-found: ignore
+          retention-days: 14
