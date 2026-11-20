@@ -166,6 +166,7 @@ class InvestmentBundleTests(unittest.TestCase):
 
     def test_db_queries_share_one_repeatable_read_transaction(self):
         conn=MagicMock()
+        conn.__enter__.return_value=conn
         cur=conn.transaction.return_value.__enter__.return_value
         result=conn.cursor.return_value.__enter__.return_value
         result.fetchall.side_effect=[
@@ -186,8 +187,8 @@ class InvestmentBundleTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             file=Path(folder)/"research.json"
             out=runner.make_bundle()
-            runner.json.dump(out,file.open("w",encoding="utf-8"),
-                             ensure_ascii=False,allow_nan=False)
+            with file.open("w",encoding="utf-8") as handle:
+                runner.json.dump(out,handle,ensure_ascii=False,allow_nan=False)
             record=json.loads(file.read_text(encoding="utf-8"))
             self.assertEqual(record["overall_status"],
                              "RESEARCH_ONLY_EVIDENCE_BLOCKED")
