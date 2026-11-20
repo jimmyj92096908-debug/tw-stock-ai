@@ -54,8 +54,10 @@ def build_probe(conn, *, captured_at=None):
         for item in candidates:
             if (item["market"] != market or item["stock_id"] == "1808"
                     or int(item["close_days"]) < MIN_VERIFIED_PRICE_DAYS
-                    or int(item["technical_rows"]) >= int(item["close_days"])
-                       and int(item["smc_rows"]) >= int(item["close_days"])
+                    or (int(item["technical_rows"]) >= int(item["close_days"])
+                        and int(item["smc_rows"]) >= int(item["close_days"])
+                        and item.get("last_technical") == item["latest_close"]
+                        and item.get("last_smc") == item["latest_close"])
                     or item["stock_id"] in codes):
                 raise ValueError("Candidate violates bounded catch-up contract")
             codes.add(item["stock_id"])
