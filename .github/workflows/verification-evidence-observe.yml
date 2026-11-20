@@ -1,0 +1,91 @@
+name: Verification Evidence (Observe Only)
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'line-stock-analysis/**'
+      - 'scripts/verification_evidence.py'
+      - '.github/workflows/verification-evidence-observe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [python, line]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: line_ci_test
+          POSTGRES_USER: line_ci_test
+          POSTGRES_PASSWORD: ci-disposable-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U line_ci_test -d line_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        if: matrix.suite == 'line'
+        with:
+          node-version: '24'
+      - name: Install Python requirements
+        if: matrix.suite == 'python'
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+      - name: Install LINE requirements
+        if: matrix.suite == 'line'
+        working-directory: line-stock-analysis
+        run: npm install --no-audit --no-fund
+      - name: Execute observable checks
+        id: verification
+        continue-on-error: true
+        env:
+          LINE_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
+        run: python scripts/verification_evidence.py --suite '${{ matrix.suite }}' --output 'verification-${{ matrix.suite }}.json'
+      - name: Publish evidence summary from actual checks
+        if: always()
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          name = os.environ["SUITE"]
+          file = Path(f"verification-{name}.json")
+          summary = [f"### Verification observation: {name}"]
+          if file.exists():
+              evidence = json.loads(file.read_text(encoding="utf-8"))
+              summary.append(f"- Actual check outcome: **{evidence['runner_outcome'].upper()}**")
+              for check in evidence["checks"]:
+                  summary.append(f"- {check['check']}: **{check['status']}**")
+          else:
+              summary.append("- **FAILED: evidence file missing**")
+          summary.extend([
+              "- This workflow is observe-only; a green job does NOT prove tests passed.",
+              "- Not verified: real LINE messages, production Neon or webhook cutover.",
+          ])
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8").write("\n".join(summary)+"\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-evidence-${{ matrix.suite }}
+          path: verification-${{ matrix.suite }}.json
+          if-no-files-found: warn
+          retention-days: 14
