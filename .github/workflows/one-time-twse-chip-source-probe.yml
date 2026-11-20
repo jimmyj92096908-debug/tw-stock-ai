@@ -1,0 +1,58 @@
+name: One-Time TWSE Chip Historical Source Probe (No DB)
+on:
+  push:
+    branches: [feature/chip-history-source-validation-20261120]
+    paths:
+      - ".github/workflows/one-time-twse-chip-source-probe.yml"
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install HTTP and parser dependencies
+        run: pip install "psycopg[binary]>=3.2,<4" requests
+      - name: Probe two official past dates, validate no wrong-date mapping
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+          from institutional_data import TWSE_URL as T86, HEADERS as H1, parse_twse as p1, ad_date
+          from margin_data import TWSE_URL as MARGN, HEADERS as H2, parse_twse as p2, roc_date
+          session=requests.Session()
+          for iso in ("2026-11-18","2026-11-19"):
+              ymd=iso.replace("-","")
+              for kind,url,headers,selection,parse,fmt in (
+                  ("institutional",T86,H1,"ALL",p1,ad_date),
+                  ("margin",MARGN,H2,"STOCK",p2,roc_date)
+              ):
+                  try:
+                      response=session.get(url,params={"date":ymd,"selectType":selection,"response":"json"},headers=headers,timeout=(12,35))
+                      response.raise_for_status()
+                      payload=response.json()
+                      source_date=fmt(payload.get("date")) if isinstance(payload,dict) else None
+                      keys=sorted(payload.keys()) if isinstance(payload,dict) else []
+                      count=-1
+                      parse_error=None
+                      if source_date==iso:
+                          try:
+                              records=parse(payload,iso)
+                              count=sum(row.get("stock_id")=="2330" for row in records)
+                          except Exception as e:
+                              parse_error=type(e).__name__+":"+str(e)[:160]
+                      print("SOURCE_CHECK",json.dumps({"day":iso,"kind":kind,"http":response.status_code,
+                          "date":source_date,"matched":source_date==iso,
+                          "top_keys":keys[:25],"stat":str(payload.get("stat",""))[:50] if isinstance(payload,dict) else "not_object",
+                          "2330_rows":count,"parse_error":parse_error},ensure_ascii=False))
+                  except Exception as e:
+                      print("SOURCE_ERROR",json.dumps({"day":iso,"kind":kind,
+                          "error_type":type(e).__name__,"message":str(e)[:170]},ensure_ascii=False))
+          PY
