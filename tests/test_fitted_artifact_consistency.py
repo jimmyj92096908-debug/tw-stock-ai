@@ -41,6 +41,7 @@ class PublishedArtifactAcceptance(unittest.TestCase):
         np.testing.assert_allclose(saved, computed, rtol=1e-7, atol=1e-10)
         self.assertTrue(np.all(np.isfinite(computed)))
         self.assertFalse(model["may_send_trade_signals"])
+        self.assertTrue(model["holdout_previously_examined_during_model_design"])
 
     def test_real_holdout_failure_remains_visible_and_blocks_signals(self):
         report = load("tw-factor-ridge-1-evaluation.json")
@@ -50,6 +51,9 @@ class PublishedArtifactAcceptance(unittest.TestCase):
         self.assertFalse(report["holdout_research_gate_passed"])
         self.assertFalse(report["line_signal_delivery_approved"])
         self.assertFalse(report["live_trading_approved"])
+        self.assertTrue(report["holdout_previously_examined_during_model_design"])
+        self.assertFalse(report["holdout_is_pristine_independent_validation"])
+        self.assertTrue(report["requires_new_unseen_future_holdout"])
 
     def test_real_latest_rankings_are_historical_and_abstain(self):
         model = load("tw-factor-ridge-1-research.json")
