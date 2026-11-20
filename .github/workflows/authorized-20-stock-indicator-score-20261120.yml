@@ -1,0 +1,129 @@
+name: Authorized 20-Stock Indicator To Score Batch 2026-11-20
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/authorized-20-stock-indicator-score-20261120.yml"
+      - "scripts/indicator_score_followthrough.py"
+      - "tests/test_indicator_score_followthrough.py"
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/authorized-20-stock-indicator-score-20261120.yml"
+
+permissions:
+  contents: read
+
+# Same lock as scheduled 03:10 production indicator catch-up; never overlap.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+      - name: Verify indicator, score and read-only evidence contracts
+        run: |
+          python -m py_compile scripts/indicator_score_followthrough.py
+          python -m unittest tests.test_indicator_score_followthrough tests.test_indicator_batch_reconcile tests.test_batch_indicator_catchup -v
+      - name: Full Python regression tests
+        run: python -m pytest -q tests
+
+  authorized-production-batch:
+    needs: offline-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, 'ACTIVATE-ONCE-20261120-NEXT20-INDICATOR')
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install verified production indicator dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Require protected database URL
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Missing DATABASE_URL, no synthetic success."
+            exit 1
+          fi
+      - name: Capture bounded candidate and before-state with READ ONLY transaction
+        run: python scripts/indicator_schedule_probe.py --output indicator-before.json
+      - name: Preview 20 stocks per market without SQL writes
+        run: python src/batch_indicator_catchup.py --per-market 20
+      - name: Apply authorized stock indicator and SMC batch (max 20 per market)
+        env:
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
+        run: python src/batch_indicator_catchup.py --apply --per-market 20
+      - name: Capture after-state with READ ONLY transaction even if apply failed
+        if: always()
+        run: python scripts/indicator_schedule_probe.py --output indicator-after.json
+      - name: Require real indicator coverage gain before scoring
+        if: success()
+        run: |
+          python scripts/indicator_batch_reconcile.py \
+            --before indicator-before.json \
+            --after indicator-after.json \
+            --output indicator-progress-proof.json
+      - name: Record score baseline from database read-only
+        if: success()
+        run: python src/stock_db_audit.py --json > score-before.json
+      - name: Recompute already-authorized composite research scores
+        if: success()
+        run: python scripts/score_after_refresh.py
+      - name: Read refreshed score coverage from database read-only
+        if: always()
+        run: python src/stock_db_audit.py --json > score-after.json
+      - name: Require new valid same-date composite scores
+        if: success()
+        run: |
+          python scripts/indicator_score_followthrough.py \
+            --before score-before.json \
+            --after score-after.json \
+            --indicator indicator-progress-proof.json \
+            --out indicator-to-score-proof.json
+      - name: Retain aggregate evidence on failure as well as success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authorized-20-stock-indicator-score-evidence
+          path: |
+            indicator-before.json
+            indicator-after.json
+            indicator-progress-proof.json
+            score-before.json
+            score-after.json
+            indicator-to-score-proof.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: State safety and evidence boundaries
+        if: always()
+        run: |
+          {
+            echo "### One-time owner-authorized 20-stock technical/SMC and score batch"
+            echo "- At most 20 symbols each for TWSE/TPEx, with per-stock rollback."
+            echo "- One-shot main-branch first-run-only activation."
+            echo "- Fail closed unless read-only before/after proof confirms real indicator growth."
+            echo "- Post-score validation demands new latest-day effective composite scores."
+            echo "- No LINE webhook change, model trading authorization, stock orders or raw-price fabrication."
+          } >> "$GITHUB_STEP_SUMMARY"
