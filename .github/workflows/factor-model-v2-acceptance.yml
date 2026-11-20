@@ -1,0 +1,48 @@
+name: Factor Model v2 Offline Acceptance
+
+on:
+  push:
+    branches:
+      - "feature/factor-model-v2-adjusted-holdout-*"
+    paths:
+      - "src/factor_model*.py"
+      - "tests/test_factor_model*.py"
+      - "scripts/evaluate_factor_model_v2.py"
+      - ".github/workflows/factor-model-v2-acceptance.yml"
+  pull_request:
+    paths:
+      - "src/factor_model*.py"
+      - "tests/test_factor_model*.py"
+      - "scripts/evaluate_factor_model_v2.py"
+      - ".github/workflows/factor-model-v2-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify Python model compile
+        run: |
+          python -m py_compile src/factor_model.py src/factor_model_validation.py src/factor_model_v2.py
+          python -m py_compile scripts/run_factor_model.py scripts/evaluate_factor_model.py scripts/evaluate_factor_model_v2.py
+      - name: Run all factor model contract tests
+        run: |
+          python -m unittest tests.test_factor_model tests.test_factor_model_validation tests.test_factor_model_v2 -v
+      - name: Report limits of this evidence
+        if: always()
+        run: |
+          echo "### Factor model v2 offline acceptance" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Only Python offline contracts exercised; **no** live database, LINE or trading execution." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Real adjusted-price holdout results must be audited separately." >> "$GITHUB_STEP_SUMMARY"
