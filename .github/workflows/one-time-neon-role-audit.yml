@@ -1,0 +1,37 @@
+name: One-Time Neon Injected DB Role Audit (Read Only)
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/one-time-neon-role-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-injected-db-role:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Probe isolated temporary Neon Function (role names only)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+          url = "https://br-purple-smoke-a1t9dmzz-dbrolechecknov20.compute.c-1.ap-southeast-1.aws.neon.tech/probe"
+          req = Request(url, headers={"Accept": "application/json", "Cache-Control": "no-store"})
+          with urlopen(req, timeout=15) as resp:
+              if resp.status != 200:
+                  raise RuntimeError("Diagnostic endpoint unavailable")
+              data = json.load(resp)
+          for item in ("pooled", "unpooled"):
+              part = data.get(item) or {}
+              role = part.get("role","missing")
+              db = part.get("database","unknown")
+              if role not in ("twstock_admin", "line_stock_reader", "line_stock_delivery", "other", "missing"):
+                  raise RuntimeError("Unexpected sanitized role category")
+              if db not in ("twstock", "other", "unknown"):
+                  raise RuntimeError("Unexpected sanitized database category")
+              print(f"INJECTED_{item.upper()} role={role} database={db} present={bool(part.get('present'))}")
+          PY
