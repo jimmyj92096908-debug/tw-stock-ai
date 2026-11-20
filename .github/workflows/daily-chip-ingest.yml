@@ -42,5 +42,7 @@ jobs:
           python -m unittest tests.test_margin_data -v
       - name: Import latest official daily chip snapshots
         run: python src/daily_chip_ingest.py
-      - name: Recalculate composite chip scores
-        run: python src/chip_score.py
+      - name: Recalculate bounded tracked-stock chip scores
+        # Calculate only the explicit daily cohort; the historical backfill
+        # remains a separate reviewed operation, not an automatic production job.
+        run: python src/chip_score.py --stock-ids 2330,6213,4919,7827,8937
