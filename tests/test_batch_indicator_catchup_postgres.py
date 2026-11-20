@@ -33,13 +33,13 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             start=date(2026,9,20)
             for i in range(60):
                 d=start+timedelta(days=i)
-                conn.execute("""INSERT INTO public.daily_prices (market,stock_id,trade_date,close)
-                    VALUES('twse','2999',%s,100)
+                conn.execute("""INSERT INTO public.daily_prices (market,stock_id,trade_date,close,source)
+                    VALUES('twse','2999',%s,100,'ISOLATED_TEST')
                     ON CONFLICT (market,stock_id,trade_date) DO NOTHING""",(d,))
             for i in range(59):
                 d=start+timedelta(days=i)
-                conn.execute("""INSERT INTO public.daily_prices (market,stock_id,trade_date,close)
-                    VALUES('tpex','2998',%s,120)
+                conn.execute("""INSERT INTO public.daily_prices (market,stock_id,trade_date,close,source)
+                    VALUES('tpex','2998',%s,120,'ISOLATED_TEST')
                     ON CONFLICT (market,stock_id,trade_date) DO NOTHING""",(d,))
             eligible=select_candidates(conn,"twse",3)
             self.assertIn("2999",[r["stock_id"] for r in eligible])
