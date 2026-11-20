@@ -27,6 +27,14 @@
 
 這只是**程式碼及離線 E2E 驗收**，不是官方 LINE 用戶已收到回覆；原本的 `linewebhook` Deployment 4 沒有被替換。正式切換仍需要受保護的 Channel Secret 與 Access Token、官方已簽章測試、真實測試帳號的受控端到端驗收和可回復方案。
 
+## 官方 Webhook 唯讀上線前查核
+
+`.github/workflows/line-cutover-readiness-observe.yml` 是獨立的安全查核：PR 階段僅使用假的回應測試；合併到 `main` 才會使用 GitHub 受保護的 `LINE_CHANNEL_ACCESS_TOKEN` 執行 LINE 官方 **GET Webhook endpoint**（僅讀），並對隔離候選閘道 `GET /health`（不傳送密鑰）。
+
+查核輸出 `line-readiness-observe.json`：是否仍註冊原有 `linewebhook`、候選健康檢查是否 200、官方簽章 Canary 是否曾由本次執行驗證、真實 LINE 測試帳號端到端測試是否驗證、新閘道憑證是否已確認。未經驗證的項目必須保持 false；`ready_for_cutover` **永遠 false**。失敗或無法確認正式端點時工作流程會失敗，不會用 CI 綠燈暗示已可上線。
+
+這個工作流程**不會**呼叫 LINE API 發送訊息、官方簽章測試 POST、Webhook 設定 PUT、Neon 部署、資料庫讀寫或真實使用者資料。只有在正式憑證與真實簽章／事件驗收完成，才能另行審查切換。健康檢查 200 不能當作候選服務可接收真實 LINE 事件的證據。
+
 ## 仍未通過的正式啟用門檻
 
 **不能以以上測試直接宣稱已正式上線。** Neon `linestockgateway` 目前部署環境只列出 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`，仍**缺少兩項必備密鑰名稱** `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`。由於現有工具不會以明文顯示 LINE 金鑰，不能替使用者從舊函式讀出或複製兩個密鑰，更不能把它們放進 GitHub 版本控制。
