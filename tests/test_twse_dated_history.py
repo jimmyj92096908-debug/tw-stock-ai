@@ -144,8 +144,8 @@ class DateHistoryTests(unittest.TestCase):
         self.assertEqual([x["status"] for x in results],["imported","closed"])
         self.assertEqual([x["inserted"] for x in results],[799,0])
         write.assert_called_once()
-        self.assertEqual(calls[0][1:],("imported",800,799))
-        self.assertEqual(calls[1][1:],("closed",0,0))
+        self.assertEqual(calls[0][2:],("imported",800,799))
+        self.assertEqual(calls[1][2:],("closed",0,0))
         self.assertTrue(any("CREATE TABLE" in s for s,_ in fake.cur.statements))
 
     def test_no_partial_or_stale_source_coverage_is_imported(self):
