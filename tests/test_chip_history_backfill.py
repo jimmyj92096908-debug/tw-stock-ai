@@ -37,11 +37,11 @@ class HistoryBackfillTests(unittest.TestCase):
                  "margin_missing": True}]
         inst = [{"market": "twse", "stock_id": "2330", "trade_date": day.isoformat()}]
         margin = [{"market": "twse", "stock_id": "2330", "trade_date": day.isoformat()}]
-        with patch.dict(os.environ, {"CHIP_HISTORY_WRITE_ENABLED": "yes"}), \\
-             patch("src.chip_history_backfill.psycopg.connect", return_value=conn), \\
-             patch("src.chip_history_backfill.plan_gaps", return_value=gaps), \\
+        with patch.dict(os.environ, {"CHIP_HISTORY_WRITE_ENABLED": "yes"}), \
+             patch("src.chip_history_backfill.psycopg.connect", return_value=conn), \
+             patch("src.chip_history_backfill.plan_gaps", return_value=gaps), \
              patch("src.chip_history_backfill.fetch_missing_twse",
-                   return_value=(inst, margin)) as fetch, \\
+                   return_value=(inst, margin)) as fetch, \
              patch("src.chip_history_backfill.apply_missing") as write:
             result = backfill.run("postgresql://invalid.example/db",
                                   verify_sources=True)
@@ -57,9 +57,9 @@ class HistoryBackfillTests(unittest.TestCase):
         conn = MagicMock()
         gap = [{"date": date(2026, 11, 19),
                 "institutional_missing": True, "margin_missing": False}]
-        with patch("src.chip_history_backfill.psycopg.connect", return_value=conn), \\
-             patch("src.chip_history_backfill.plan_gaps", return_value=gap), \\
-             patch("src.chip_history_backfill.fetch_missing_twse", return_value=([], [])), \\
+        with patch("src.chip_history_backfill.psycopg.connect", return_value=conn), \
+             patch("src.chip_history_backfill.plan_gaps", return_value=gap), \
+             patch("src.chip_history_backfill.fetch_missing_twse", return_value=([], [])), \
              patch("src.chip_history_backfill.apply_missing") as write:
             with self.assertRaisesRegex(RuntimeError, "coverage does not match"):
                 backfill.run("postgresql://invalid.example/db", verify_sources=True)
