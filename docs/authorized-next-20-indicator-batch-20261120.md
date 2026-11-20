@@ -1,5 +1,37 @@
 # 2026-11-20：已授權下一批上市股票補算與綜合評分銜接
 
+## 正式 Neon 第二批已完成（可重現驗收）
+
+[GitHub Actions #44725314839](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44725314839)
+已於 2026-11-20 完整執行，結論為 **completed / success**。
+[Artifact #14624500622](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44725314839/artifacts/14624500622)
+保存指標補算前後、評分重算前後及兩項驗證結果。
+
+GitHub 及另外執行的 Neon 唯讀 SELECT 均確認：
+
+| 項目 | 第二批之前 | 第二批之後 | 變化 |
+| --- | ---: | ---: | ---: |
+| 上市符合資格 | 1,085 | 1,085 | 0 |
+| 上市技術／SMC 已補齊 | 43 | **63** | +20 |
+| 上市技術／SMC 待補算 | 1,042 | **1,022** | -20 |
+| 上市技術／SMC 都尚未開始 | 940 | **920** | -20 |
+| 上櫃已補齊 | 21 | 21 | 0 |
+| 全資料庫有效綜合評分股票 | 166 | **186** | +20 |
+| 最新有價日、研究基本資料條件合格 | 155 | **175** | +20 |
+
+最新收盤與綜合評分日期都是 **2026-11-19**。
+股價行情沒有被本次補算改寫；評分只是歷史研究資料，不是經驗證的可交易訊號。
+本批次的可重用唯讀評分銜接檢查器與測試保留在
+`scripts/indicator_score_followthrough.py`、
+`tests/test_indicator_score_followthrough.py`。
+
+本次單次啟動的 GitHub workflow 與其啟動專屬測試已退役，
+但正式 `daily-indicator-catchup.yml` （03:10，Tue–Sat）
+與 `composite-after-market-refresh.yml` 保留，
+其第一次**真正由 `schedule` 事件啟動**仍需觀察，不能以這次
+人工授權的一次性 GitHub push 成功當成已驗證每日自動可靠度。
+
+
 ## 目標
 
 首次正式小批次已由 Neon 確認：TWSE 技術／SMC 完整覆蓋 41→43，待補 1,044→1,042；其後綜合評分 164→166，有效研究排序最新日 153→155。
