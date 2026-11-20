@@ -66,7 +66,29 @@ export const DATA_STATUS_SQL = [
   ' (SELECT COUNT(*)::int FROM public.daily_composite_scores',
   '  WHERE total_score IS NOT NULL AND as_of_date=(',
   '   SELECT MAX(as_of_date) FROM public.daily_composite_scores',
-  '   WHERE total_score IS NOT NULL)) AS scored_latest'
+  '   WHERE total_score IS NOT NULL)) AS scored_latest,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id FROM public.daily_prices',
+  '  WHERE close IS NOT NULL GROUP BY market,stock_id',
+  '  HAVING COUNT(*) >= 60',
+  ' ) d) AS history_60d,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id FROM public.daily_prices',
+  '  WHERE close IS NOT NULL GROUP BY market,stock_id',
+  '  HAVING COUNT(*) >= 120',
+  ' ) d) AS history_120d,',
+  ' (SELECT COUNT(*)::int FROM (',
+  '  SELECT market,stock_id FROM public.daily_prices',
+  '  WHERE close IS NOT NULL GROUP BY market,stock_id',
+  '  HAVING COUNT(*) >= 240',
+  ' ) d) AS history_240d,',
+  ' (SELECT COUNT(DISTINCT (market,stock_id))::int',
+  '  FROM public.daily_technicals) AS technical_stocks,',
+  ' (SELECT COUNT(DISTINCT (market,stock_id))::int',
+  '  FROM public.daily_smc) AS smc_stocks,',
+  ' (SELECT COUNT(DISTINCT (market,stock_id))::int',
+  '  FROM public.daily_composite_scores',
+  '  WHERE total_score IS NOT NULL) AS scored_stocks'
 ].join('\n');
 
 export const ANALYSIS_SQL = [
@@ -249,6 +271,27 @@ export function formatDataStatus(row) {
       (stale !== null && (!Number.isInteger(stale) || stale < 0 || stale > priced))) {
     return '目前無法讀取有效的資料庫統計，請稍後再試。';
   }
+  const readinessKeys = [
+    'history_60d', 'history_120d', 'history_240d',
+    'technical_stocks', 'smc_stocks', 'scored_stocks'
+  ];
+  const provided = readinessKeys.filter(key => row[key] !== null && row[key] !== undefined);
+  if (provided.length !== 0 && provided.length !== readinessKeys.length) {
+    return '目前無法讀取有效的資料庫統計，請稍後再試。';
+  }
+  const readiness = provided.length ? Object.fromEntries(
+    readinessKeys.map(key => [key, Number(row[key])])
+  ) : null;
+  if (readiness && (
+    readinessKeys.some(key =>
+      !Number.isInteger(readiness[key]) || readiness[key] < 0 ||
+      readiness[key] > universe
+    ) ||
+    readiness.history_240d > readiness.history_120d ||
+    readiness.history_120d > readiness.history_60d ||
+    readiness.history_60d > priced ||
+    readiness.scored_stocks < scored
+  )) return '目前無法讀取有效的資料庫統計，請稍後再試。';
   const coverage = universe ? (100 * priced / universe).toFixed(1) : '0.0';
   const lines = [
     '台股資料庫更新狀態',
@@ -267,6 +310,18 @@ export function formatDataStatus(row) {
   if (stale !== null) {
     lines.splice(fresh !== null ? 6 : 5, 0,
       '最後行情落後超過 7 日：' + number(stale, 0) + ' 檔');
+  }
+  if (readiness) {
+    lines.splice(7 + (fresh !== null ? 1 : 0) + (stale !== null ? 1 : 0), 0,
+      '歷史行情 ≥60／120／240 日：' +
+      number(readiness.history_60d, 0) + '／' +
+      number(readiness.history_120d, 0) + '／' +
+      number(readiness.history_240d, 0) + ' 檔',
+      '技術指標／SMC：' + number(readiness.technical_stocks, 0) + '／' +
+      number(readiness.smc_stocks, 0) + ' 檔',
+      '已有有效評分：' + number(readiness.scored_stocks, 0) + ' 檔',
+      '有收盤行情不等於完整分析；長週期指標需更多有效交易日。'
+    );
   }
   return lines.join('\n');
 }
