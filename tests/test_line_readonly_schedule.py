@@ -48,7 +48,7 @@ class LineReadOnlyScheduleContractTests(unittest.TestCase):
         self.assertIn("line-readiness-observe.json",source)
         self.assertIn("official_signed_empty_canary_performed",source)
         self.assertIn("real_line_message_e2e_verified",source)
-        self.assertIn("ready_for_cutover",source.lower())
+        self.assertIn("**Cutover ready: FALSE",source)
         self.assertIn("if-no-files-found: ignore",source)
         self.assertIn("retention-days: 14",source)
         self.assertIn("tests.test_line_readonly_schedule",source)
