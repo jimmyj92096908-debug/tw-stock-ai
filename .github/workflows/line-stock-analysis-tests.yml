@@ -7,10 +7,14 @@ on:
       - "feature/**"
     paths:
       - "line-stock-analysis/**"
+      - "sql/line_chip_reader_column_grant.sql"
+      - "sql/line_chip_reader_column_rollback.sql"
       - ".github/workflows/line-stock-analysis-tests.yml"
   pull_request:
     paths:
       - "line-stock-analysis/**"
+      - "sql/line_chip_reader_column_grant.sql"
+      - "sql/line_chip_reader_column_rollback.sql"
       - ".github/workflows/line-stock-analysis-tests.yml"
   workflow_dispatch:
 

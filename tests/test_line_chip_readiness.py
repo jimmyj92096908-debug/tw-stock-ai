@@ -11,7 +11,12 @@ def grants(**overrides):
     row = {
         "connected_database": "twstock",
         "reader_role_exists": True,
+        "reader_is_unprivileged_login": True,
         "public_schema_usage": True,
+        "chip_table_wide_select": False,
+        "unexpected_chip_select_columns": [],
+        "chip_write_access": False,
+        "private_line_message_insert": False,
         "missing_chip_select_columns": list(readiness.REQUIRED_COLUMNS),
         "any_private_line_message_select": False,
         "whole_private_line_message_select": False,
@@ -59,7 +64,8 @@ class LineChipReadinessTests(unittest.TestCase):
         self.assertFalse(report["new_gateway_enabled_verified"])
         self.assertEqual(cur.execute.call_count, 2)
         self.assertEqual(cur.execute.call_args_list[0].args[1],
-                         (list(readiness.REQUIRED_COLUMNS),))
+                         (list(readiness.REQUIRED_COLUMNS),
+                          list(readiness.REQUIRED_COLUMNS)))
 
     def test_all_required_columns_present_is_not_cutover_approval(self):
         report, _ = inspect(grants(missing_chip_select_columns=[]))
@@ -77,6 +83,26 @@ class LineChipReadinessTests(unittest.TestCase):
                 self.assertEqual(report["assessment"], "blocked_or_inconclusive")
                 self.assertTrue(report["private_line_message_read_privilege_detected"])
 
+    def test_extra_columns_whole_table_and_reader_writes_block_activation(self):
+        for key, value in (
+            ("unexpected_chip_select_columns", ["component_status"]),
+            ("chip_table_wide_select", True),
+            ("chip_write_access", True),
+            ("reader_is_unprivileged_login", False),
+            ("private_line_message_insert", True),
+        ):
+            with self.subTest(key=key):
+                row = grants(missing_chip_select_columns=[], **{key: value})
+                report, _ = inspect(row)
+                self.assertEqual(report["assessment"], "blocked_or_inconclusive")
+                if key == "unexpected_chip_select_columns":
+                    self.assertEqual(report["unexpected_chip_select_columns"],
+                                     ["component_status"])
+                if key == "chip_write_access":
+                    self.assertTrue(report["chip_write_access_detected"])
+                if key == "private_line_message_insert":
+                    self.assertTrue(report["private_line_message_insert_detected"])
+
     def test_stale_composite_is_distinct_from_valid_new_chip(self):
         report, _ = inspect(grants(missing_chip_select_columns=[]))
         self.assertEqual(report["technical_date"], "2026-11-19")
@@ -91,6 +117,27 @@ class LineChipReadinessTests(unittest.TestCase):
         )
         self.assertFalse(report["chip_valid_for_price"])
         self.assertEqual(report["assessment"], "blocked_or_inconclusive")
+
+    def test_publishable_chip_must_be_within_seven_calendar_days(self):
+        for chip_date, expected in (
+            (date(2026, 11, 13), True),
+            (date(2026, 11, 12), False),
+            (date(2026, 11, 21), False),
+        ):
+            with self.subTest(chip_date=chip_date):
+                report, _ = inspect(
+                    grants(missing_chip_select_columns=[]),
+                    dates(independently_publishable_chip_date=chip_date)
+                )
+                self.assertEqual(report["chip_valid_for_price"], expected)
+                self.assertEqual(
+                    report["assessment"] == "optional_chip_read_query_preflight_pass",
+                    expected
+                )
+        actual, _ = inspect(
+            grants(missing_chip_select_columns=[])
+        )
+        self.assertEqual(actual["chip_age_calendar_days"], 0)
 
     def test_unavailable_chip_score_is_not_invented(self):
         report, _ = inspect(
