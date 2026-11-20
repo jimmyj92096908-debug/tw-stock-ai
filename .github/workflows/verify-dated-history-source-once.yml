@@ -1,0 +1,37 @@
+name: TWSE Historical Official Source Verification (One Shot)
+on:
+  push:
+    branches:
+      - feature/dated-bulk-history-backfill
+    paths:
+      - .github/workflows/verify-dated-history-source-once.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Gate on offline strict parsing tests
+        run: |
+          python -m unittest tests.test_official_market_feed tests.test_twse_dated_history -v
+          python -m py_compile src/twse_dated_history.py
+      - name: Preview two dated exchange sources without writes
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python src/twse_dated_history.py --batch-days 2 --lookback-days 7
+      - name: Confirm no write gate is set
+        run: |
+          if [ -n "${STOCK_TWSE_HISTORY_WRITE_ENABLED:-}" ]; then
+            echo "::error::Dry run must not enable writes."
+            exit 1
+          fi
