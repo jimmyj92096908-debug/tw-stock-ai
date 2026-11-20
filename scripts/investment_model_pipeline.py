@@ -7,7 +7,8 @@ produce an as-of-safe stock + ranking report. No DB mutations or LINE API.
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import json
 import os
 from pathlib import Path
@@ -75,7 +76,7 @@ def make_bundle(*, live=False, database_url="", market="twse", stock_id="2330",
     )
     bundle["data_mode"] = "existing_neon_snapshot_read_only" if live else "offline_committed_evidence_only"
     bundle["offline_stock_data_is_not_live"] = not live
-    bundle["as_of_now"] = date.today().isoformat()
+    bundle["report_generated_taipei_date"] = datetime.now(ZoneInfo("Asia/Taipei")).date().isoformat()
     # Human-readable reason remains explicit even when a genuine snapshot
     # has stale composite/technical rows for today's reference price.
     return bundle
