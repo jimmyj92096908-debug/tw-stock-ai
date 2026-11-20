@@ -1,0 +1,85 @@
+name: LINE Cutover Readiness (Observe Only)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/line_readonly_live_preflight.py"
+      - "tests/test_line_readonly_live_preflight.py"
+      - ".github/workflows/line-cutover-readiness-observe.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/line_readonly_live_preflight.py"
+      - "tests/test_line_readonly_live_preflight.py"
+      - ".github/workflows/line-cutover-readiness-observe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-readonly-preflight
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify read-only official endpoint and candidate probe
+        run: |
+          python -m py_compile scripts/line_readonly_live_preflight.py
+          python -m unittest tests.test_line_readonly_live_preflight tests.test_line_webhook_control tests.test_line_gateway_canary -v
+
+  live-observe:
+    needs: offline-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Inspect registered LINE webhook via official GET and candidate GET health only
+        run: |
+          python scripts/line_readonly_live_preflight.py --output line-readiness-observe.json
+      - name: Show sanitized readiness limits
+        if: always()
+        run: |
+          if [ -f line-readiness-observe.json ]; then
+            python - <<'PY'
+          import json, os
+          from pathlib import Path
+          r=json.loads(Path('line-readiness-observe.json').read_text())
+          text='\n'.join([
+              '### LINE read-only preflight',
+              f"- Registered original legacy webhook active: {r['legacy_webhook_active_and_original']}",
+              f"- Isolated candidate GET health 200: {r['candidate_get_health_200']}",
+              f"- Official signed empty canary performed: {r['official_signed_empty_canary_performed']}",
+              f"- Real LINE user E2E performed: {r['real_line_message_e2e_verified']}",
+              '- Credentials on new Neon gateway: not verified',
+              '**Cutover ready: FALSE. No webhook, tokens, DB or LINE messages changed.**',
+          ])+'\n'
+          print(text)
+          out=os.environ.get('GITHUB_STEP_SUMMARY')
+          if out: Path(out).open('a',encoding='utf-8').write(text)
+          PY
+          fi
+      - name: Retain sanitized, non-sensitive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-cutover-readiness-observe
+          path: line-readiness-observe.json
+          if-no-files-found: ignore
+          retention-days: 14
