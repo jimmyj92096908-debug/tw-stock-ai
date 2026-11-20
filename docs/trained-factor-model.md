@@ -58,6 +58,18 @@ and live_trading_approved=false.
 | Investable | NOT claimed. Requires point-in-time revision audit, delistings, liquidity, costs, non-overlapping portfolio backtest and independent untouched future data |
 | Published as trade signal | DISABLED until explicit operational approval and independent verification |
 
+## Observed trained model result (read-only Neon, 2026-11-20)
+
+- 57 development dates, 1,083 stock-date training observations.
+- 21 withheld-date cohorts, 346 stock-date evaluation observations.
+- Development mean net excess: +0.9303 percentage points per overlapping five-session cohort.
+- Holdout mean net excess: **-2.1145 percentage points**; positive net excess on 28.57% of dates.
+- Original composite-score holdout comparison: about -2.1350 percentage points.
+- Saved fitted weights, sufficient statistics for independent coefficient re-solve, research ranking snapshot and full aggregate evaluation are in models/tw-factor-ridge-1-*.json.
+- Latest research ranking snapshot dates from 2026-11-19 and contains 153 eligible stocks; it is not a real-time trade list.
+- Holdout labels were excluded from coefficient fitting, but the Oct/Nov period had **already been examined for the earlier v2 model**. It is *not* a pristine independent holdout for model-design claims. A genuinely new future sample is still required.
+- Acceptance decision: **research model implemented and numerically verified; investability rejected.** No trading signal can be published.
+
 ## Research limitations
 
 Company actions can retroactively adjust historical prices. Historical composite
