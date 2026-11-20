@@ -35,6 +35,9 @@ class ScoreAfterRefreshTests(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / ".github/workflows/composite-after-market-refresh.yml"
         workflow = path.read_text(encoding="utf-8")
         self.assertIn('Official Taiwan Market Daily Snapshot (Authorized)', workflow)
+        self.assertIn('Verified History Indicator Catch-Up', workflow)
+        self.assertIn("github.event.workflow_run.event == 'schedule'", workflow)
+        self.assertIn("github.event.workflow_run.event == 'workflow_run'", workflow)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
         self.assertIn("github.event.workflow_run.head_branch == 'main'", workflow)
         self.assertIn("github.event.workflow_run.repository.full_name == github.repository", workflow)
