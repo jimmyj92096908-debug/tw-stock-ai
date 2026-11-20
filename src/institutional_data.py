@@ -29,7 +29,7 @@ def _session() -> requests.Session:
                   respect_retry_after_header=True)
     session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
-STOCKS = {"twse": {"6213", "4919", "7827"}, "tpex": {"8937"}}
+STOCKS = {"twse": {"2330", "6213", "4919", "7827"}, "tpex": {"8937"}}
 
 TWSE_FIELDS = {
     "foreign_buy": "外陸資買進股數(不含外資自營商)",
