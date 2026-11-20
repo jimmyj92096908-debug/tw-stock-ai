@@ -34,6 +34,17 @@ A successful push event does **not** establish cron reliability.
   in a PostgreSQL SAVEPOINT (merged PR #23). A failed symbol's writes
   roll back while others may commit. Any failed symbol makes the process
   exit nonzero; a failing job does not trigger successful-score refresh.
+- After both read-only snapshots are recorded, the standalone
+  `scripts/indicator_batch_reconcile.py` (safely merged to `main` via
+  PR #27) independently checks each market's eligible, pending and
+  complete counts. A pending market must show a real decrease in pending
+  stocks and matching increase in completed stocks; a date or universe
+  change is inconclusive and fails closed. Any failed proof stops a
+  scheduled job before it can trigger composite scoring.
+- An isolated PostgreSQL 17 integration test now exercises the actual
+  **20-stock** batch with **60 rows of dummy adjusted, technical and SMC
+  records per stock (1,200 per table)**, plus the existing real SQL
+  error/savepoint rollback test. No production Neon data is written.
 - Before the batch, `scripts/indicator_schedule_probe.py` runs a
   PostgreSQL REPEATABLE READ READ ONLY snapshot and saves
   `indicator-before.json`. After the batch, it runs again to save
