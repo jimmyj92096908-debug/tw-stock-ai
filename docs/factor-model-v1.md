@@ -22,6 +22,24 @@ Install `requirements.txt` and run:
 ```sh
 python scripts/evaluate_factor_model.py --start 2026-07-01 --end 2026-11-19 --output factor-evaluation.json
 ```
+To produce the latest available same-day scored-stock ranking from the existing
+score table, use `python scripts/run_factor_model.py --limit 10 --output
+factor-ranking.json`. Its result includes actual score date, coverage,
+signal close, ordered stock codes and an explicit research-only flag. This is
+**not** an order request, broker connector or purchase recommendation.
+
+A first **read-only exploratory SQL check** on November 20 found 2,753
+same-date score/close pairs for July 1–November 19, 2026, with 2,490
+evaluable forward return labels. Ninety signal-date cohorts (average 27.67
+stocks per cohort) had at least five evaluable stocks. They showed mean
+five-session top-cohort return +0.115%, same-day equal-weight eligible
+universe -0.542%, mean difference +0.656 percentage points and
+positive excess on 53.3% of dates. The 90 overlapping cohorts are NOT
+independent, and these descriptive numbers are NOT verified trading
+performance. No risk, dividend/split adjustment, cost or bootstrap confidence
+interval has been applied. The result can change after official history
+backfills or corporate-action data corrections.
+
 Provide a protected `DATABASE_URL` for an explicitly least-privilege **read-only** database role. The script sets a read-only PostgreSQL transaction before its SELECT, makes no schema changes and transmits no LINE messages. Use an isolated snapshot or a read-only production role only when authorized. Evidence JSON contains aggregate metrics, dates and counts, no tokens or personal information.
 
 ## Gate for trustworthy production usage
