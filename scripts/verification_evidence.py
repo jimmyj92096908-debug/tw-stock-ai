@@ -41,7 +41,7 @@ def run(suite, root, output, timeout):
                 # Keep only unittest case identifiers and failure summary.
                 # Do not print exception messages, stack traces, SQL, or user data.
                 output_text = completed.stderr.decode("utf-8", errors="replace")
-                patterns = (r"^(?:ERROR|FAIL): ([\\w.]+) \\(", r"^FAILED \\((?:failures|errors)=\\d+")
+                patterns = (r"^(?:ERROR|FAIL): ([\w.]+) \(", r"^FAILED \((?:failures|errors)=\d+")
                 for line in output_text.splitlines():
                     if any(re.match(p, line) for p in patterns):
                         print("diagnostic: " + line[:180], flush=True)
