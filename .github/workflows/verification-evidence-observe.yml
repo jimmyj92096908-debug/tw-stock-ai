@@ -57,17 +57,30 @@ jobs:
           LINE_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
           STOCK_CI_POSTGRES_URL: postgresql://line_ci_test:ci-disposable-only@127.0.0.1:5432/line_ci_test
         run: python scripts/verification_evidence.py --suite '${{ matrix.suite }}' --output 'verification-${{ matrix.suite }}.json'
-      - name: Publish evidence summary
+      - name: Publish evidence summary from actual checks
         if: always()
         env:
           SUITE: ${{ matrix.suite }}
-          OUTCOME: ${{ steps.verification.outcome }}
         run: |
-          echo "### Verification observation: ${SUITE}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runner outcome: ${OUTCOME}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Attached evidence: verification-${SUITE}.json" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Not verified: real LINE messages, production Neon or webhook cutover." >> "$GITHUB_STEP_SUMMARY"
-          echo "- Observe-only: this result does not block merging." >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          name = os.environ["SUITE"]
+          file = Path(f"verification-{name}.json")
+          summary = [f"### Verification observation: {name}"]
+          if file.exists():
+              evidence = json.loads(file.read_text(encoding="utf-8"))
+              summary.append(f"- Actual check outcome: **{evidence['runner_outcome'].upper()}**")
+              for check in evidence["checks"]:
+                  summary.append(f"- {check['check']}: **{check['status']}**")
+          else:
+              summary.append("- **FAILED: evidence file missing**")
+          summary.extend([
+              "- This workflow is observe-only; a green job does NOT prove tests passed.",
+              "- Not verified: real LINE messages, production Neon or webhook cutover.",
+          ])
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8").write("\n".join(summary)+"\n")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
