@@ -206,7 +206,24 @@ def record_attempt(
             )
 
 
-def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> None:
+def classify_price_refresh(downloaded: int, latest_trade_date: date | None) -> str:
+    """Separate expected no-data symbols from invalid imports and usable prices.
+
+    An exchange may return no records for suspended or newly listed symbols.
+    Such an empty result must not be reported as a successful refresh or
+    passed to adjusted-bar/indicator calculations. If data was downloaded
+    but none made it into daily_prices, treat that as a genuine error.
+    """
+    if downloaded < 0:
+        raise ValueError("Downloaded row count cannot be negative")
+    if latest_trade_date is not None:
+        return "usable"
+    if downloaded == 0:
+        return "no_data"
+    return "invalid_import"
+
+
+def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> bool:
     market, stock_id = stock["market"], stock["stock_id"]
     windows = plan_download_windows(stock, today)
     module = market_data if market == "twse" else tpex_market_data
@@ -235,8 +252,24 @@ def refresh_one(conn: psycopg.Connection, stock: dict, today: date) -> None:
                 (market, stock_id),
             )
             latest = cur.fetchone()["latest"]
+        outcome = classify_price_refresh(count, latest)
+        if outcome == "no_data":
+            # Mark the missing history explicitly; keep rotating the market.
+            # This is a data-availability condition, not an indicator failure.
+            record_attempt(
+                conn, market, stock_id, "failed", 0, None,
+                "官方歷史行情無有效價格資料；本次略過還原行情與技術指標",
+            )
+            logger.warning(
+                "%s %s 官方歷史行情無有效價格資料；略過後續指標，保留重試紀錄",
+                market, stock_id,
+            )
+            return False
+        if outcome == "invalid_import":
+            raise RuntimeError("下載有資料但未成功寫入任何有效行情，需排查匯入問題")
         record_attempt(conn, market, stock_id, "success", count, latest)
         logger.info("%s %s 更新成功：本次取得 %s 筆；最新交易日 %s", market, stock_id, count, latest)
+        return True
     except Exception as exc:
         logger.exception("%s %s 更新失敗", market, stock_id)
         record_attempt(conn, market, stock_id, "failed", 0, stock["latest_trade_date"], str(exc)[:2000])
@@ -256,6 +289,7 @@ def main() -> None:
     logger.info("官方股票清單共 %s 檔；每市場本次處理最多 %s 檔", len(universe), batch_size)
 
     failures: list[str] = []
+    unavailable_this_run: list[dict[str, str]] = []
     refreshed_this_run: list[dict[str, str]] = []
     with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=20) as conn:
         upsert_universe(conn, universe)
@@ -264,8 +298,11 @@ def main() -> None:
             logger.info("%s 本次輪替選取 %s 檔", market.upper(), len(batch))
             for index, stock in enumerate(batch):
                 try:
-                    refresh_one(conn, stock, today)
-                    refreshed_this_run.append({"market": market, "stock_id": stock["stock_id"]})
+                    has_valid_prices = refresh_one(conn, stock, today)
+                    if has_valid_prices:
+                        refreshed_this_run.append({"market": market, "stock_id": stock["stock_id"]})
+                    else:
+                        unavailable_this_run.append({"market": market, "stock_id": stock["stock_id"]})
                 except Exception as exc:
                     failures.append(f"{market} {stock['stock_id']}: {exc}")
                 if index < len(batch) - 1:
@@ -291,7 +328,10 @@ def main() -> None:
                 failures.append(f"indicators {stock['market']} {stock['stock_id']}: {exc}")
                 logger.exception("還原行情或指標重算失敗：%s %s", stock["market"], stock["stock_id"])
 
-    logger.info("本次行情更新成功 %s 檔；失敗 %s 檔", len(refreshed_this_run), len(failures))
+    logger.info(
+        "本次行情更新成功 %s 檔；無有效行情略過 %s 檔；真正失敗 %s 檔",
+        len(refreshed_this_run), len(unavailable_this_run), len(failures),
+    )
     if failures:
         raise RuntimeError("部分股票更新失敗：\n" + "\n".join(failures[:30]))
 
