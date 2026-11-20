@@ -41,7 +41,8 @@ function response(text, status) {
 // The store may be a fake for tests; do not connect it to production until
 // the SQL migration and least-privilege role are separately approved.
 export function createSingleAccountCandidate({
-  query, store, sendReply, lookupExactStockName, channelSecret, enabled = true, now = Date.now
+  query, store, sendReply, lookupExactStockName, channelSecret,
+  enabled = true, standaloneChipEnabled = false, now = Date.now
 }) {
   return async function fetchHandler(request) {
     const path = new URL(request.url).pathname;
@@ -120,7 +121,8 @@ export function createSingleAccountCandidate({
       const key = claim.attemptKey;
       let answer;
       if (plan.route === 'stock') {
-        try { answer = await buildReplyText(event.message.text, query); }
+        try { answer = await buildReplyText(event.message.text, query,
+          { standaloneChipEnabled }); }
         catch { answer = '目前無法讀取分析資料，請稍後再試。'; }
       } else {
         answer = observedLegacyReply(event.message.text);
