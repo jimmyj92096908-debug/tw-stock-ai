@@ -93,11 +93,14 @@ def evaluate_adjusted(rows, *, holdout_start="2026-10-01",
                 continue
             entry=_real(x.get("entry_close"))
             exit_=_real(x.get("exit_close"))
-            days[day].append((score,coverage,market,code,entry,exit_))
+            exit_date=x.get("exit_date")
+            exit_date=exit_date.isoformat() if isinstance(exit_date,date) else (
+                str(exit_date)[:10] if exit_date is not None else None)
+            days[day].append((score,coverage,market,code,entry,exit_,exit_date))
         except (ValueError,TypeError,KeyError):
             exclusions["invalid_signal"]+=1
     periods=[]
-    skipped={"small_universe":0,"incomplete_forward_label":0}
+    skipped={"small_universe":0,"incomplete_forward_label":0,"development_holdout_boundary":0}
     label_missing=0
     for day, candidates in sorted(days.items()):
         if len(candidates)<min_universe:
@@ -111,6 +114,11 @@ def evaluate_adjusted(rows, *, holdout_start="2026-10-01",
         label_missing+=missing
         if missing:
             skipped["incomplete_forward_label"]+=1
+            continue
+        # Purge development labels that extend into the holdout period. A
+        # validation result must not see future prices from its holdout set.
+        if day < holdout_start and any(t[6] is None or t[6] >= holdout_start for t in ranked):
+            skipped["development_holdout_boundary"]+=1
             continue
         returns=[t[5]/t[4]-1 for t in ranked]
         selected=returns[:count]
