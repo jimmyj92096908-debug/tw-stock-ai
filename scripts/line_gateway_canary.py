@@ -49,7 +49,7 @@ def run_canary(token: str, *, apply: bool, gate: str, opener=urlopen) -> dict:
         "gateway": "linestockgateway",
         "signed_empty_event_accepted": True,
         "status_code": 200,
-        "registered_endpoint_unchanged": True,
+        "registered_endpoint_mutation_performed": False,
     }
 
 
