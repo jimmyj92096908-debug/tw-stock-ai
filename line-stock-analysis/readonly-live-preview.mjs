@@ -58,9 +58,9 @@ try {
   console.log(
     'READONLY_LINE_PREVIEW verified=true stock=twse/2330 ' +
     'chip_date=2026-11-20 chip_score=40.65 coverage=65% ' +
-    'composite_date=2026-11-19 original_response_unchanged=true ' +
+    'composite_date=2026-11-19 default_disabled_one_query=true ' +
     'source_dates_separate=true actual_line_message_sent=false ' +
-    'reader_privilege_granted=false'
+    'reader_privilege_not_tested=true'
   );
 } finally {
   try { await client.query('ROLLBACK'); } catch { /* no active txn or connection */ }
