@@ -32,8 +32,12 @@ const FORBIDDEN_CONNECTION_OVERRIDES = new Set([
 
 function checkedRoleUrl(rawUrl, role) {
   const url = new URL(scopedStockUrl(rawUrl));
+  const sslModes = url.searchParams.getAll('sslmode');
+  const tlsRequired = sslModes.length === 1 &&
+    ['require', 'verify-ca', 'verify-full'].includes(sslModes[0].toLowerCase());
   if (decodeURIComponent(url.username) !== role || !url.password ||
-      !url.hostname || [...url.searchParams.keys()].some(
+      !url.hostname || !tlsRequired ||
+      [...url.searchParams.keys()].some(
         key => FORBIDDEN_CONNECTION_OVERRIDES.has(key.toLowerCase()))) {
     // Never echo the supplied connection string: it may contain a secret.
     throw new Error('LINE candidate requires dedicated role credentials with no overrides');
