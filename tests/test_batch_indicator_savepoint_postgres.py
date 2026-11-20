@@ -17,18 +17,18 @@ from src import batch_indicator_catchup as ind
 
 
 def verify_ci_db_url():
-    url = os.getenv("STOCK_CI_POSTGRES_URL", "")
+    url = os.getenv("STOCK_SAVEPOINT_CI_POSTGRES_URL", "")
     if not url:
         return None
     parsed = urlsplit(url)
     if (parsed.scheme not in ("postgresql", "postgres")
             or parsed.hostname not in ("127.0.0.1", "localhost")
-            or parsed.path != "/stock_ci_test"):
-        raise ValueError("Only localhost/stock_ci_test is allowed for this integration")
+            or parsed.path != "/stock_savepoint_ci_test"):
+        raise ValueError("Only localhost/stock_savepoint_ci_test is allowed for this integration")
     return url
 
 
-@unittest.skipUnless(os.getenv("STOCK_CI_POSTGRES_URL"), "Local disposable PostgreSQL only")
+@unittest.skipUnless(os.getenv("STOCK_SAVEPOINT_CI_POSTGRES_URL"), "Dedicated disposable PostgreSQL only")
 class IndicatorSavepointPostgresTests(unittest.TestCase):
     def test_sql_error_after_partial_upsert_rolls_back_bad_and_commits_good(self):
         url = verify_ci_db_url()
