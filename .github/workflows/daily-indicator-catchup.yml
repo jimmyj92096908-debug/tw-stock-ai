@@ -1,10 +1,11 @@
 name: Verified History Indicator Catch-Up
 
 on:
-  workflow_run:
-    workflows:
-      - "TWSE Dated Bulk Historical Price Backfill"
-    types: [completed]
+  # Proposed WRITE-enabled independent cron; NOT active until separately
+  # reviewed and merged. It processes one bounded 20/market batch per run.
+  # 03:10 Asia/Taipei Tue-Sat, after official 01:50 dated history.
+  schedule:
+    - cron: "10 19 * * 1-5"
   workflow_dispatch:
     inputs:
       apply:
@@ -26,13 +27,9 @@ jobs:
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
       (
-        (github.event_name == 'workflow_run' &&
-         github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.event == 'schedule' &&
-         github.event.workflow_run.head_branch == 'main' &&
-         github.event.workflow_run.repository.full_name == github.repository)
+        github.event_name == 'schedule'
         ||
-        (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        github.event_name == 'workflow_dispatch'
       )
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -51,9 +48,37 @@ jobs:
           if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
           python -m py_compile src/batch_indicator_catchup.py
           python -m unittest tests.test_batch_indicator_catchup -v
+      - name: Inspect candidate cohort and baseline in single READ ONLY transaction
+        run: python scripts/indicator_schedule_probe.py --output indicator-before.json
       - name: Preview eligible stocks without writes
         run: python src/batch_indicator_catchup.py --per-market 20
+      - name: Explain action mode
+        run: |
+          echo "### Indicator Catch-Up (reviewed write schedule)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- A bounded apply runs ONLY for an approved scheduled or manually opted-in invocation." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manual dispatch with apply=false is strictly preview-only." >> "$GITHUB_STEP_SUMMARY"
+          echo "- 20 eligible stocks per market, >=60 real-price sessions; stock transactions use SAVEPOINT." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Main + repository guard, no LINE sends or price fabrication." >> "$GITHUB_STEP_SUMMARY"
       - name: Compute verified adjusted prices, technical and SMC
+        if: >-
+          github.event_name == 'schedule' ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
         env:
           STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
         run: python src/batch_indicator_catchup.py --apply --per-market 20
+      - name: Inspect post-run backlog in READ ONLY transaction
+        if: >-
+          always() &&
+          (github.event_name == 'schedule' ||
+           (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+        run: python scripts/indicator_schedule_probe.py --output indicator-after.json
+      - name: Retain aggregate before/after evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: indicator-bounded-catchup-evidence
+          path: |
+            indicator-before.json
+            indicator-after.json
+          if-no-files-found: ignore
+          retention-days: 14
