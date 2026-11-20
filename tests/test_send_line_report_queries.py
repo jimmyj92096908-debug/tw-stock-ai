@@ -13,6 +13,7 @@ class FakeCursor:
             {"trade_date": date(2026, 11, 19)},
             [{"market": "twse", "stocks": 1093}, {"market": "tpex", "stocks": 898}],
             [{"market": "twse", "stocks": 14}, {"market": "tpex", "stocks": 11}],
+            {"stocks": 1108},  # prior-date close coverage; SELECT only
             {"score_date": latest_score_date},
             {"rows": 18 if latest_score_date else 0,
              "scored": 18 if latest_score_date else 0,
@@ -63,14 +64,17 @@ class ReportQueryTests(unittest.TestCase):
             report = load_report("postgresql://placeholder.invalid/test")
         self.assertEqual(report["trade_date"], date(2026, 11, 19))
         self.assertEqual(report["score_date"], date(2026, 11, 18))
+        self.assertEqual(report["previous_prices_count"], 1108)
         self.assertEqual(report["scores"]["scored"], 18)
         self.assertEqual(report["top"][0]["stock_id"], "6213")
         self.assertEqual(fake.cur.calls[3][1], (date(2026, 11, 19),))
-        self.assertEqual(fake.cur.calls[4][1], (date(2026, 11, 18),))
-        self.assertEqual(fake.cur.calls[7][1], (date(2026, 11, 18),))
-        self.assertIn("p.trade_date=%s", fake.cur.calls[7][0])
-        self.assertIn("c.as_of_date=p.trade_date", fake.cur.calls[7][0])
-        self.assertEqual(len(fake.cur.calls), 9)
+        self.assertIn("COUNT(DISTINCT (market, stock_id))", fake.cur.calls[3][0])
+        self.assertEqual(fake.cur.calls[4][1], (date(2026, 11, 19),))
+        self.assertEqual(fake.cur.calls[5][1], (date(2026, 11, 18),))
+        self.assertEqual(fake.cur.calls[8][1], (date(2026, 11, 18),))
+        self.assertIn("p.trade_date=%s", fake.cur.calls[8][0])
+        self.assertIn("c.as_of_date=p.trade_date", fake.cur.calls[8][0])
+        self.assertEqual(len(fake.cur.calls), 10)
         self.assertIn("綜合評分資料日：2026-11-18", format_report(report))
 
     def test_no_score_date_does_not_invent_rankings(self):
@@ -79,7 +83,7 @@ class ReportQueryTests(unittest.TestCase):
             report = load_report("postgresql://placeholder.invalid/test")
         self.assertIsNone(report["score_date"])
         self.assertEqual(report["top"], [])
-        self.assertIsNone(fake.cur.calls[7][1][0])
+        self.assertIsNone(fake.cur.calls[8][1][0])
         self.assertIn("尚無可用評分", format_report(report))
 
 
