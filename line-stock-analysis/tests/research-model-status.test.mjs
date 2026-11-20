@@ -29,7 +29,7 @@ test('saved research evidence explicitly failed real holdout',()=>{
   const result=formatResearchModelStatus();
   assert.match(result,/tw-factor-ridge-1/u);
   assert.match(result,/未通過/u);
-  assert.match(result,/\-2\.11/u);
+  assert.match(result,/-2\.11/u);
   assert.match(result,/不是|非即時/u);
   assert.ok(result.includes(RESEARCH_REPORT_URL));
   assert.equal(report.live_trading_approved,false);
