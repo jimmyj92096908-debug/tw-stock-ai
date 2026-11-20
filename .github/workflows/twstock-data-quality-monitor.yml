@@ -1,0 +1,89 @@
+name: TW Stock Data Quality Monitor (Read-Only)
+
+on:
+  workflow_run:
+    workflows:
+      - "Composite Scores After Verified Official Snapshot"
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-readonly-quality-monitor
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.repository.full_name == github.repository)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install database-only dependency
+        run: pip install "psycopg[binary]>=3.2,<4"
+      - name: Verify read-only database-audit code and tests
+        run: |
+          python -m py_compile src/stock_db_audit.py
+          python -m unittest tests.test_stock_db_audit -v
+      - name: Run real database audit in READ ONLY transaction
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python src/stock_db_audit.py --json > twstock-audit.json
+      - name: Verify data integrity and publish sanitized summary
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          audit=json.loads(Path('twstock-audit.json').read_text(encoding='utf-8'))
+          rows=audit["coverage"]
+          universe=sum(int(r["universe"]) for r in rows)
+          covered=sum(int(r["priced"]) for r in rows)
+          if universe<=0: raise SystemExit("No candidate stocks; audit invalid")
+          q=audit["quality"]
+          fields=(
+              "invalid_close","negative_volume","inverted_high_low",
+              "close_above_high","close_below_low","future_price_date",
+              "invalid_score","invalid_score_coverage","future_score_date"
+          )
+          bad=sum(int(q.get(key) or 0) for key in fields)
+          lines=[
+              "### Taiwan Stock DB Integrity",
+              f"- Candidate stocks with history: {covered:,}/{universe:,} ({covered/universe:.1%})",
+              f"- Last price date: {audit['latest']['latest_price_date']}",
+              f"- Last score date: {audit['latest']['latest_score_date']}",
+              f"- Basic invalid OHLC/score checks: {bad}",
+              "- This is a read-only database integrity check, not an investment recommendation."
+          ]
+          summary="\n".join(lines)+"\n"
+          print(summary)
+          path=os.getenv("GITHUB_STEP_SUMMARY")
+          if path: Path(path).open("a",encoding="utf-8").write(summary)
+          if bad: raise SystemExit("Stored market data has validation errors")
+          if covered/universe < 0.95:
+              raise SystemExit("Market coverage dropped below 95%")
+          PY
+      - name: Retain aggregate-only audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twstock-readonly-quality-audit
+          path: twstock-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
