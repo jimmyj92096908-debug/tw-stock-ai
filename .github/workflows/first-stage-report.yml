@@ -3,6 +3,7 @@ name: First-Stage Research Report (Read-Only)
 on:
   pull_request:
     paths:
+      - "README.md"
       - "scripts/render_first_stage_report.py"
       - "tests/test_first_stage_report.py"
       - "tests/test_report_after_score_trigger.py"
@@ -10,6 +11,7 @@ on:
   push:
     branches: ["main"]
     paths:
+      - "README.md"
       - "scripts/render_first_stage_report.py"
       - "tests/test_first_stage_report.py"
       - "tests/test_report_after_score_trigger.py"

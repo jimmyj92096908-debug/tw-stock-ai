@@ -34,6 +34,13 @@ class ResearchReportScoreTriggerTests(unittest.TestCase):
         self.assertIn('github.event_name == \x27push\x27',source)
         self.assertIn("cancel-in-progress: false",source)
 
+    def test_first_stage_readme_entry_change_refreshes_readonly_report(self):
+        source=self.report
+        # Both pull request tests and main-branch user-entry updates must
+        # trigger the report workflow, never a production writer.
+        self.assertEqual(source.count('      - "README.md"'),2)
+        self.assertIn('twstock-first-stage-research-report',source)
+
     def test_score_trigger_is_downstream_of_successful_scheduled_indicator(self):
         self.assertIn('Verified History Indicator Catch-Up',self.score)
         self.assertIn("github.event.workflow_run.event == 'schedule'",self.score)
