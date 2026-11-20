@@ -133,23 +133,30 @@ WITH latest AS (
  FROM qualified q CROSS JOIN latest l
  WHERE q.last_close >= l.newest - INTERVAL '7 days'
 ), technicals AS (
- SELECT market,stock_id,COUNT(*)::int AS rows
+ SELECT market,stock_id,COUNT(*)::int AS rows,
+        MAX(trade_date) AS last_technical
  FROM public.daily_technicals GROUP BY market,stock_id
 ), smc AS (
- SELECT market,stock_id,COUNT(*)::int AS rows
+ SELECT market,stock_id,COUNT(*)::int AS rows,
+        MAX(trade_date) AS last_smc
  FROM public.daily_smc GROUP BY market,stock_id
 ), coverage AS (
- SELECT r.market,r.stock_id,r.close_days,
+ SELECT r.market,r.stock_id,r.close_days,r.last_close,
         COALESCE(t.rows,0) AS technical_rows,
-        COALESCE(s.rows,0) AS smc_rows
+        t.last_technical,
+        COALESCE(s.rows,0) AS smc_rows,
+        s.last_smc
  FROM recent r
  LEFT JOIN technicals t USING(market,stock_id)
  LEFT JOIN smc s USING(market,stock_id)
 )
 SELECT market,
  COUNT(*)::int AS eligible,
- COUNT(*) FILTER (WHERE technical_rows<close_days OR smc_rows<close_days)::int AS pending,
- COUNT(*) FILTER (WHERE technical_rows>=close_days AND smc_rows>=close_days)::int AS complete,
+ COUNT(*) FILTER (WHERE technical_rows<close_days OR smc_rows<close_days
+                  OR last_technical IS DISTINCT FROM last_close
+                  OR last_smc IS DISTINCT FROM last_close)::int AS pending,
+ COUNT(*) FILTER (WHERE technical_rows>=close_days AND smc_rows>=close_days
+                  AND last_technical=last_close AND last_smc=last_close)::int AS complete,
  COUNT(*) FILTER (WHERE technical_rows=0 AND smc_rows=0)::int AS unstarted
 FROM coverage
 GROUP BY market ORDER BY market
