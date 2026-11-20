@@ -5,6 +5,8 @@ on:
     paths:
       - "README.md"
       - "scripts/render_first_stage_report.py"
+      - "scripts/first_stage_acceptance.py"
+      - "tests/test_first_stage_acceptance.py"
       - "tests/test_first_stage_report.py"
       - "tests/test_report_after_score_trigger.py"
       - ".github/workflows/first-stage-report.yml"
@@ -13,6 +15,8 @@ on:
     paths:
       - "README.md"
       - "scripts/render_first_stage_report.py"
+      - "scripts/first_stage_acceptance.py"
+      - "tests/test_first_stage_acceptance.py"
       - "tests/test_first_stage_report.py"
       - "tests/test_report_after_score_trigger.py"
       - ".github/workflows/first-stage-report.yml"
@@ -51,8 +55,8 @@ jobs:
           python -m pip install "pytest>=8,<10"
       - name: Compile and verify read-only report rendering
         run: |
-          python -m py_compile scripts/render_first_stage_report.py
-          python -m unittest tests.test_first_stage_report tests.test_report_after_score_trigger -v
+          python -m py_compile scripts/render_first_stage_report.py scripts/first_stage_acceptance.py
+          python -m unittest tests.test_first_stage_report tests.test_first_stage_acceptance tests.test_report_after_score_trigger -v
       - name: Run existing full Python regression tests
         env:
           PYTHONPATH: src
@@ -109,6 +113,11 @@ jobs:
             --ranking first-stage-output/ranking.json \
             --evaluation models/tw-factor-ridge-1-evaluation.json \
             --outdir first-stage-output
+      - name: Fail-closed core research MVP acceptance from the real produced report
+        run: |
+          python scripts/first_stage_acceptance.py \
+            --report first-stage-output/research-report.json \
+            --outdir first-stage-output
       - name: Retain report for manual viewing, not automatic trade/LINE release
         uses: actions/upload-artifact@v4
         with:
@@ -117,6 +126,8 @@ jobs:
             first-stage-output/research-report.html
             first-stage-output/research-report.md
             first-stage-output/research-report.json
+            first-stage-output/first-stage-acceptance.json
+            first-stage-output/first-stage-acceptance.md
           if-no-files-found: error
           retention-days: 14
       - name: State actual verification scope
