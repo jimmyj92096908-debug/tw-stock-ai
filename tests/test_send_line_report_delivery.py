@@ -106,6 +106,53 @@ class DailyLineDeliveryTests(unittest.TestCase):
                 send_report("postgresql://localhost/fake", "dummy-token", sample(), "測試報告")
         self.assertEqual(db.inserted, [])
 
+    def test_bad_recipient_does_not_block_later_users_and_deduplicates_success(self):
+        db = FakeConnection()
+        rows = sample()
+        rows["recipients"] = [
+            "U-fake-undeliverable-1",
+            "U-fake-deliverable",
+            "U-fake-undeliverable-2",
+        ]
+        responses = [FakeResponse(400), FakeResponse(200), FakeResponse(404)]
+        with (
+            patch("src.send_line_report.psycopg.connect", return_value=db),
+            patch("src.send_line_report.requests.post", side_effect=responses) as post,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "拒絕 2 位收件者"):
+                send_report("postgresql://localhost/fake", "dummy-token", rows, "測試報告")
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual(db.commit_calls, 1)
+        self.assertEqual(len(db.inserted), 1)
+        self.assertEqual(db.inserted[0][1], "U-fake-deliverable")
+
+        # A retry attempts only the failed recipients, not the delivered user.
+        with (
+            patch("src.send_line_report.psycopg.connect", return_value=db),
+            patch("src.send_line_report.requests.post",
+                  side_effect=[FakeResponse(200), FakeResponse(200)]) as post,
+        ):
+            self.assertEqual(
+                send_report("postgresql://localhost/fake", "dummy-token", rows, "測試報告"),
+                2,
+            )
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(len(db.inserted), 3)
+
+    def test_global_rate_limit_fails_fast_to_prevent_flooding(self):
+        db = FakeConnection()
+        rows = sample()
+        rows["recipients"] = ["U-fake-1", "U-fake-2"]
+        with (
+            patch("src.send_line_report.psycopg.connect", return_value=db),
+            patch("src.send_line_report.requests.post",
+                  side_effect=[FakeResponse(429), FakeResponse(200)]) as post,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
+                send_report("postgresql://localhost/fake", "dummy-token", rows, "測試報告")
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(db.inserted, [])
+
     def test_requires_token_and_preexisting_recipients(self):
         with self.assertRaisesRegex(RuntimeError, "LINE_CHANNEL_ACCESS_TOKEN"):
             send_report("postgresql://localhost/fake", "", sample(), "報告")

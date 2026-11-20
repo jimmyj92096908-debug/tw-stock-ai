@@ -69,6 +69,8 @@ async function replyLine(replyToken,text) {
       authorization:'Bearer '+token
     },
     body:JSON.stringify({replyToken,messages:[{type:'text',text}]}),
+    redirect:'manual',
+    cache:'no-store',
     signal:AbortSignal.timeout(8000)
   });
   if (!result.ok) {
@@ -93,17 +95,27 @@ export function validateLegacyWebhookUrl(rawUrl) {
   return url.toString();
 }
 
-async function relayLegacy(targetUrl,body,signature) {
-  const result=await fetch(targetUrl,{
+// Revalidate the fixed destination every time, not only on application boot.
+// Never follow 301/302/307/308 redirects: they could forward signed private
+// LINE events or existing reply tokens to a different host.
+export async function relayLegacy(targetUrl,body,signature,transport=fetch) {
+  const validated=validateLegacyWebhookUrl(targetUrl);
+  if (typeof body!=='string' || typeof signature!=='string') {
+    throw new TypeError('Invalid signed LINE payload');
+  }
+  const result=await transport(validated,{
     method:'POST',
     headers:{
       'content-type':'application/json',
       'x-line-signature':signature
     },
     body,
+    redirect:'manual',
+    cache:'no-store',
     signal:AbortSignal.timeout(8000)
   });
   // Never expose upstream body, which may contain private data.
+  // Any redirection is treated as an upstream failure by the gateway.
   return {status:result.status};
 }
 
