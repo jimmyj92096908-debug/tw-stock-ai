@@ -33,6 +33,17 @@ def load_report(database_url: str) -> dict[str, Any]:
                 GROUP BY market ORDER BY market
             """, (latest,))
             prices = {r["market"]: int(r["stocks"]) for r in cur.fetchall()}
+            # Compare with the most recent earlier stored trading day.
+            # This only reads aggregate coverage and never exposes stock or LINE users.
+            cur.execute("""
+                SELECT COUNT(DISTINCT (market, stock_id)) AS stocks
+                FROM public.daily_prices
+                WHERE trade_date = (
+                    SELECT MAX(trade_date) FROM public.daily_prices
+                    WHERE trade_date < %s
+                ) AND close IS NOT NULL
+            """, (latest,))
+            previous_prices_count = int(cur.fetchone()["stocks"] or 0)
             # The price ingestion and composite-score jobs finish at different
             # times. Use the latest completed score date, never silently
             # mislabel yesterday's ratings as today's.
@@ -86,10 +97,34 @@ def load_report(database_url: str) -> dict[str, Any]:
     return {
         "trade_date": latest, "score_date": score_date,
         "universe": universe, "prices": prices,
+        "previous_prices_count": previous_prices_count,
         "scores": dict(score_stats), "institutional": dict(institutional),
         "margin": dict(margin), "top": [dict(r) for r in top],
         "recipients": recipients,
     }
+
+
+def validate_send_readiness(data: dict[str, Any]) -> None:
+    """Block live LINE push if the newest trading day is severely incomplete.
+
+    This check does not modify prices, users, daily-report idempotency, or
+    research conclusions. Manual --dry-run remains available for diagnosis.
+    """
+    latest = sum(int(value) for value in data["prices"].values())
+    previous = int(data.get("previous_prices_count") or 0)
+    universe = sum(int(value) for value in data["universe"].values())
+    if latest < 1:
+        raise RuntimeError("阻止 LINE 推播：最新交易日沒有有效收盤價")
+    if previous >= 100 and latest < previous * 0.7:
+        raise RuntimeError(
+            f"阻止 LINE 推播：最新交易日只有 {latest} 檔有效收盤價，"
+            f"前一交易日 {previous} 檔；行情覆蓋異常不足"
+        )
+    if previous == 0 and universe >= 100 and latest < universe * 0.1:
+        raise RuntimeError(
+            f"阻止 LINE 推播：最新交易日只有 {latest} 檔有效收盤價，"
+            f"候選股票總數 {universe} 檔；行情覆蓋異常不足"
+        )
 
 
 def _fmt_num(value: Any, digits: int = 1) -> str:
@@ -231,6 +266,7 @@ def main() -> None:
     if args.dry_run:
         print("\nDRY RUN：未發送 LINE。")
         return
+    validate_send_readiness(data)
     sent = send_report(database_url, os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", ""), data, message)
     print(f"LINE 每日報告已送出：{sent} 位收件者")
 
