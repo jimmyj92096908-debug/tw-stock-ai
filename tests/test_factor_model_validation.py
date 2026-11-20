@@ -35,7 +35,7 @@ class CompositeFactorModelTests(unittest.TestCase):
         rows[0]["exit_close"] = None
         result = evaluate_rows(rows)
         self.assertEqual(result["signal_dates"], 0)
-        self.assertEqual(result["excluded_rows"]["invalid_or_missing"], 1)
+        self.assertEqual(result["excluded_rows"]["missing_future_price"], 1)
         self.assertIsNone(result["mean_excess_return"])
 
     def test_coverage_and_bad_scores_rejected(self):
