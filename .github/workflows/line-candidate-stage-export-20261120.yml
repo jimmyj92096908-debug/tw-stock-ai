@@ -1,0 +1,57 @@
+name: One-Time LINE Candidate ZIP Export (No Deployment)
+
+# Only used to hand the already-tested, public-code-only ZIP to the authorized
+# Neon deployment tool. Does NOT deploy, attach credentials, or mutate Webhooks.
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/line-candidate-stage-export-20261120.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export-candidate:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, 'PREPARE-LINE-NEON-STAGING-20261120')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build previously tested disabled gateway bundle
+        working-directory: line-stock-analysis
+        run: |
+          npm install --no-audit --no-fund
+          npm run bundle:candidate
+          node --check candidate-dist/index.mjs
+          cd candidate-dist
+          zip -q ../single-account-gateway-candidate.zip index.mjs
+      - name: Verify built candidate defaults to disabled without secrets
+        working-directory: line-stock-analysis
+        run: |
+          node --input-type=module -e "import candidate from './candidate-dist/index.mjs'; let r = await candidate.fetch(new Request('https://test.invalid/webhook', {method: 'POST', body: '{\"events\":[]}'})); if(r.status !== 503) throw Error('Candidate enabled unexpectedly');"
+      - name: Export bundled source-only ZIP as bounded base64 lines for secure staging tool handoff
+        working-directory: line-stock-analysis
+        run: |
+          test -f single-account-gateway-candidate.zip
+          test "$(unzip -Z1 single-account-gateway-candidate.zip)" = "index.mjs"
+          test "$(stat -c%s single-account-gateway-candidate.zip)" -lt 250000
+          echo "SAFE_NEON_LINE_BUNDLE_BEGIN"
+          base64 -w 0 single-account-gateway-candidate.zip | fold -w 120
+          echo "SAFE_NEON_LINE_BUNDLE_END"
+          echo "Staging ZIP contains public program code only; no secrets or user messages."
+      - name: Retain deployment-ready disabled candidate ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-stock-name-gateway-staging-disabled
+          path: line-stock-analysis/single-account-gateway-candidate.zip
+          if-no-files-found: error
+          retention-days: 7
