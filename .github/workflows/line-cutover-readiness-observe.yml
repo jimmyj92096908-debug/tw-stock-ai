@@ -5,14 +5,20 @@ on:
     paths:
       - "scripts/line_readonly_live_preflight.py"
       - "tests/test_line_readonly_live_preflight.py"
+      - "tests/test_line_readonly_schedule.py"
       - ".github/workflows/line-cutover-readiness-observe.yml"
   push:
     branches: ["main"]
     paths:
       - "scripts/line_readonly_live_preflight.py"
       - "tests/test_line_readonly_live_preflight.py"
+      - "tests/test_line_readonly_schedule.py"
       - ".github/workflows/line-cutover-readiness-observe.yml"
   workflow_dispatch:
+  # 02:40 Asia/Taipei daily: inspect the original LINE webhook and candidate
+  # health without changing endpoints, secrets, user messages or the database.
+  schedule:
+    - cron: "40 18 * * *"
 
 permissions:
   contents: read
@@ -33,7 +39,7 @@ jobs:
       - name: Verify read-only official endpoint and candidate probe
         run: |
           python -m py_compile scripts/line_readonly_live_preflight.py
-          python -m unittest tests.test_line_readonly_live_preflight tests.test_line_webhook_control tests.test_line_gateway_canary -v
+          python -m unittest tests.test_line_readonly_live_preflight tests.test_line_readonly_schedule tests.test_line_webhook_control tests.test_line_gateway_canary -v
 
   live-observe:
     needs: offline-contract
