@@ -1,0 +1,54 @@
+name: Bounded Official Historical Enrichment (Daily)
+
+on:
+  schedule:
+    # 01:15 Asia/Taipei on Tue-Sat, after Mon-Fri daily market data workflows.
+    - cron: "15 17 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "手動是否執行資料回補？預設只測試與預覽"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-daily-bounded-history-enrichment
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies and unit test runner
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Validate configuration and test quota guards
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m py_compile src/bounded_history_enrichment.py src/full_market_refresh.py
+          python -m unittest tests.test_bounded_history_enrichment -v
+          pytest -q tests/test_full_market_refresh.py
+      - name: Preview database candidates without writes or downloads
+        run: python src/bounded_history_enrichment.py --per-market 2
+      - name: Apply up to four reviewed official histories
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_ENRICHMENT_WRITE_ENABLED: "yes"
+        run: python src/bounded_history_enrichment.py --apply --per-market 2
+      - name: Show dry-run result
+        if: github.event_name == 'workflow_dispatch' && inputs.apply != true
+        run: echo "Dry run complete; the production database was not modified."
