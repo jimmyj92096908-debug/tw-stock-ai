@@ -88,23 +88,29 @@ def run(database_url: str, *, apply=False, per_market=12) -> list[dict]:
                       "status":"dry-run"}
                 if apply:
                     try:
-                        adjusted=build_adjusted_stock(conn,market,stock["stock_id"])
-                        technical=calculate_technical_stock(conn,market,stock["stock_id"])
-                        smc=calculate_smc_stock(conn,market,stock["stock_id"])
-                        with conn.cursor() as cur:
-                            cur.execute(VERIFY_SQL,(market,stock["stock_id"],
-                                                    market,stock["stock_id"],
-                                                    market,stock["stock_id"]))
-                            verification=cur.fetchone()
-                        if min(adjusted,technical,smc)<MIN_VERIFIED_PRICE_DAYS:
-                            raise RuntimeError("Insufficient indicators from verified history")
-                        if (verification["adjusted_rows"]<stock["close_days"] or
-                            verification["technical_rows"]<stock["close_days"] or
-                            verification["smc_rows"]<stock["close_days"]):
-                            raise RuntimeError("Stored indicator coverage below valid price history")
-                        item.update({"status":"verified",
-                                     "technical_rows":verification["technical_rows"],
-                                     "smc_rows":verification["smc_rows"]})
+                        # A single failing symbol must roll back all three
+                        # indicator writes without aborting later stocks.
+                        # The preceding SELECT has already opened the outer
+                        # psycopg transaction; nested .transaction() is a
+                        # per-stock SAVEPOINT on PostgreSQL.
+                        with conn.transaction():
+                            adjusted=build_adjusted_stock(conn,market,stock["stock_id"])
+                            technical=calculate_technical_stock(conn,market,stock["stock_id"])
+                            smc=calculate_smc_stock(conn,market,stock["stock_id"])
+                            with conn.cursor() as cur:
+                                cur.execute(VERIFY_SQL,(market,stock["stock_id"],
+                                                        market,stock["stock_id"],
+                                                        market,stock["stock_id"]))
+                                verification=cur.fetchone()
+                            if min(adjusted,technical,smc)<MIN_VERIFIED_PRICE_DAYS:
+                                raise RuntimeError("Insufficient indicators from verified history")
+                            if (verification["adjusted_rows"]<stock["close_days"] or
+                                verification["technical_rows"]<stock["close_days"] or
+                                verification["smc_rows"]<stock["close_days"]):
+                                raise RuntimeError("Stored indicator coverage below valid price history")
+                            item.update({"status":"verified",
+                                         "technical_rows":verification["technical_rows"],
+                                         "smc_rows":verification["smc_rows"]})
                     except Exception as exc:
                         LOGGER.error("Indicator catch-up failed: %s %s (%s)",
                                      market,stock["stock_id"],type(exc).__name__)

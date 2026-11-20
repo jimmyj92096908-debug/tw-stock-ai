@@ -21,8 +21,11 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             raise RuntimeError("Unsafe external database URL")
         with psycopg.connect(URL,row_factory=dict_row) as conn:
             conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_prices
-                (market text,stock_id text,trade_date date,close numeric,
+                (market text,stock_id text,trade_date date,close numeric,source text,
                  PRIMARY KEY (market,stock_id,trade_date))""")
+            # Older disposable test fixtures may have created the same table
+            # without the source column used by the test INSERT statements.
+            conn.execute("ALTER TABLE public.daily_prices ADD COLUMN IF NOT EXISTS source text")
             conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_technicals
                 (market text,stock_id text,trade_date date,
                  PRIMARY KEY(market,stock_id,trade_date))""")
