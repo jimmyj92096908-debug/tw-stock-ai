@@ -10,6 +10,12 @@ on:
   schedule:
     - cron: "35 13 * * 1-5"
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "明確允許手動寫入籌碼資料及評分？預設不寫入"
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -17,6 +23,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   ingest:
+    # A source push/PR is code review, never permission to write production.
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply == true))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -40,5 +48,7 @@ jobs:
           python -m unittest tests.test_margin_data -v
       - name: Import latest official daily chip snapshots
         run: python src/daily_chip_ingest.py
-      - name: Recalculate composite chip scores
-        run: python src/chip_score.py
+      - name: Recalculate bounded tracked-stock chip scores
+        # Calculate only the explicit daily cohort; the historical backfill
+        # remains a separate reviewed operation, not an automatic production job.
+        run: python src/chip_score.py --stock-ids 2330,6213,4919,7827,8937
