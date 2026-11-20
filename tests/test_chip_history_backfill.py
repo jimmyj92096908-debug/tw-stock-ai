@@ -10,7 +10,7 @@ from src import chip_history_backfill as backfill
 class HistoryBackfillTests(unittest.TestCase):
     def test_preview_is_default_and_never_calls_external_fetch(self):
         conn = MagicMock()
-        cursor = conn.__enter__.return_value.cursor.__enter__.return_value
+        cursor = conn.__enter__.return_value.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = [
             {"trade_date": date(2026, 11, 20), "has_institutional": False, "has_margin": True},
             {"trade_date": date(2026, 11, 19), "has_institutional": True, "has_margin": False},
