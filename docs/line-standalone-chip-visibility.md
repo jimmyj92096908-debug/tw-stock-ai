@@ -97,7 +97,7 @@ python scripts/line_chip_readiness.py
 
 本輪修正（**純程式碼及離線測試**）：
 
-1. `candidateDatabaseUrls(readUrl, deliveryUrl)` 必須分別確認 username **`line_stock_reader`**、**`line_stock_delivery`**、有密碼以及有效 PostgreSQL hostname；拒絕連線字串中的 `user/password/host/port/dbname/database/role/options/service/passfile` 等查詢參數覆寫。任何失敗只給固定錯誤，不列印原始 Secret。
+1. `candidateDatabaseUrls(readUrl, deliveryUrl)` 必須分別確認 username **`line_stock_reader`**、**`line_stock_delivery`**、有密碼、有效 PostgreSQL hostname，以及明確的 TLS `sslmode=require`／`verify-ca`／`verify-full`（拒絕未指定、`disable`、`prefer` 或重複設定）；同時拒絕連線字串中的 `user/password/host/port/dbname/database/role/options/service/passfile` 等查詢參數覆寫。任何失敗只給固定錯誤，不列印原始 Secret。
 2. 在候選閘道判斷 `LINE_SINGLE_ACCOUNT_ENABLED` 前，先做兩條 URL 的身分驗證；若帳號錯置或配置管理員帳號，**候選服務不會接收或轉送任何用戶事件**（503），即使功能旗標原本是 true。
 3. 建立資料庫 Pool 時再次驗證角色（防止只通過啟用時的一次檢查）；股票讀取 Pool 額外帶 `options: '-c default_transaction_read_only=on'`，讓 PostgreSQL 伺服器端強制讀取交易唯讀。寫入 Pool 只允許 `line_stock_delivery`，不用共享 owner 連線。
 4. 測試包含正確讀寫角色、讀寫角色互換、管理員角色、無密碼、URL 參數試圖覆寫帳號、錯誤角色時的 HTTP 503；並使用 GitHub 一次性 PostgreSQL 容器確認讀取 Pool 的 `default_transaction_read_only=on` 且 `CREATE TABLE` 被 SQLSTATE `25006` 拒絕。
