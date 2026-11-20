@@ -62,15 +62,25 @@ jobs:
         run: |
           python -m py_compile src/batch_indicator_catchup.py
           python -m unittest tests.test_batch_indicator_catchup tests.test_batch_indicator_savepoint_postgres -v
-      - name: Run full Python regression suite including real PG rollback
+      - name: Verify original eligibility SQL on separate stock_ci_test fixture
+        env:
+          STOCK_SAVEPOINT_CI_POSTGRES_URL: ""
+        run: python -m unittest tests.test_batch_indicator_catchup_postgres -v
+      - name: Run complete offline Python suite without shared-table conflicts
+        env:
+          # Existing Postgres tests use mutually incompatible public table
+          # fixtures and MUST run in separate disposable DBs, not one suite.
+          # Both relevant SQL tests have already run independently above.
+          STOCK_CI_POSTGRES_URL: ""
+          STOCK_SAVEPOINT_CI_POSTGRES_URL: ""
         run: python -m pytest -q tests
       - name: Declare evidence boundary
         if: always()
         run: |
           {
             echo "### Indicator batch rollback verification"
-            echo "- PostgreSQL 17 localhost disposable database only."
-            echo "- A real SQL division-by-zero after partial dummy writes rolls back one symbol, while the next commits."
+            echo "- PostgreSQL 17 localhost **two isolated disposable databases** only."
+            echo "- A real SQL division-by-zero rolls back one symbol; the next commits. Existing stock eligibility SQL is tested separately."
             echo "- The unit test verifies no private exception text leaks."
             echo "- No real Neon credentials, data changes, LINE sends, or GitHub schedule changes."
           } >> "$GITHUB_STEP_SUMMARY"
