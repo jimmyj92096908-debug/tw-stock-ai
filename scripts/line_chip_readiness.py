@@ -28,14 +28,18 @@ SELECT
   EXISTS (SELECT 1 FROM pg_roles WHERE rolname='line_stock_reader') AS reader_role_exists,
   has_schema_privilege('line_stock_reader', 'public', 'USAGE') AS public_schema_usage,
   ARRAY(
-    SELECT c.column_name
-    FROM information_schema.columns c
-    WHERE c.table_schema='public'
-      AND c.table_name='daily_chip_scores'
-      AND c.column_name=ANY(%s::text[])
-      AND NOT has_column_privilege(
-        'line_stock_reader','public.daily_chip_scores',c.column_name,'SELECT')
-    ORDER BY c.column_name
+    SELECT req.column_name
+    FROM unnest(%s::text[]) AS req(column_name)
+    LEFT JOIN information_schema.columns c
+      ON c.table_schema='public'
+     AND c.table_name='daily_chip_scores'
+     AND c.column_name=req.column_name
+    WHERE CASE
+      WHEN c.column_name IS NULL THEN TRUE
+      ELSE NOT has_column_privilege(
+        'line_stock_reader','public.daily_chip_scores',req.column_name,'SELECT')
+    END
+    ORDER BY req.column_name
   ) AS missing_chip_select_columns,
   has_any_column_privilege(
     'line_stock_reader','public.line_messages','SELECT'
