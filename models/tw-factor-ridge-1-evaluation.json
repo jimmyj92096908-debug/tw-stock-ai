@@ -40,5 +40,8 @@
     "Corporate actions retrospectively revise adjusted prices",
     "Unpriced/delisted stocks bias evaluated universe",
     "Round-trip 30bp cost is illustrative"
-  ]
+  ],
+  "holdout_previously_examined_during_model_design": true,
+  "holdout_is_pristine_independent_validation": false,
+  "requires_new_unseen_future_holdout": true
 }
