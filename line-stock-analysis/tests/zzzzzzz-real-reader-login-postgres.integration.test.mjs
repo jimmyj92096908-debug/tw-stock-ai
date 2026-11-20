@@ -104,7 +104,7 @@ test('genuine restricted reader login accepts only exact grants and refuses priv
     // The exact migration is executed only on the isolated CI fixture.
     await fixture.query(grant);
     const ready=await verifyActualReader(restricted);
-    assert.equal(ready.acceptance,'chip_reader_query_pass');
+    assert.equal(ready.acceptance,'chip_reader_query_pass',JSON.stringify(ready));
     assert.equal(ready.chip_score,40.65);
     assert.equal(ready.chip_coverage,0.65);
     assert.equal(ready.price_date,'2026-11-20');
