@@ -20,7 +20,7 @@ def stock(i, market="twse"):
         "market": market, "stock_id": str(1300+i),
         "close_days": 100, "latest_close": date(2026, 11, 19),
         "technical_rows": 0, "smc_rows": 0,
-        "last_technical": None, "last_smc": None,
+        "has_latest_technical": False, "has_latest_smc": False,
     }
 
 
@@ -68,8 +68,8 @@ class IndicatorScheduleProbeTests(unittest.TestCase):
             {**candidates[0], "stock_id": "1808"},
             {**candidates[0], "close_days": 59},
             {**candidates[0], "technical_rows": 100, "smc_rows": 100,
-             "last_technical": date(2026, 11, 19),
-             "last_smc": date(2026, 11, 19)},
+             "has_latest_technical": True,
+             "has_latest_smc": True},
             {**candidates[0], "market": "tpex"},
             {**candidates[0], "stock_id": candidates[1]["stock_id"]},
         ):
@@ -88,8 +88,8 @@ class IndicatorScheduleProbeTests(unittest.TestCase):
         candidates[0].update({
             "stock_id": "8937",
             "technical_rows": 105, "smc_rows": 106,
-            "last_technical": date(2026, 11, 18),
-            "last_smc": date(2026, 11, 18),
+            "has_latest_technical": False,
+            "has_latest_smc": False,
         })
         with (
             patch.object(probe,"collect_audit",return_value=audit()),
