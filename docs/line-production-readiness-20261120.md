@@ -43,6 +43,22 @@
 
 此修正僅在 GitHub 候選程式碼與離線測試中生效；目前 Neon `linestockgateway` Deployment 2 **並未因合併 GitHub 程式碼而自動更新**。維運者需另行審查並以受保護設定部署候選版本，才可執行官方手動 `line-gateway-official-canary.yml` 的 `run_test=true`。不能把任何離線簽章測試報告寫成真實 LINE Canary 成功。
 
+## 2026-11-20 最新 Neon 部署環境與定期檢查
+
+我已透過 Neon 正式 `main` 分支讀取 **環境變數名稱而非值**，確認：
+
+| 函式 | 目前部署 | 僅檢視環境變數名稱的結果 |
+| --- | --- | --- |
+| `linewebhook` | Deployment 4，completed | 有 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` |
+| `linestockanalysis` | Deployment 3，completed | 有 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` |
+| `linestockgateway` | Deployment 2，completed | 有 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`；**沒有新閘道使用的兩個 LINE Channel 憑證名稱** |
+
+部署 completed **不代表**候選閘道已能處理官方 LINE 事件：缺少新閘道必要憑證，亦未完成受控簽章與真實使用者驗收。不能透過已列出的名稱推斷實際憑證值，也不能從其他 Neon 函式或 GitHub 日誌貼出機密。
+
+新增 [LINE Cutover Readiness (Observe Only)](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/workflows/line-cutover-readiness-observe.yml) 每日台灣時間 **02:40** 的唯讀檢查：只使用受保護 Token 向 LINE 官方 `GET` 目前登記 Webhook，及對候選函式進行無憑證 `GET /health`。仍保留手動執行和 PR 離線測試，輸出 14 日的彙總 JSON，不修改 LINE 設定、不傳送訊息、不操作 Neon。此排程是否真正觸發需要透過實際 `schedule` 執行紀錄另外驗證。
+
+本檢查**只能證明舊版 Webhook 有沒有被更改與候選健康檢查是否回 200**，永遠不能自行滿足正式簽章 Canary 或使用者 E2E，也不能批准切換。若偵測到原始 Webhook 變更或健康檢查失敗，應先處理異常，不能自動切回或切到新閘道。
+
 ## 仍未通過的正式啟用門檻
 
 **不能以以上測試直接宣稱已正式上線。** Neon `linestockgateway` 目前部署環境只列出 `LINE_LEGACY_WEBHOOK_URL`、`LINE_LOG_WRITE_DATABASE_URL`、`LINE_SINGLE_ACCOUNT_ENABLED`、`LINE_STOCK_READ_DATABASE_URL`，仍**缺少兩項必備密鑰名稱** `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`。由於現有工具不會以明文顯示 LINE 金鑰，不能替使用者從舊函式讀出或複製兩個密鑰，更不能把它們放進 GitHub 版本控制。
