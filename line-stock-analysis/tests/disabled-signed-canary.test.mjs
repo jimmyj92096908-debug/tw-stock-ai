@@ -72,7 +72,7 @@ test('unsigned, tampered and malformed empty events fail without reaching backen
 
 test('no channel secret disables even a correctly formed connectivity event',async()=>{
   const {gateway,calls}=testGateway({secret:''});
-  assert.equal((await gateway(buildRequest({destination:'U-ci-fake-bot',events:[]})).status,503);
+  assert.equal((await gateway(buildRequest({destination:'U-ci-fake-bot',events:[]}))).status,503);
   assert.equal(calls.stock+calls.legacy,0);
 });
 
@@ -85,7 +85,7 @@ test('disabled canary is bounded by original payload byte limit',async()=>{
 
 test('enabled gateway retains original empty-event legacy relay behavior',async()=>{
   const {gateway,calls}=testGateway({enabled:true});
-  assert.equal((await gateway(buildRequest({destination:'U-ci-fake-bot',events:[]})).status,200);
+  assert.equal((await gateway(buildRequest({destination:'U-ci-fake-bot',events:[]}))).status,200);
   assert.equal(calls.stock,0);
   assert.equal(calls.legacy,1);
 });
