@@ -45,9 +45,15 @@ function checkedRoleUrl(rawUrl, role) {
   return url.toString();
 }
 
+// Reuse the candidate's strict username and TLS checks for an independent,
+// manual-only, read-only acceptance utility. No delivery credentials needed.
+export function checkedLineReaderUrl(rawUrl) {
+  return checkedRoleUrl(rawUrl, 'line_stock_reader');
+}
+
 export function candidateDatabaseUrls(readUrl, deliveryUrl) {
   return {
-    read: checkedRoleUrl(readUrl, 'line_stock_reader'),
+    read: checkedLineReaderUrl(readUrl),
     delivery: checkedRoleUrl(deliveryUrl, 'line_stock_delivery')
   };
 }

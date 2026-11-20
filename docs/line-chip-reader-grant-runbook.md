@@ -35,3 +35,23 @@ Neon `twstock` 中，`twse/2330` 最新獨立籌碼評分已儲存（2026-11-20�
 - `public.daily_composite_scores`、`public.daily_chip_scores` 的**資料列**不修改；SQL 僅可能在未來明確核准後修改角色 ACL。
 - 無 LINE API 發送、Webhook 設定 PUT、交易下單或部署。
 - CI 使用假股票、假帳號與本地 PostgreSQL，不觸碰正式 Neon。
+
+
+## 2026-11-21 補充：真正讀取帳號登入驗收（不使用管理員 `SET ROLE` 代替）
+
+新增 `line-stock-analysis/reader-role-acceptance.mjs`，是未來在**已另外明確授權並執行正式七欄 GRANT 之後**才能運行的獨立驗收工具；工具本身沒有 GRANT／REVOKE／UPDATE／INSERT／LINE API。
+
+- 僅透過 `LINE_STOCK_READ_DATABASE_URL` 連線；沿用候選版本的嚴格 URL 驗證，必須是 `line_stock_reader` 且要求 TLS。**不需要、也不讀取 LINE 發送 Token 或收件者資料庫的寫入密碼**。
+- 連線設定強制 `default_transaction_read_only=on`，檢查 `current_user = session_user = line_stock_reader`、資料庫必須是 `twstock`、角色不得具管理員權限；只於 `BEGIN READ ONLY` 中讀取權限、2330 收盤價日期及目前候選程式的**原樣** `STANDALONE_CHIP_SQL`，最後 `ROLLBACK`。
+- 檢查七個欄位是**全部且只有**這七個欄位、沒有整表 SELECT／股票籌碼寫入／私人 LINE 訊息讀寫權限；依當前有效行情資料日確認籌碼得分 0～100、來源覆蓋至少 50%，日期不得比行情晚且不能落後超過七個日曆天。
+- 未授權／錯誤的角色或額外權限只回傳 `blocked` 或固定錯誤，**不會自動補授權**，不輸出密碼、Token 或 LINE 用戶資訊；即使驗收 `chip_reader_query_pass` 也會保留 `webhook_cutover_approved=false`。
+- CI 在**新建的本機一次性 PostgreSQL `twstock` 資料庫中**，使用真正 LOGIN 角色與不同的資料庫連線（不是 `SET LOCAL ROLE` 模擬）驗證「零權限 → 原樣 SQL 七欄授權 → 真正 SQL 查詢成功 → 原樣 SQL 回復 → 拒絕讀取」流程，並確認私人訊息、額外籌碼欄位及 UPDATE 實際被資料庫拒絕。
+
+未來在另獲正式授權、已確認最低權限授予之後，才可由維運者於已保護的執行環境設定專用唯讀角色 URL，手動執行：
+
+```bash
+cd line-stock-analysis
+LINE_CHIP_READER_ACCEPTANCE=yes node reader-role-acceptance.mjs
+```
+
+此工具只負責**資料庫角色與股票研究查詢**驗收，不會驗證真實 LINE Channel Secret、Webhook 簽章、官方端點設定或訊息已送達。上述上線門檻仍須獨立授權與實測。
