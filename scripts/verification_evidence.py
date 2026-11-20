@@ -4,6 +4,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -36,6 +37,14 @@ def run(suite, root, output, timeout):
             # Never save raw stdout/stderr: tests could accidentally log sensitive content.
             completed = subprocess.run(command, cwd=workdir, capture_output=True, timeout=timeout, check=False, env=env)
             status, code = ("passed" if completed.returncode == 0 else "failed"), completed.returncode
+            if status == "failed" and name == "python-unit":
+                # Keep only unittest case identifiers and failure summary.
+                # Do not print exception messages, stack traces, SQL, or user data.
+                output_text = completed.stderr.decode("utf-8", errors="replace")
+                patterns = (r"^(?:ERROR|FAIL): ([\\w.]+) \\(", r"^FAILED \\((?:failures|errors)=\\d+")
+                for line in output_text.splitlines():
+                    if any(re.match(p, line) for p in patterns):
+                        print("diagnostic: " + line[:180], flush=True)
         except subprocess.TimeoutExpired:
             status, code = "timeout", None
         except OSError:
