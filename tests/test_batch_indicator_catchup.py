@@ -1,5 +1,6 @@
 """Offline safety tests for gradual 60+ session indicator enrichment."""
 import os
+from contextlib import contextmanager
 import unittest
 from datetime import date
 from unittest.mock import patch
@@ -33,10 +34,26 @@ class Cursor:
 
 
 class Connection:
-    def __init__(self):self.cur=Cursor()
+    def __init__(self):
+        self.cur=Cursor()
+        self.tx_committed=0
+        self.tx_rolled_back=0
+        self.records=[]
     def __enter__(self):return self
     def __exit__(self,*_):return False
     def cursor(self):return self.cur
+    @contextmanager
+    def transaction(self):
+        # Models a PostgreSQL savepoint with independent rollback per stock.
+        original=list(self.records)
+        try:
+            yield
+        except Exception:
+            self.records[:]=original
+            self.tx_rolled_back+=1
+            raise
+        else:
+            self.tx_committed+=1
 
 
 class IndicatorCatchupTests(unittest.TestCase):
@@ -81,6 +98,52 @@ class IndicatorCatchupTests(unittest.TestCase):
         self.assertEqual(tech.call_count,2)
         self.assertEqual(smc.call_count,2)
         self.assertEqual(conn.cur.calls[1][1],("twse","2330","twse","2330","twse","2330"))
+
+    def test_partial_stock_failure_is_rolled_back_and_next_stock_succeeds(self):
+        conn=Connection()
+        def adjust(_conn,market,stock):
+            conn.records.append((market,stock,"adjusted"))
+            return 74
+        def technical(_conn,market,stock):
+            conn.records.append((market,stock,"technical"))
+            if market=="twse":
+                raise RuntimeError("PRIVATE-FAILED-DATABASE-OPERATION")
+            return 74
+        def smc(_conn,market,stock):
+            conn.records.append((market,stock,"smc"))
+            return 74
+        with (
+            patch.dict(os.environ,{"STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes"}),
+            patch.object(ind.psycopg,"connect",return_value=conn),
+            patch.object(ind,"build_adjusted_stock",side_effect=adjust),
+            patch.object(ind,"calculate_technical_stock",side_effect=technical),
+            patch.object(ind,"calculate_smc_stock",side_effect=smc),
+        ):
+            with self.assertLogs(ind.LOGGER,level="ERROR") as captured:
+                results=ind.run("fake",apply=True,per_market=2)
+        self.assertEqual([r["status"] for r in results],["failed","verified"])
+        self.assertEqual(conn.tx_rolled_back,1)
+        self.assertEqual(conn.tx_committed,1)
+        self.assertEqual(conn.records,[
+            ("tpex","6488","adjusted"),
+            ("tpex","6488","technical"),
+            ("tpex","6488","smc")
+        ])
+        self.assertNotIn("PRIVATE-FAILED-DATABASE-OPERATION","\\n".join(captured.output))
+
+    def test_incomplete_verification_rolls_back_both_stocks(self):
+        conn=Connection()
+        with (
+            patch.dict(os.environ,{"STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes"}),
+            patch.object(ind.psycopg,"connect",return_value=conn),
+            patch.object(ind,"build_adjusted_stock",return_value=74),
+            patch.object(ind,"calculate_technical_stock",return_value=74),
+            patch.object(ind,"calculate_smc_stock",return_value=5),
+        ):
+            results=ind.run("fake",apply=True)
+        self.assertEqual([r["status"] for r in results],["failed","failed"])
+        self.assertEqual(conn.tx_rolled_back,2)
+        self.assertEqual(conn.tx_committed,0)
 
     def test_failure_does_not_print_private_exception_details(self):
         conn=Connection()
