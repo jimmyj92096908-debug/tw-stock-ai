@@ -106,7 +106,7 @@ test('English-name stocks M31 and AES-KY need exact DB membership',async()=>{
       assert.deepEqual(params,[equities[name].stock_id]);
       return {rows:[{...stockRow,...equities[name]}]};
     });
-    assert.match(r,new RegExp(name.replace('-','\\-'),'u'));
+    assert.ok(r.includes(name));
     assert.match(r,new RegExp(equities[name].stock_id,'u'));
   }
 });
