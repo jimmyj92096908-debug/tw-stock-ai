@@ -54,3 +54,18 @@ python scripts/line_chip_readiness.py
 ```
 
 只輸出 JSON 統計與狀態旗標，不輸出連線資訊或 LINE 使用者資料。
+
+
+## 2026-11-21：有效籌碼優先、7 日時效檢查，以及真實 Neon 回覆預覽
+
+本輪仍不授予正式資料庫權限、不部署候選閘道、不調整 LINE Webhook、不發送額外訊息。
+
+- `STANDALONE_CHIP_SQL` 新增 `total_score IS NOT NULL` 且 `coverage_weight >= 0.50`；只從股價交易日（含）以前選擇最近一筆**達公布門檻**的獨立籌碼評分。最新紀錄若為 NULL 或覆蓋率不足，不能遮蔽仍具有效條件的前一筆。
+- 在回覆端再檢查時效：獨立籌碼評分距離收盤交易日超過 **7 個日曆天**，只提示「資料已過期」，不展示為當期有效分數。距離恰好 7 日仍可呈現，未更改資料庫內評分或因子權重。若沒有可公布的來源仍維持空值／不顯示。
+- 新增離線日期邊界、NULL／未達覆蓋率的 SQL 篩選、實際 PostgreSQL 排序及跨股票代碼隔離測試。兼顧權限不足時的安全退回。
+- 新增 `line-stock-analysis/readonly-live-preview.mjs`：只有設定 `LINE_STOCK_READONLY_PREVIEW=yes` 才可使用，連線只指向 `twstock`，並以 PostgreSQL `BEGIN TRANSACTION READ ONLY` 執行現有經核可的 `ANALYSIS_SQL` 和 `STANDALONE_CHIP_SQL`。使用真實資料產生兩版回覆**僅在程序記憶體**，不送 LINE API、不列印私人資料，也不包含 LINE 傳送程式。
+- GitHub Actions 單次唯讀預覽 [#44779389604](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44779389604) 成功：確認 2330 預設路徑只查原股票 SQL，啟用預覽時才附加籌碼 SQL；輸出籌碼日期 **2026-11-20**、分數 **40.65**、來源覆蓋 **65%**，並顯示較舊的綜合評分日期 **2026-11-19** 和「尚未納入」提示。
+- 此次預覽使用受控 GitHub Secret 提供的資料庫連線，但它**不等於**以 `line_stock_reader` 執行的正式候選閘道測試。專用讀取角色仍沒有 `daily_chip_scores` 的七欄 SELECT；之前真實唯讀查詢已證實 SQLSTATE 42501。任何正式 GRANT 或部署、旗標啟用、Webhook 切換仍須另行授權。
+- 執行完畢已刪除單次預覽 workflow，留存 Actions 成功日誌；`line-stock-analysis-tests.yml` 現在會對預覽腳本進行 Node 語法檢查，無需資料庫憑證。
+
+> 預覽程式針對 2026-11-20 的已驗證 2330 快照設有固定驗收值。之後資料更新時如需重跑，須先重新驗證期待的資料日期和數值，不可把此快照測試稱為持續即時行情監控。
