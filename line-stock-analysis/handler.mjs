@@ -199,6 +199,7 @@ export const STANDALONE_CHIP_SQL = [
   ' margin_score AS standalone_margin_score',
   ' FROM public.daily_chip_scores',
   ' WHERE market=$1 AND stock_id=$2 AND as_of_date <= $3::date',
+  ' AND total_score IS NOT NULL AND coverage_weight >= 0.50',
   ' ORDER BY as_of_date DESC LIMIT 1'
 ].join('\n');
 
@@ -375,9 +376,16 @@ export function formatStockAnalysis(row) {
     Number(row.standalone_chip_score);
   const independentCoverage = row.standalone_chip_coverage == null ? null :
     Number(row.standalone_chip_coverage);
-  if (independentChipDate && independentChipDate <= priceDate) {
+  if (independentChipDate && /^\d{4}-\d{2}-\d{2}$/u.test(independentChipDate) &&
+      /^\d{4}-\d{2}-\d{2}$/u.test(priceDate) && independentChipDate <= priceDate) {
     lines.push('', '【獨立籌碼評分｜' + independentChipDate + '】');
-    if (Number.isFinite(independentScore) && independentScore >= 0 &&
+    // Prevent a once-valid score from being presented as current forever.
+    // The date ceiling above also prevents future-dated factor leakage.
+    const ageDays = Math.round((Date.parse(priceDate + 'T00:00:00Z') -
+      Date.parse(independentChipDate + 'T00:00:00Z')) / 86400000);
+    if (!Number.isFinite(ageDays) || ageDays > 7) {
+      lines.push('籌碼評分距收盤日已超過 7 天，不列為最新有效訊號。');
+    } else if (Number.isFinite(independentScore) && independentScore >= 0 &&
         independentScore <= 100 && Number.isFinite(independentCoverage) &&
         independentCoverage >= 0.5 && independentCoverage <= 1) {
       lines.push('籌碼分數：' + number(independentScore, 2) +
