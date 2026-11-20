@@ -6,6 +6,8 @@ on:
       - "src/trained_factor_model.py"
       - "scripts/trained_factor_pipeline.py"
       - "tests/test_trained_factor_model.py"
+      - "tests/test_fitted_artifact_consistency.py"
+      - "models/tw-factor-ridge-1-*.json"
       - ".github/workflows/trained-factor-model-tests.yml"
   push:
     branches:
@@ -14,6 +16,8 @@ on:
       - "src/trained_factor_model.py"
       - "scripts/trained_factor_pipeline.py"
       - "tests/test_trained_factor_model.py"
+      - "tests/test_fitted_artifact_consistency.py"
+      - "models/tw-factor-ridge-1-*.json"
       - ".github/workflows/trained-factor-model-tests.yml"
   workflow_dispatch:
 
@@ -43,13 +47,14 @@ jobs:
             tests.test_factor_model \
             tests.test_factor_model_validation \
             tests.test_factor_model_v2 \
-            tests.test_trained_factor_model -v
+            tests.test_trained_factor_model \
+            tests.test_fitted_artifact_consistency -v
       - name: State offline verification boundary
         if: always()
         run: |
           {
             echo "### Trained Factor Model Acceptance"
-            echo "- CI uses only synthetic and mocked input; no real Neon credentials."
+            echo "- CI tests synthetic/mock training and independently reconstructs saved real-data coefficients from aggregate sufficient statistics; no real Neon credentials."
             echo "- Production PostgreSQL, LINE messages and trade orders were never accessed."
             echo "- Research ranking always returns abstain=true and live_trading_approved=false."
             echo "- A passing CI does not establish positive holdout performance."
