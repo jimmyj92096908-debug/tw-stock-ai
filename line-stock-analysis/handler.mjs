@@ -551,4 +551,3 @@ export function createWebhookHandler({ query, sendReply, channelSecret, enabled 
     return response('OK', 200);
   };
 }
-",
