@@ -35,10 +35,18 @@ export function parseStockCode(input) {
   // checked against stock_master BEFORE routing to the new gateway; ordinary
   // messages such as 「你好」 still belong to the original LINE webhook.
   const named = /^(?:分析|查詢|查股票|股票|查股|查)\s*([\p{Script=Han}A-Za-z0-9&－（）()·.-]{2,30})$/u.exec(normalized);
-  if (named && /\p{Script=Han}/u.test(named[1])) {
+  // Many valid TWSE/TPEx company names are Chinese; a few are English
+  // tickers such as M31 and AES-KY. Permit these only when unmistakably
+  // stock-like, then confirm exact membership in stock_master.
+  const plausibleName = value =>
+    /^[\p{Script=Han}]{2,12}$/u.test(value) ||
+    (/^[A-Z][A-Z0-9-]{1,16}$/u.test(value) && /[0-9-]/u.test(value)) ||
+    (/\p{Script=Han}/u.test(value) &&
+      /^[\p{Script=Han}A-Za-z0-9&－（）()·.-]{2,30}$/u.test(value));
+  if (named && plausibleName(named[1])) {
     return { kind: 'name', name: named[1], explicit: true };
   }
-  if (/^[\p{Script=Han}]{2,12}$/u.test(normalized)) {
+  if (plausibleName(normalized)) {
     return { kind: 'name', name: normalized, explicit: false };
   }
   return { kind: 'invalid' };
