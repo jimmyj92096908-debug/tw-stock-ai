@@ -16,6 +16,14 @@ At signal session t close: rank without looking at future prices. Count trading 
 ## Actual read-only Neon coverage check, 2026-11-20
 2026-07-01–2026-11-19 had 2,780 scored records with >=0.50 coverage, 1,856 matching a non-null **same-date adjusted close**. Among dates with >=5 adjusted signal stocks: 96 dates had sufficient cohort size, only 84 dates had every prospective forward adjusted label, 57 completed development dates remained after holdout-boundary purging, and 21 complete holdout dates were available. The exact figures may change with future backfills. These counts do NOT imply favorable performance.
 
+### Exploratory adjusted-price outcome from read-only Neon SQL
+Predeclared holdout boundary: 2026-10-01; assumed round-trip cost: 30 bps.
+- Development **57** complete cohorts: mean five-session selected gross **+1.2712%**; net **+0.9712%**; benchmark gross **-0.0332%**; mean net excess **+1.0044 percentage points**.
+- Holdout **21** complete cohorts: selected gross **-3.1220%**; net **-3.4220%**; benchmark gross **-1.2870%**; mean net excess **-2.1350 percentage points**; positive net excess on only **28.57%** of dates.
+- These are overlapping date cohorts, and neither an implemented portfolio nor independent samples. All figures are research snapshots from 2026-11-20 and may change after data backfill.
+
+**Acceptance decision: FAIL for positive holdout evidence.** Do not promote to signals or optimize against this holdout. A later, truly unseen future interval must be used after any predeclared model redesign.
+
 ## Reproduce
 Use an authorized read-only Neon PostgreSQL DSN:
 ```bash
