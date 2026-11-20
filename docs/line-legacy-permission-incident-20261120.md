@@ -73,3 +73,13 @@ REVOKE INSERT (received_at) ON TABLE public.line_messages FROM line_stock_delive
 ```
 
 **本項仍為候選修復，尚未收到新的真實 LINE 回覆驗證。不能把 EXPLAIN 通過當成真實訊息正常。** 原版 SQL 未知，若後續仍報錯，不可擴增私人訊息全文讀取權限來碰運氣。
+
+
+## 2026-11-20 22:55 回復驗收結果（真實 LINE）
+
+- 使用者提供 LINE 桌面版截圖：22:55 發出 `你好`，同分鐘收到原版 `收到你的訊息：你好 / AI 台股投資系統正在建置中。`，證明基本私人文字回覆路徑已在原版 Webhook 實際運作。
+- Neon `linewebhook` 函式日誌：`2026-11-20T14:55:13Z`、`14:55:42Z` 出現成對 `invoke begin/end`，此兩次沒有 `permission denied` 錯誤。之前最近一次權限錯誤是 `14:49:37Z`。
+- 正式 `public.line_messages` 於台灣時間 22:55 分鐘彙總有 **2 筆文字收件事件**；未讀取、輸出或記錄任何使用者 ID 或訊息全文。
+- 修正後 `line_stock_delivery` 仍只有所需欄位權限；`line_messages.id` 的 SELECT、`received_at` 的 INSERT 已啟用，但 `message_text`／`line_user_id` 的 SELECT 與整張表 SELECT 均未啟用。
+- `linewebhook` Deployment 4 保留原部署；`linestockgateway` Deployment 6 繼續停用，正式 LINE Webhook URL 沒有在此次排障中切換。
+- **評估**：原版**基本私人文字回覆**修復已通過一組真實事件驗收。因未取得原版程式完整 SQL，無法單獨確定兩項新增欄位權限各自的必要性，也不能推論所有舊版功能、每日推播或群組事件均已通過；若後續穩定確認，可以評估縮減未使用權限。
