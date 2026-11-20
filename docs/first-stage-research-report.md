@@ -26,6 +26,25 @@ python scripts/render_first_stage_report.py --audit first-stage-output/audit.jso
 
 僅輸出公開市場的歷史研究排名。輸出的 `abstain=true`、`live_trading_approved=false` 與負樣本外績效不可移除或誤標成買賣建議。模型不保證獲利；不同日的行情、評分也不能混用。
 
+## 正式驗收證明（隨每次研究報告提供）
+
+每次正式研究報告都會在產生 HTML、Markdown、JSON 後，再執行獨立的
+`scripts/first_stage_acceptance.py`。它只讀取剛產生的研究報告 JSON，
+逐項核對：有價股票、已計算技術與 SMC、有效綜合評分、同日研究排名、
+台灣上市／上櫃補算數量、資料品質異常為零、研究模型樣本外評估與
+`abstain=true`、`live_trading_approved=false`。
+
+只有全部一致，才會輸出 `first-stage-acceptance.json` 和
+`first-stage-acceptance.md`，隨研究 HTML／MD／JSON 一起上傳。
+若異常、資料日期不一致、模型交易閘門意外打開或研究排名為空，
+整次報告工作會失敗，不產生「已驗收成功」的虛假檔案。
+
+`core_research_mvp_accepted=true` **僅表示原定義的第一階段唯讀研究 MVP
+已符合條件**，不表示 1,991 檔全數完成技術指標、不表示定期排程已達
+長期穩定性要求，也不代表 LINE 新版 Webhook 通過官方簽章或真實訊息
+E2E。這些範圍需各自以後續真實事件驗證。研究模型樣本外五日平均
+超額報酬目前為負，交易功能繼續停用。
+
 ## 哪些屬第一階段，哪些仍是後續？
 
 第一階段已具備：真實價格與綜合評分查詢、固定已訓練模型權重、歷史研究排名、資料覆蓋率健康度、可下載的人類閱讀報告、離線回歸測試。**仍不包括**新的 LINE Webhook 正式接管、每日 LINE 模型推播、真實交易、已通過績效驗證的交易訊號或 1,991 檔全部完成技術分析。
