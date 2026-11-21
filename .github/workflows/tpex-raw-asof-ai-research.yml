@@ -1,0 +1,80 @@
+name: TPEx No-Storage Causal Raw Features and Purged AI Research (Read Only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-raw-asof-ai-research-20261121.txt"
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "TPEx Five-Year Dated Market Full Free Campaign"
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-raw-ai-research-readonly-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  causal-source-to-prototype:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify main-branch single-use public research audit marker
+        id: once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+               grep -Fxq ".github/tpex-raw-asof-ai-research-20261121.txt"; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing open-source and no-paid-service dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Enforce no future price on signal, source unit normalization, full-roster label and model holdout blocks
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile src/raw_factor_feature_bridge.py src/raw_factor_walkforward.py scripts/tpex_raw_feature_preview.py scripts/tpex_raw_model_readonly_experiment.py
+          python -m unittest tests.test_raw_factor_feature_bridge tests.test_raw_factor_walkforward tests.test_tpex_raw_model_readonly_experiment tests.test_tpex_free_on_demand_pit tests.test_model_release_acceptance -v
+      - name: Reproduce latest real current-stock raw-only features without database writes
+        if: github.event_name != 'push' || steps.once.outputs.approved == 'true'
+        run: python scripts/tpex_raw_feature_preview.py --stock-id 5520 --as-of 2026-11-20 --signals 3 --report tpex-raw-source-feature-proof.json
+      - name: Build experimental frozen whole-cohort features and purged raw-price backtest (never live)
+        if: github.event_name != 'push' || steps.once.outputs.approved == 'true'
+        run: python scripts/tpex_raw_model_readonly_experiment.py --label-cutoff 2026-11-20 --test-start 2026-10-30 --max-signal-days 50 --output-dir tpex-raw-factor-experiment
+      - name: Preserve bounded evidence, never trade rankings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-raw-ai-feature-and-purged-research-readonly
+          path: |
+            tpex-raw-source-feature-proof.json
+            tpex-raw-factor-experiment/research-source-gates.json
+            tpex-raw-factor-experiment/retrospective-ridge-prototype.json
+          retention-days: 14
+          if-no-files-found: ignore
