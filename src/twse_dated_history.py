@@ -29,6 +29,32 @@ LOGGER = logging.getLogger(__name__)
 MAX_DAYS_PER_RUN = 8
 MAX_LOOKBACK_DAYS = 1830
 MIN_COVERAGE_SHARE = 0.60
+# Conservative index-inclusive stress cost, intentionally well above the
+# measured raw table average. Free storage safety, not an actual quota promise.
+MAX_DATABASE_BYTES = 800_000_000
+MIN_MAINTENANCE_RESERVE_BYTES = 50_000_000
+MAX_OFFICIAL_BARS_PER_DAY = 1500
+STRESS_BYTES_PER_NEW_BAR = 600
+
+
+def has_source_write_budget(database_bytes: int, *, days: int = 1) -> bool:
+    """Allow an upper-bounded official import only with a maintenance reserve."""
+    if (type(database_bytes) is not int or database_bytes < 0
+            or type(days) is not int or not 1 <= days <= MAX_DAYS_PER_RUN):
+        raise ValueError("Unverifiable TWSE storage estimate")
+    budget = (MIN_MAINTENANCE_RESERVE_BYTES
+              + days * MAX_OFFICIAL_BARS_PER_DAY * STRESS_BYTES_PER_NEW_BAR)
+    return database_bytes + budget < MAX_DATABASE_BYTES
+
+
+def verify_source_write_budget(conn, *, days: int = 1) -> None:
+    """A read-only physical size check immediately before each dated insertion."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_database_size(current_database())::bigint")
+        size = cur.fetchone()[0]
+    if not has_source_write_budget(size, days=days):
+        raise RuntimeError("TWSE official source import blocked by Neon Free storage reserve")
+
 # Only a recognized exchange "no matching data" response is an off-session.
 NO_DATA_MARKERS = ("沒有符合條件的資料", "無符合條件", "無資料")
 
@@ -179,6 +205,10 @@ def run(database_url: str, *, apply: bool = False,
 
         minimum = max(500, int(len(allowed) * MIN_COVERAGE_SHARE))
         for index, day in enumerate(dates):
+            # Never trust only the workflow's earlier snapshot: concurrent
+            # writers can consume storage while the long campaign is running.
+            if apply:
+                verify_source_write_budget(conn, days=1)
             bars = fetch_official_day(day, session=session)
             if bars is None:
                 item = {"trade_date":day.isoformat(), "status":"closed",
