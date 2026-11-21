@@ -30,6 +30,15 @@ class TWSEIndependentReleaseGateTests(TestCase):
         self.assertIn("missing_historical_derived_date",gate.STATE_SQL)
         self.assertIn("c.score_at>=GREATEST(",gate.STATE_SQL)
         self.assertIn("c.latest_official_ingest",gate.STATE_SQL)
+        # Official market-wide dated-session count must remain EW-only:
+        # the other trusted TPEx official endpoint tags validate each stock
+        # but CANNOT inflate the date-verified independent 91-session gate.
+        self.assertIn("AND source='TPEX_DATED_OTC_EW')::int tpex_source_days",
+                      gate.STATE_SQL)
+        self.assertIn("max(retrieved_at) FILTER(WHERE source IN (",gate.STATE_SQL)
+        for official in ("TPEX_DATED_OTC_EW","TPEX_TRADING_STOCK",
+                         "TPEX_DAILY_CLOSE_OPENAPI"):
+            self.assertIn(official,gate.STATE_SQL)
         for t in ("a","t","s"):
             self.assertIn(f"min({t}.calculated_at)",gate.STATE_SQL)
         # MIN checks source freshness; MAX checks score version ordering.

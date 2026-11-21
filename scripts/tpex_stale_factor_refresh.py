@@ -48,7 +48,7 @@ WITH latest_market AS (
    count(*)::int price_rows,
    count(*) FILTER(WHERE close>0 AND volume>=0)::int valid_days,
    max(trade_date) FILTER(WHERE close>0 AND volume>=0) last_valid,
-   max(retrieved_at) FILTER(WHERE source='TPEX_DATED_OTC_EW') last_source_write
+   max(retrieved_at) FILTER(WHERE source IN ('TPEX_DATED_OTC_EW','TPEX_TRADING_STOCK','TPEX_DAILY_CLOSE_OPENAPI')) last_source_write
  FROM public.daily_prices
  WHERE market='tpex' AND stock_id<>'1808'
  GROUP BY stock_id
@@ -140,7 +140,7 @@ CHECK_STOCK_SQL = """
 WITH official_source AS (
  SELECT max(retrieved_at) newest_official_ingest
  FROM public.daily_prices
- WHERE market='tpex' AND stock_id=%s AND source='TPEX_DATED_OTC_EW'
+ WHERE market='tpex' AND stock_id=%s AND source IN ('TPEX_DATED_OTC_EW','TPEX_TRADING_STOCK','TPEX_DAILY_CLOSE_OPENAPI')
 ), raw AS (
  SELECT p.trade_date,
         a.trade_date adjusted_day,t.trade_date technical_day,

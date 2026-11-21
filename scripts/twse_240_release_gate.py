@@ -50,7 +50,7 @@ WITH last_market AS (
  SELECT p.market,p.stock_id,count(*)::int all_price_rows,
         count(*) FILTER(WHERE close>0 AND volume>=0)::int days,
         max(trade_date) FILTER(WHERE close>0 AND volume>=0) latest_close,
-        max(retrieved_at) FILTER(WHERE source='TPEX_DATED_OTC_EW') latest_official_ingest
+        max(retrieved_at) FILTER(WHERE source IN ('TPEX_DATED_OTC_EW','TPEX_TRADING_STOCK','TPEX_DAILY_CLOSE_OPENAPI')) latest_official_ingest
  FROM public.daily_prices p
  WHERE p.stock_id<>'1808'
  GROUP BY p.market,p.stock_id
