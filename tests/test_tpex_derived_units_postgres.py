@@ -19,6 +19,11 @@ class TPExDerivedVolumePostgresTests(unittest.TestCase):
         if parsed.hostname not in ("127.0.0.1", "localhost") or parsed.path != "/stock_ci_test":
             raise RuntimeError("Refusing non-disposable PostgreSQL target")
         with psycopg.connect(URL, row_factory=dict_row) as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.model_stock_exclusions(
+              market text NOT NULL,stock_id varchar(6) NOT NULL,reason text NOT NULL,
+              excluded_at timestamptz NOT NULL DEFAULT now(),
+              PRIMARY KEY(market,stock_id)
+            )""")
             conn.execute("""CREATE TABLE public.daily_prices(
               market text NOT NULL,stock_id varchar(6) NOT NULL,trade_date date NOT NULL,
               open numeric(18,4),high numeric(18,4),low numeric(18,4),close numeric(18,4),
