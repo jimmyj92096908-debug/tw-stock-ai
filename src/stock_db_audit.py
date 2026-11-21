@@ -42,6 +42,117 @@ FROM latest_valid l
 """
 
 
+
+# Track the complete master denominator, eligible cohort and the EXACT
+# same-stock/same-last-positive-close technical+SMC+composite intersection.
+# One bounded aggregate query is appended to the existing scheduled READ ONLY
+# monitor: NO additional workflow, no per-stock data artifact and no DB writes.
+COHORT_INTERSECTION_SQL = """
+WITH history AS (
+ SELECT sm.market,sm.stock_id,
+        COUNT(p.trade_date) FILTER(WHERE p.close>0)::int AS valid_days,
+        MAX(p.trade_date) FILTER(WHERE p.close>0) AS last_valid
+ FROM public.stock_master sm
+ LEFT JOIN public.daily_prices p
+   ON p.market=sm.market AND p.stock_id=sm.stock_id
+ GROUP BY sm.market,sm.stock_id
+), market_latest AS (
+ SELECT MAX(trade_date) AS latest_valid
+ FROM public.daily_prices WHERE close>0
+), flags AS (
+ SELECT h.market,h.stock_id,h.valid_days,h.last_valid,
+        (h.stock_id<>'1808' AND h.valid_days>=60 AND
+         h.last_valid>=l.latest_valid-INTERVAL '7 days') AS eligible,
+        EXISTS(SELECT 1 FROM public.daily_technicals t
+          WHERE t.market=h.market AND t.stock_id=h.stock_id
+            AND t.trade_date=h.last_valid) AS has_tech,
+        EXISTS(SELECT 1 FROM public.daily_smc s
+          WHERE s.market=h.market AND s.stock_id=h.stock_id
+            AND s.trade_date=h.last_valid) AS has_smc,
+        EXISTS(SELECT 1 FROM public.daily_composite_scores c
+          WHERE c.market=h.market AND c.stock_id=h.stock_id
+            AND c.as_of_date=h.last_valid AND c.total_score IS NOT NULL)
+          AS has_score
+ FROM history h CROSS JOIN market_latest l
+)
+SELECT market,
+ COUNT(*)::int AS master,
+ COUNT(*) FILTER(WHERE valid_days=0)::int AS no_valid_price,
+ COUNT(*) FILTER(WHERE valid_days>0 AND valid_days<60
+                 AND stock_id<>'1808')::int AS short_history,
+ COUNT(*) FILTER(WHERE stock_id='1808' AND valid_days>0)::int
+   AS research_excluded,
+ COUNT(*) FILTER(WHERE valid_days>=60 AND stock_id<>'1808'
+                 AND NOT eligible)::int AS stale_sufficient_history,
+ COUNT(*) FILTER(WHERE eligible)::int AS eligible,
+ COUNT(*) FILTER(WHERE eligible AND has_tech)::int AS tech_current,
+ COUNT(*) FILTER(WHERE eligible AND has_smc)::int AS smc_current,
+ COUNT(*) FILTER(WHERE eligible AND has_tech AND has_smc)::int
+   AS indicator_current,
+ COUNT(*) FILTER(WHERE eligible AND has_score)::int AS score_current,
+ COUNT(*) FILTER(WHERE eligible AND has_tech AND has_smc AND has_score)::int
+   AS matched_current
+FROM flags
+GROUP BY market ORDER BY market
+"""
+
+
+def validate_cohort_intersection(markets: list[dict[str, Any]]) -> dict[str, Any]:
+    """Verify denominator partition + same-day score intersection, fail closed."""
+    fields=("master","no_valid_price","short_history",
+            "research_excluded","stale_sufficient_history","eligible",
+            "tech_current","smc_current","indicator_current","score_current",
+            "matched_current")
+    if not isinstance(markets,list) or not 1<=len(markets)<=2:
+        raise ValueError("TWSE/TPEx aggregate snapshots required")
+    seen=set()
+    totals={name:0 for name in fields}
+    for record in markets:
+        if not isinstance(record,dict) or record.get("market") not in ("twse","tpex"):
+            raise ValueError("Unexpected market cohort")
+        if record["market"] in seen:
+            raise ValueError("Duplicated market coverage row")
+        seen.add(record["market"])
+        for field in fields:
+            value=record.get(field)
+            if type(value) is not int or value<0:
+                raise ValueError("Missing or invalid coverage aggregate: "+field)
+            totals[field]+=value
+        if sum(record[k] for k in (
+            "no_valid_price","short_history","research_excluded",
+            "stale_sufficient_history","eligible"))!=record["master"]:
+            raise ValueError("Coverage master denominator does not partition")
+        if (max(record["tech_current"],record["smc_current"],
+                record["score_current"])>record["eligible"] or
+            record["indicator_current"]>min(record["tech_current"],record["smc_current"]) or
+            record["matched_current"]>min(record["indicator_current"],record["score_current"])):
+            raise ValueError("Same-stock/same-date intersection mathematically inconsistent")
+    if totals["master"]<1:
+        raise ValueError("Missing valid stock-master denominator")
+    return {
+        "master":totals["master"],
+        "eligible":totals["eligible"],
+        "complete":totals["matched_current"],
+        "coverage_fraction_eligible":(
+            round(totals["matched_current"]/totals["eligible"],6)
+            if totals["eligible"] else None),
+        "coverage_fraction_master":round(totals["matched_current"]/totals["master"],6),
+        "blocking_cohorts":{
+            key:totals[key] for key in ("no_valid_price","short_history",
+                "research_excluded","stale_sufficient_history")},
+        "missing_eligible_current_indicators":totals["eligible"]-totals["indicator_current"],
+        "missing_eligible_current_composite":totals["eligible"]-totals["score_current"],
+        "missing_eligible_matched_full_stack":totals["eligible"]-totals["matched_current"],
+        "all_eligible_current_complete":(
+            totals["eligible"]>0 and totals["matched_current"]==totals["eligible"]),
+        "all_master_current_complete":(
+            totals["matched_current"]==totals["master"]),
+        "not_evidence_of_investment_alpha":True,
+        "production_writes":False,
+        "line_signals_enabled":False,
+        "orders_enabled":False,
+    }
+
 GLOBAL_DATES_SQL = """
 SELECT
   (SELECT MAX(trade_date) FROM public.daily_prices WHERE close IS NOT NULL)
@@ -239,6 +350,9 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         backlog = [dict(row) for row in cur.fetchall()]
         cur.execute(LATEST_VALID_DAY_COVERAGE_SQL)
         latest_valid_coverage = dict(cur.fetchone())
+        cur.execute(COHORT_INTERSECTION_SQL)
+        same_day_cohorts = [dict(row) for row in cur.fetchall()]
+        matching_coverage = validate_cohort_intersection(same_day_cohorts)
 
     return {
         "latest": {name: iso_date(value) for name, value in dict(dates).items()},
@@ -253,6 +367,8 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         "analysis_readiness": readiness,
         "indicator_backlog": backlog,
         "latest_valid_day_coverage": latest_valid_coverage,
+        "cohort_by_market": same_day_cohorts,
+        "matched_cohort_coverage": matching_coverage,
     }
 
 
@@ -342,6 +458,27 @@ def format_audit(audit: dict[str, Any]) -> str:
         )
         if current["scored_current"] < current["priced_stocks"]:
             lines.append("注意：歷史曾有評分不代表各股最新有效收盤日有有效評分。")
+    matched = audit.get("matched_cohort_coverage")
+    if matched is not None:
+        fraction=matched["coverage_fraction_eligible"]
+        lines.append(
+            "同股同最新有效日完整指標＋SMC＋評分："
+            f"{matched['complete']}/{matched['eligible']} 檔，"
+            f"目前合格池 {fraction:.1%}" if fraction is not None else
+            "同股同最新有效日完整指標＋SMC＋評分：目前沒有合格股票"
+        )
+        lines.append(
+            f"全市場清單分母 {matched['master']} 檔；"
+            f"完整研究覆蓋率 {matched['coverage_fraction_master']:.1%}；"
+            f"少於 60 日有效行情 {matched['blocking_cohorts']['short_history']} 檔；"
+            f"無有效收盤 {matched['blocking_cohorts']['no_valid_price']} 檔"
+        )
+        if not matched["all_eligible_current_complete"]:
+            lines.append(
+                f"警告：合格池尚有 {matched['missing_eligible_matched_full_stack']} "
+                "檔沒有同日完整研究評分；不可宣稱 100%"
+            )
+        lines.append("研究資料達標不代表 AI 模型績效合格或可實際下單。")
     if latest["latest_price_date"] != latest["latest_score_date"]:
         lines.append("提醒：最新行情日與最新評分日不同，請勿混用。")
     if total_universe and total_priced < total_universe:
