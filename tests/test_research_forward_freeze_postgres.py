@@ -65,6 +65,15 @@ class FrozenCohortPostgresTests(unittest.TestCase):
                     self.assertEqual(cur.rowcount,0)
                     cur.execute(read,(frozen["model_version"],frozen["signal_date"]))
                     self.assertEqual(cur.fetchone(),initial)
+                    for statement in (
+                        "UPDATE ci_forward.research_forward_frozen_cohorts "
+                        "SET cohort_sha256='c' WHERE signal_date='2026-11-20'",
+                        "DELETE FROM ci_forward.research_forward_frozen_cohorts "
+                        "WHERE signal_date='2026-11-20'",
+                    ):
+                        with self.assertRaises(psycopg.errors.RaiseException):
+                            with conn.transaction():
+                                cur.execute(statement)
                     cur.execute(
                         "SELECT count(*),jsonb_array_length(roster) "
                         "FROM ci_forward.research_forward_frozen_cohorts GROUP BY roster"
