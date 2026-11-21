@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import math
-from statistics import mean, pstdev
+from statistics import mean, median, pstdev
 
 from src.research_dataset import FACTOR_FIELDS, verify_dataset
 
@@ -132,7 +132,7 @@ def factor_diagnostics(dataset, *, exploration_end,
             "dates_insufficient_factor_pairs": skipped_min_pairs,
             "dates_constant_factor_or_target": skipped_constant,
             "average_rank_ic": round(mean(ic),8) if ic else None,
-            "median_rank_ic": round(sorted(ic)[len(ic)//2],8) if ic else None,
+            "median_rank_ic": round(median(ic),8) if ic else None,
             "rank_ic_volatility_per_window": round(pstdev(ic),8) if ic else None,
             "positive_ic_fraction": round(sum(x>0 for x in ic)/len(ic),6) if ic else None,
             "mean_top20_net_excess_vs_factor_subset": round(mean(excess),8) if excess else None,
