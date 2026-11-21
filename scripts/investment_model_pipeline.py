@@ -48,7 +48,7 @@ def query_same_snapshot(database_url, market, stock_id):
                 cur.execute("SET LOCAL statement_timeout = '20000ms'")
                 cur.execute(LATEST_MODEL_SQL)
                 ranked_rows = cur.fetchall()
-                cur.execute(STOCK_STATUS_SQL, (market, stock_id) * 8)
+                cur.execute(STOCK_STATUS_SQL, (market, stock_id) * 11)
                 stock_rows = cur.fetchall()
                 if len(stock_rows) != 1:
                     raise ValueError("Unable to read unique stock status")
