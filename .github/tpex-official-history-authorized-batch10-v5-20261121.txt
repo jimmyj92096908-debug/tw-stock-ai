@@ -1,0 +1,11 @@
+2026-11-21 explicit owner-authorized unique fifth bounded official TPEx source batch.
+Git-added marker must appear EXACTLY ONCE in main branch and is not reusable.
+Up to 10 official TPEx stocks, 5 prior real trading-month feeds per issuer:
+<=50 official HTTPS monthly requests, >=2s pacing, 800MB Neon Free stop.
+Raw verified OHLC: INSERT missing (market,stock_id,trade_date) keys ONLY;
+ON CONFLICT DO NOTHING. Never fabricate prices or overwrite existing keys.
+Under preexisting writer mutex, two <=5 newly eligible indicator + SMC +
+composite missing-only rounds, then same-ticker same-latest-valid-day
+research coverage audit. Abort on source validation or failed final coverage.
+No paid services, model retraining/promotion, LINE signals/webhook changes,
+or brokerage orders. Keep a read-only evidence audit after completion.
