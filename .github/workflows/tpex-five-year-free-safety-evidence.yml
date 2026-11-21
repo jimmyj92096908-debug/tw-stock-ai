@@ -1,0 +1,101 @@
+name: TPEx Five-Year Free Capacity Roster and Dividend Evidence (Read Only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-free-safety-evidence-20261121.txt"
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "TPEx Five-Year Dated Market Full Free Campaign"
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-free-safety-evidence-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  independent-no-write-quality-gates:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Confirm single-use main release marker
+        id: one_shot
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+             grep -Fxq ".github/tpex-free-safety-evidence-20261121.txt"; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install only existing free project Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test fail-closed historic listing, cash total-return and storage guards
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_free_storage_stress.py scripts/tpex_historical_roster_audit.py scripts/audit_total_return_label_provenance.py
+          python -m unittest tests.test_tpex_free_stress_roster_actions -v
+      - name: Validate actual index-inclusive Neon Free 700 850 900-source price and factors stress
+        if: github.event_name != 'push' || steps.one_shot.outputs.approved == 'true'
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python scripts/tpex_free_storage_stress.py --report tpex-free-storage-stress.json; then exit 0; fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
+      - name: Audit price-market current roster versus original historic IPO/delisting source evidence
+        if: github.event_name != 'push' || steps.one_shot.outputs.approved == 'true'
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python scripts/tpex_historical_roster_audit.py --report tpex-historical-roster-audit.json; then exit 0; fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
+      - name: Reject unverified historical payout and adjusted-total-return label claims
+        if: github.event_name != 'push' || steps.one_shot.outputs.approved == 'true'
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python scripts/audit_total_return_label_provenance.py --report tpex-official-action-label-audit.json; then exit 0; fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
+      - name: Preserve actual Free capacity, universe and cash-dividend release blockers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-year-free-storage-ipo-dividend-readonly
+          path: |
+            tpex-free-storage-stress.json
+            tpex-historical-roster-audit.json
+            tpex-official-action-label-audit.json
+          retention-days: 14
+          if-no-files-found: ignore
