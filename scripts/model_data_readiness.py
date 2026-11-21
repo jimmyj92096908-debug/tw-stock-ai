@@ -14,16 +14,19 @@ from datetime import date
 import json
 import os
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 EVALUATION = ROOT / "models" / "tw-factor-ridge-1-evaluation.json"
+sys.path.insert(0, str(ROOT / "src"))
+from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 # Five years of *calendar* history; this count deliberately does not
 # assert all stocks have been listed for the full period.
-HISTORY_SQL = """
-WITH eligible AS (
+HISTORY_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
+, eligible AS (
     SELECT m.market, m.stock_id
-    FROM stock_master m
+    FROM official_current_listed m
     WHERE m.market IN ('twse', 'tpex')
       AND NOT EXISTS (
         SELECT 1 FROM model_stock_exclusions x
@@ -88,7 +91,7 @@ def build_report(evaluation: dict, as_of: date, coverage: list[dict] | None = No
         "blocking_reasons": reasons,
         "coverage": coverage,
         "coverage_is_full_five_year_proof": False,
-        "current_listing_status_independently_verified": False,
+        "current_listing_status_independently_verified": coverage is not None,
         "live_trading_approved": False,
         "line_signal_delivery_approved": False,
         "database_writes": False,
@@ -112,8 +115,13 @@ def read_live_coverage(database_url: str, as_of: date) -> list[dict]:
                 cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 cur.execute("SET LOCAL statement_timeout = '30000ms'")
                 cur.execute(HISTORY_SQL, {"cutoff": historical_cutoff(as_of), "as_of": as_of})
-                return [{k: (float(v) if k == "average_days" and v is not None else v)
+                rows = [{k: (float(v) if k == "average_days" and v is not None else v)
                          for k, v in row.items()} for row in cur.fetchall()]
+                # The official listing receipt is required. A stale or missing
+                # receipt produces no rows and cannot pass this audit.
+                if not rows or sum(r["eligible_stocks"] for r in rows) == 0:
+                    raise RuntimeError("Missing or stale official current listing receipt")
+                return rows
 
 
 def main() -> None:
