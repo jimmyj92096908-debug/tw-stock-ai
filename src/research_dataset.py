@@ -49,7 +49,7 @@ def _identity(row):
         raise ValueError("Research row must be a JSON object")
     market = row.get("market")
     stock = str(row.get("stock_id", ""))
-    if market not in ("twse", "tpex") or not re.fullmatch(r"[0-9]{4,6}", stock) or stock == "1808":
+    if market not in ("twse", "tpex") or not re.fullmatch(r"[0-9]{4,6}", stock) or stock in ("1808", "1589"):
         raise ValueError("Invalid or explicitly excluded stock in dataset")
     return market, stock
 

@@ -25,13 +25,17 @@ LOGGER=logging.getLogger(__name__)
 MIN_VERIFIED_PRICE_DAYS=60
 MAX_PER_MARKET=20
 
-CANDIDATES_SQL="""
-WITH priced AS (
+CANDIDATES_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
+, priced AS (
  SELECT p.market,p.stock_id,
         COUNT(*) FILTER (WHERE p.close IS NOT NULL)::int AS close_days,
         MAX(p.trade_date) FILTER (WHERE p.close IS NOT NULL) AS latest_close
  FROM public.daily_prices p
+ INNER JOIN official_current_listed active
+   ON active.market=p.market AND active.stock_id=p.stock_id
  WHERE p.market=%s AND p.stock_id<>'1808'
+   AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                   WHERE x.market=p.market AND x.stock_id=p.stock_id)
  GROUP BY p.market,p.stock_id
  HAVING COUNT(*) FILTER (WHERE p.close IS NOT NULL)>=%s
 ), analysis AS (
@@ -70,16 +74,9 @@ LIMIT %s
 
 # The 240-session catch-up only touches officially current-listed issuers.
 # Keep the legacy 60-session query for existing daily jobs.
-CANDIDATES_240_ACTIVE_SQL = (
-    CURRENT_OFFICIAL_LISTED_CTE
-    + CANDIDATES_SQL.replace("WITH priced AS (", ", priced AS (", 1).replace(
-        " FROM public.daily_prices p\n WHERE p.market=%s",
-        " FROM public.daily_prices p\n"
-        " INNER JOIN official_current_listed active\n"
-        "   ON active.market=p.market AND active.stock_id=p.stock_id\n"
-        " WHERE p.market=%s", 1
-    )
-)
+# Both daily 60-session and deeper 240-session research must use the
+# same fresh official issuer roster and owner exclusion registry.
+CANDIDATES_240_ACTIVE_SQL = CANDIDATES_SQL
 
 VERIFY_SQL="""
 WITH target AS (

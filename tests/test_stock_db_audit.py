@@ -246,10 +246,13 @@ class StockAuditTests(unittest.TestCase):
 
     def test_indicator_backlog_query_matches_catchup_eligibility_and_is_readonly(self):
         from src.batch_indicator_catchup import CANDIDATES_SQL
-        for condition in ("FILTER(WHERE close IS NOT NULL)", "stock_id <> '1808'",
+        for condition in ("FILTER(WHERE p.close IS NOT NULL)", "p.stock_id <> '1808'",
                           "INTERVAL '7 days'", "COUNT(*) FILTER (WHERE technical_rows<close_days"):
             self.assertIn(condition, INDICATOR_BACKLOG_SQL)
         self.assertIn(">=60", INDICATOR_BACKLOG_SQL)
+        self.assertIn("INNER JOIN official_current_listed active", INDICATOR_BACKLOG_SQL)
+        self.assertIn("public.model_stock_exclusions", INDICATOR_BACKLOG_SQL)
+        self.assertIn("INTERVAL '14 days'", INDICATOR_BACKLOG_SQL)
         self.assertIn("latest_close", CANDIDATES_SQL)
         # Match selection/proof by actual latest date, not only legacy totals.
         for condition in (

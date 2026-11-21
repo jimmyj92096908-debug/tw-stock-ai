@@ -62,6 +62,8 @@ JOIN sessions p
 WHERE s.as_of_date BETWEEN %s AND %s
   AND s.total_score IS NOT NULL
   AND s.stock_id <> '1808'
+  AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                  WHERE x.market=s.market AND x.stock_id=s.stock_id)
 ORDER BY s.as_of_date,s.market,s.stock_id
 """
 
@@ -83,6 +85,8 @@ JOIN public.stock_master sm
 JOIN official_current_listed active
  ON active.market=s.market AND active.stock_id=s.stock_id
 WHERE p.close>0 AND s.stock_id<>'1808' AND s.total_score IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                  WHERE x.market=s.market AND x.stock_id=s.stock_id)
 ORDER BY s.market,s.stock_id
 """
 
@@ -147,7 +151,7 @@ def groups_from_rows(rows, *, holdout_start):
             continue
         seen.add(key)
         features = feature_vector(raw)
-        if features is None or market not in ("twse", "tpex") or stock_id == "1808":
+        if features is None or market not in ("twse", "tpex") or stock_id in ("1808", "1589"):
             rejected["bad_signal"] += 1
             continue
         adj_close = number(raw.get("adjusted_close"))
@@ -326,7 +330,7 @@ def research_rank(rows, artifact, *, limit=10):
     signal_dates = set()
     for raw in rows:
         feature = feature_vector(raw)
-        if feature is None or str(raw.get("stock_id")) == "1808" or str(raw.get("market")) not in ("twse", "tpex"):
+        if feature is None or str(raw.get("stock_id")) in ("1808", "1589") or str(raw.get("market")) not in ("twse", "tpex"):
             continue
         close = number(raw.get("signal_close"))
         if close is None or close <= 0:

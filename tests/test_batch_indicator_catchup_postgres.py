@@ -21,6 +21,10 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
         if parsed.hostname not in ("localhost","127.0.0.1") or parsed.path!="/stock_ci_test":
             raise RuntimeError("Unsafe external database URL")
         with psycopg.connect(URL,row_factory=dict_row) as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.model_stock_exclusions
+                (market text NOT NULL,stock_id text NOT NULL,
+                 reason text NOT NULL,excluded_at timestamptz DEFAULT now(),
+                 PRIMARY KEY(market,stock_id))""")
             conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_prices
                 (market text,stock_id text,trade_date date,close numeric,source text,
                  PRIMARY KEY (market,stock_id,trade_date))""")
@@ -33,6 +37,19 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
             conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_smc
                 (market text,stock_id text,trade_date date,
                  PRIMARY KEY(market,stock_id,trade_date))""")
+            # Fresh official roster is mandatory for both 60- and 240-day
+            # candidate selection, even in disposable PostgreSQL.
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.official_issuer_weekly_snapshots
+                (observed_at timestamptz NOT NULL,snapshot jsonb NOT NULL)""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.official_issuer_snapshot_corrections
+                (observed_at timestamptz NOT NULL,snapshot jsonb NOT NULL)""")
+            conn.execute("""INSERT INTO public.official_issuer_weekly_snapshots
+                (observed_at,snapshot)
+                VALUES(now(),jsonb_build_object('records',jsonb_build_array(
+                  jsonb_build_object('market','twse','stock_id','2999'),
+                  jsonb_build_object('market','tpex','stock_id','2998'),
+                  jsonb_build_object('market','tpex','stock_id','8937'),
+                  jsonb_build_object('market','tpex','stock_id','2235'))))""")
             # 60 *genuine-looking test sessions*; all synthetic and local only.
             start=date(2026,9,20)
             for i in range(60):

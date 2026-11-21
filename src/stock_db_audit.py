@@ -12,6 +12,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 
 LATEST_VALID_DAY_COVERAGE_SQL = """
@@ -255,18 +256,22 @@ SELECT
  ) AS scored_latest_price_day
 """
 
-INDICATOR_BACKLOG_SQL = """
-WITH latest AS (
+INDICATOR_BACKLOG_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
+, latest AS (
  SELECT MAX(trade_date) AS newest
  FROM public.daily_prices WHERE close IS NOT NULL
 ), qualified AS (
- SELECT market,stock_id,
-        COUNT(*) FILTER(WHERE close IS NOT NULL)::int AS close_days,
-        MAX(trade_date) FILTER(WHERE close IS NOT NULL) AS last_close
- FROM public.daily_prices
- WHERE stock_id <> '1808'
- GROUP BY market,stock_id
- HAVING COUNT(*) FILTER(WHERE close IS NOT NULL)>=60
+ SELECT p.market,p.stock_id,
+        COUNT(*) FILTER(WHERE p.close IS NOT NULL)::int AS close_days,
+        MAX(p.trade_date) FILTER(WHERE p.close IS NOT NULL) AS last_close
+ FROM public.daily_prices p
+ INNER JOIN official_current_listed active
+   ON active.market=p.market AND active.stock_id=p.stock_id
+ WHERE p.stock_id <> '1808'
+   AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+     WHERE x.market=p.market AND x.stock_id=p.stock_id)
+ GROUP BY p.market,p.stock_id
+ HAVING COUNT(*) FILTER(WHERE p.close IS NOT NULL)>=60
 ), recent AS (
  SELECT q.market,q.stock_id,q.close_days,q.last_close
  FROM qualified q CROSS JOIN latest l

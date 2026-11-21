@@ -59,6 +59,11 @@ jobs:
           echo "- Manual dispatch with apply=false is strictly preview-only." >> "$GITHUB_STEP_SUMMARY"
           echo "- 20 eligible stocks per market, >=60 real-price sessions; stock transactions use SAVEPOINT." >> "$GITHUB_STEP_SUMMARY"
           echo "- Main + repository guard, no LINE sends or price fabrication." >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail closed on Neon Free derived-write size before any production apply
+        if: >-
+          github.event_name == 'schedule' ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        run: python scripts/indicator_capacity_guard.py
       - name: Compute verified adjusted prices, technical and SMC
         if: >-
           github.event_name == 'schedule' ||
