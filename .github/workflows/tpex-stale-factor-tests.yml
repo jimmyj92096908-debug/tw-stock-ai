@@ -6,6 +6,8 @@ on:
       - 'scripts/tpex_stale_factor_refresh.py'
       - 'tests/test_tpex_stale_factor_refresh.py'
       - 'tests/test_tpex_factor_bounded_campaign.py'
+      - 'tests/test_tpex_final_hist_acceptance_workflow.py'
+      - '.github/workflows/tpex-final-historical-factors.yml'
       - 'scripts/tpex_factor_bounded_campaign.py'
       - '.github/workflows/tpex-five-batch-history-campaign.yml'
       - 'tests/test_tpex_factor_bootstrap_workflow.py'
@@ -31,7 +33,7 @@ jobs:
       - name: Historical source and score no-price-write regression
         run: |
           python -m py_compile scripts/tpex_stale_factor_refresh.py
-          python -m unittest tests.test_tpex_stale_factor_refresh tests.test_tpex_factor_bootstrap_workflow tests.test_tpex_factor_bounded_campaign -v
+          python -m unittest tests.test_tpex_stale_factor_refresh tests.test_tpex_factor_bootstrap_workflow tests.test_tpex_factor_bounded_campaign tests.test_tpex_final_hist_acceptance_workflow -v
 
   isolated-postgresql:
     runs-on: ubuntu-latest
