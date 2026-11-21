@@ -47,6 +47,8 @@ JOIN public.stock_master sm
 JOIN bars b ON b.market=s.market AND b.stock_id=s.stock_id
  AND b.trade_date=s.as_of_date
 WHERE s.total_score IS NOT NULL
+ AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                 WHERE x.market=s.market AND x.stock_id=s.stock_id)
  AND s.as_of_date >= %s AND s.as_of_date <= %s
  AND s.stock_id <> '1808'
 ORDER BY s.as_of_date,s.market,s.stock_id
@@ -86,7 +88,7 @@ def evaluate_adjusted(rows, *, holdout_start="2026-10-01",
             score=_real(x["total_score"])
             coverage=_real(x["coverage_weight"])
             adj_signal=_real(x["adjusted_close"])
-            if market not in ("twse","tpex") or code=="1808" or score is None or not 0<=score<=100:
+            if market not in ("twse","tpex") or code in ("1808","1589") or score is None or not 0<=score<=100:
                 exclusions["invalid_signal"]+=1
                 continue
             if coverage is None or not MIN_COVERAGE<=coverage<=1:
