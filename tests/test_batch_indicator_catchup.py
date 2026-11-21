@@ -82,6 +82,9 @@ class IndicatorCatchupTests(unittest.TestCase):
                            min_verified_price_days=240)
         self.assertEqual(len(result),1)
         self.assertEqual(conn.cur.calls[0][1],("twse",240,2))
+        self.assertIn("INNER JOIN official_current_listed active",conn.cur.calls[0][0])
+        self.assertIn("INTERVAL '14 days'",conn.cur.calls[0][0])
+        self.assertIn("CURRENT_OFFICIAL_LISTED_CTE",dir(ind))
         for value in (59,241,0,True):
             with self.assertRaisesRegex(ValueError,"verified history"):
                 ind.run("fake",min_verified_price_days=value)

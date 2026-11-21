@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"src"))
+from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 from batch_indicator_catchup import run as indicator_run
 from composite_score import calculate_all
 
@@ -29,13 +30,15 @@ MAX_SCORE_BATCHES=120
 SCORE_BATCH_SIZE=10
 MAX_DATABASE_BYTES=800_000_000
 
-STATE_SQL="""
-WITH priced AS (
- SELECT stock_id,
+STATE_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
+, priced AS (
+ SELECT p.stock_id,
     count(*) FILTER(WHERE close>0 AND volume>=0)::int valid_days,
     max(trade_date) FILTER(WHERE close>0 AND volume>=0) latest_close
- FROM public.daily_prices WHERE market='twse' AND stock_id<>'1808'
- GROUP BY stock_id
+ FROM public.daily_prices p
+ INNER JOIN official_current_listed listed ON listed.market=p.market AND listed.stock_id=p.stock_id
+ WHERE p.market='twse' AND p.stock_id<>'1808'
+ GROUP BY p.stock_id
 ), market_latest AS (
  SELECT max(trade_date) max_day FROM public.daily_prices WHERE close>0
 ), eligible AS (
@@ -75,12 +78,14 @@ SELECT (SELECT count(*)::bigint FROM public.daily_prices WHERE market='twse')
 FROM checked
 """
 
-SCORE_PAGE_SQL="""
-WITH priced AS (
- SELECT stock_id,count(*) FILTER(WHERE close>0 AND volume>=0)::int history_days,
+SCORE_PAGE_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
+, priced AS (
+ SELECT p.stock_id,count(*) FILTER(WHERE close>0 AND volume>=0)::int history_days,
         max(trade_date) FILTER(WHERE close>0 AND volume>=0) last_price
- FROM public.daily_prices WHERE market='twse' AND stock_id<>'1808'
- GROUP BY stock_id
+ FROM public.daily_prices p
+ INNER JOIN official_current_listed listed ON listed.market=p.market AND listed.stock_id=p.stock_id
+ WHERE p.market='twse' AND p.stock_id<>'1808'
+ GROUP BY p.stock_id
 ), newest AS (
  SELECT max(trade_date) max_day FROM public.daily_prices WHERE close>0
 )

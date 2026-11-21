@@ -18,6 +18,13 @@ class TWSEFullHistoricalIndicatorPostgresTests(unittest.TestCase):
         if p.hostname not in ("localhost","127.0.0.1") or p.path!="/stock_ci_test":
             raise RuntimeError("Refusing non-disposable database")
         with psycopg.connect(URL) as conn:
+            conn.execute("""CREATE TABLE public.official_issuer_weekly_snapshots (
+              observed_at timestamptz,snapshot jsonb)""")
+            conn.execute("""CREATE TABLE public.official_issuer_snapshot_corrections (
+              observed_at timestamptz,snapshot jsonb)""")
+            conn.execute("""INSERT INTO public.official_issuer_weekly_snapshots
+              (observed_at,snapshot)
+              VALUES(now(),'{"records":[{"market":"twse","stock_id":"2330"}]}'::jsonb)""")
             conn.execute("""CREATE TABLE public.daily_prices (
               market text,stock_id text,trade_date date,close numeric,
               volume bigint,source text,
