@@ -13,7 +13,7 @@ URL = os.environ.get("STOCK_CI_POSTGRES_URL")
 
 
 @unittest.skipUnless(URL, "Local disposable PostgreSQL required")
-class LegacyDerivedAuditIntegration(TestCase if False else unittest.TestCase):
+class LegacyDerivedAuditIntegration(unittest.TestCase):
     def test_legacy_volume_checks_fail_closed_on_bad_units(self):
         parsed = urlparse(URL)
         if parsed.hostname not in ("127.0.0.1","localhost") or parsed.path != "/stock_ci_test":
