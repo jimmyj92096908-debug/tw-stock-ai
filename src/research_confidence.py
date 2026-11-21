@@ -71,6 +71,8 @@ def data_quality_assessment(stock: dict, raw: dict) -> dict:
                 "UNDER_60_VALID_PRICE_SESSIONS")
     # Chip evidence is described separately; NEVER attach a newer independent
     # chip date to an older composite or silently assume it was incorporated.
+    # An independent chip source, even when fresh, cannot increase the
+    # combined score's quality unless that combined score included chip.
     chip_included = stock.get("composite_chip_component") is not None
     chip_current = stock.get("independent_chip_is_current") is True
     if not chip_included:
@@ -84,7 +86,7 @@ def data_quality_assessment(stock: dict, raw: dict) -> dict:
         assert coverage is not None and days is not None
         history_fraction = min(days / 240, 1)
         chip_provenance = (
-            min(chip_coverage, 1) if chip_current and chip_coverage is not None else 0.0
+            min(chip_coverage, 1) if chip_included and chip_current and chip_coverage is not None else 0.0
         )
         idx = round(100*(0.45*coverage + 0.30*history_fraction +
                          0.15*chip_provenance + 0.10), 1)
