@@ -90,7 +90,12 @@ class TPExInsertOnlyTests(TestCase):
                 ).read_text(encoding="utf-8")
         marker=".github/tpex-official-history-authorized-batch10-20261121.txt"
         self.assertIn(marker,source)
-        self.assertIn("contains(github.event.head_commit.added",source)
+        self.assertIn(".github/tpex-official-history-authorized-batch10-v2-20261121.txt",source)
+        self.assertIn("git diff --name-only --diff-filter=A HEAD^ HEAD",source)
+        self.assertIn("fetch-depth: 2",source)
+        self.assertIn('echo "extended=true" >> "$GITHUB_OUTPUT"',source)
+        self.assertIn("steps.batch.outputs.extended",source)
+        self.assertNotIn("contains(github.event.head_commit.added",source)
         self.assertIn('limit=10',source)
         self.assertIn('limit=2',source)
         self.assertIn('--months 5',source)
