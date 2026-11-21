@@ -6,7 +6,7 @@ from datetime import datetime,timezone,date
 from decimal import Decimal
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from scripts import tpex_stale_factor_refresh as refresh
 
@@ -126,7 +126,7 @@ class BackfilledTPExFactorRefreshTests(unittest.TestCase):
             patch.object(refresh,"build_technicals",return_value=91) as technical,
             patch.object(refresh,"build_smc",return_value=91) as smc,
             patch.object(refresh,"verify_derived",return_value={"price_rows":91,
-                "missing_derived_days":0}) as check,
+                "missing_derived_days":0,"stale_derived_days":0}) as check,
             patch.object(refresh,"calculate_all",return_value=1) as score,
             patch.object(refresh,"verify_latest_score") as score_check,
         ):
@@ -182,11 +182,34 @@ class BackfilledTPExFactorRefreshTests(unittest.TestCase):
                 refresh.execute("fake",apply=True,rounds=1)
             score.assert_not_called()
 
+    def test_per_stock_commit_acceptance_checks_every_date_not_just_row_existence(self):
+        db=MagicMock()
+        cur=db.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value={
+            "price_rows":91,"missing_derived_days":0,"stale_derived_days":0,
+        }
+        self.assertEqual(refresh.verify_derived(db,stock())["stale_derived_days"],0)
+        cur.execute.assert_called_with(refresh.CHECK_STOCK_SQL,("6488","6488"))
+        for bad in (
+            {"price_rows":90,"missing_derived_days":0,"stale_derived_days":0},
+            {"price_rows":91,"missing_derived_days":1,"stale_derived_days":1},
+            {"price_rows":91,"missing_derived_days":0,"stale_derived_days":1},
+        ):
+            cur.fetchone.return_value=bad
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                RuntimeError,"missing or stale"
+            ):
+                refresh.verify_derived(db,stock())
+
     def test_selector_proves_older_dates_and_unchanged_score_timestamp(self):
         sql=refresh.CANDIDATES_SQL
         self.assertIn("last_source_write",sql)
         self.assertIn("FILTER(WHERE source='TPEX_DATED_OTC_EW')",sql)
         self.assertIn("a.technical_rows<a.price_rows",sql)
+        self.assertIn("LEAST(a.adjusted_rows,a.technical_rows,a.smc_rows)",sql)
+        self.assertIn("newest_official_ingest",refresh.CHECK_STOCK_SQL)
+        self.assertIn("stale_derived_days",refresh.CHECK_STOCK_SQL)
+        self.assertIn("adjusted_at IS NULL",refresh.CHECK_STOCK_SQL)
         self.assertIn("a.score_at<GREATEST",sql)
         self.assertIn("LEFT JOIN public.daily_adjusted_prices",sql)
         self.assertIn("d.trade_date IS NULL OR t.trade_date IS NULL",sql)
