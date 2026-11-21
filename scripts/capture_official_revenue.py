@@ -29,12 +29,15 @@ INSERT_SQL="""
 INSERT INTO public.official_revenue_observations
 (market,stock_id,period_end,reported_revenue_thousands_ntd,
  reported_yoy_pct,official_table_date,first_observed_at,source_url,payload_sha256)
-SELECT %(market)s,%(stock_id)s,%(period_end)s,
-       %(reported_revenue_thousands_ntd)s,
-       %(reported_yoy_pct)s,%(official_table_date)s,
-       %(first_observed_at)s,%(source_url)s,%(payload_sha256)s
+SELECT %(market)s::text,%(stock_id)s::varchar(6),%(period_end)s::date,
+       %(reported_revenue_thousands_ntd)s::numeric(22,3),
+       %(reported_yoy_pct)s::numeric(12,5),
+       %(official_table_date)s::date,
+       %(first_observed_at)s::timestamptz,
+       %(source_url)s::text,%(payload_sha256)s::char(64)
 WHERE EXISTS(SELECT 1 FROM public.stock_master sm
-             WHERE sm.market=%(market)s AND sm.stock_id=%(stock_id)s)
+             WHERE sm.market=%(market)s::text
+               AND sm.stock_id=%(stock_id)s::varchar(6))
 ON CONFLICT (market,stock_id,period_end,payload_sha256) DO NOTHING
 """
 COUNT_SQL="SELECT COUNT(*)::bigint AS n FROM public.official_revenue_observations"
