@@ -1,0 +1,64 @@
+name: TPEx Five-Year Postflight Derived Small Batch (Manual Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        required: true
+        type: boolean
+        default: false
+        description: "Recompute at most 3 proven TPEx stocks after history source writer finishes?"
+
+permissions:
+  contents: read
+
+# No new cron or marker auto-write. Serializes against existing indicator jobs.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  at-most-three-derived-stock-repair:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    concurrency:
+      group: twstock-tpex-dated-official-history
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test audited derived-only cohort, immutable prices and Free capacity
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_five_year_derived_recompute.py
+          python -m unittest tests.test_tpex_five_year_derived_recompute tests.test_tpex_stale_factor_refresh -v
+      - name: Read-only preview of next verified source-stock batch
+        run: python scripts/tpex_five_year_derived_recompute.py --limit 3 --report derived-batch-preview.json
+      - name: Recompute only protected adjusted, technical, SMC and latest research score
+        if: github.event_name == 'workflow_dispatch' && inputs.apply == true
+        env:
+          STOCK_TPEX_POSTFLIGHT_DERIVED_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_STALE_SCORE_WRITE_ENABLED: 'yes'
+        run: python scripts/tpex_five_year_derived_recompute.py --apply --limit 3 --report derived-batch-apply.json
+      - name: Preserve source fingerprints, safe size and derived-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-year-derived-only-small-batch
+          path: |
+            derived-batch-preview.json
+            derived-batch-apply.json
+          retention-days: 14
+          if-no-files-found: ignore
