@@ -67,7 +67,7 @@ def review(raw_probe,prototype,saved_model):
         if (not isinstance(x,dict) or not
             isinstance(x.get("signal_date"),str) or not
             isinstance(x.get("entry_date"),str) or not
-            isinstance(x.get("exit_date"),str) or not
+            isinstance(x.get("exit_date"),str) or
             x["signal_date"]>=x["entry_date"] or x["entry_date"]>=x["exit_date"] or
             (last_exit is not None and x["signal_date"]<=last_exit)):
             raise ValueError("Unverified overlapping prototype source holding periods")
