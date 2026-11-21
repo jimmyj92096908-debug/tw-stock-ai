@@ -32,9 +32,11 @@ MIN_TRAIN_ROWS=100
 RIDGE_LAMBDA=2.0
 TOP_FRACTION=0.20
 
-def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff):
+def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff, market="tpex"):
     """Assemble whole cohorts; do not drop a loser whose exit bar is missing."""
     cutoff=_day(label_cutoff)
+    if market not in ("twse", "tpex"):
+        raise ValueError("Official exchange market required")
     if (not isinstance(series_by_stock,dict) or
         not MIN_UNIVERSE<=len(series_by_stock)<=MAX_UNIVERSE or
         not isinstance(signal_dates,(list,tuple)) or
@@ -47,7 +49,7 @@ def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff):
     stocks=sorted(series_by_stock)
     for sid in stocks:
         bars=series_by_stock[sid]
-        validate_source(bars,stock_id=sid,cutoff=cutoff)
+        validate_source(bars,stock_id=sid,cutoff=cutoff,market=market)
         sources[sid]=(bars,{_day(r["trade_date"]):i for i,r in enumerate(bars)})
     rows=[]
     excluded=Counter()
@@ -74,7 +76,7 @@ def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff):
             # any data after the signal date, even though the label builder
             # separately needs the future entry/exit bars.
             feature=build_research_features(
-                bars[:i+1],stock_id=sid,cutoff=signal,signal_dates=[signal])
+                bars[:i+1],stock_id=sid,cutoff=signal,signal_dates=[signal],market=market)
             if not feature["signals"]:
                 skip="insufficient_unadjusted_raw_warmup"
                 break
@@ -85,7 +87,7 @@ def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff):
                 break
             members.append({
                 "as_of_date":signal.isoformat(),
-                "market":"tpex","stock_id":sid,
+                "market":market,"stock_id":sid,
                 "feature_vector":vec,
                 "entry_date":entry_day.isoformat(),
                 "exit_date":exit_day.isoformat(),
@@ -110,6 +112,7 @@ def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff):
         "feature_version":"tw-raw-price-asof-bridge-1",
         "feature_names":list(FEATURE_NAMES),
         "frozen_current_stock_roster":stocks,
+        "market":market,
         "requested_signal_days":len(days),
         "accepted_whole_cohort_days":len({r["as_of_date"] for r in rows}),
         "excluded_whole_cohort_days":dict(sorted(excluded.items())),
