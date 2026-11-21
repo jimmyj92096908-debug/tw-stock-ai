@@ -39,14 +39,25 @@ WITH priced AS (
 ), market_latest AS (
  SELECT max(trade_date) max_day FROM public.daily_prices WHERE close>0
 ), eligible AS (
- SELECT p.stock_id,p.latest_close FROM priced p,market_latest m
+ SELECT p.stock_id,p.latest_close,p.valid_days FROM priced p,market_latest m
  WHERE p.valid_days>=240 AND p.latest_close>=m.max_day-interval '7 days'
 ), checked AS (
  SELECT e.stock_id,e.latest_close,
-    EXISTS(SELECT 1 FROM public.daily_technicals t WHERE t.market='twse'
-      AND t.stock_id=e.stock_id AND t.trade_date=e.latest_close) tech,
-    EXISTS(SELECT 1 FROM public.daily_smc s WHERE s.market='twse'
-      AND s.stock_id=e.stock_id AND s.trade_date=e.latest_close) smc,
+    (
+      EXISTS(SELECT 1 FROM public.daily_technicals t WHERE t.market='twse'
+        AND t.stock_id=e.stock_id AND t.trade_date=e.latest_close
+        AND t.ma240 IS NOT NULL)
+      AND (SELECT count(*) FROM public.daily_technicals t
+        WHERE t.market='twse' AND t.stock_id=e.stock_id)>=e.valid_days
+      AND (SELECT count(*) FROM public.daily_adjusted_prices a
+        WHERE a.market='twse' AND a.stock_id=e.stock_id)>=e.valid_days
+    ) tech,
+    (
+      EXISTS(SELECT 1 FROM public.daily_smc s WHERE s.market='twse'
+        AND s.stock_id=e.stock_id AND s.trade_date=e.latest_close)
+      AND (SELECT count(*) FROM public.daily_smc s
+        WHERE s.market='twse' AND s.stock_id=e.stock_id)>=e.valid_days
+    ) smc,
     EXISTS(SELECT 1 FROM public.daily_composite_scores c WHERE c.market='twse'
       AND c.stock_id=e.stock_id AND c.as_of_date=e.latest_close
       AND c.total_score IS NOT NULL) score
