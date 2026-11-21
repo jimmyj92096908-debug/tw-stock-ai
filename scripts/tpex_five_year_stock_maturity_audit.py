@@ -6,7 +6,7 @@ No derived-row INSERTs, no date inference, no price rewrites, no trades.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date,datetime
 import json
 import os
 from pathlib import Path
@@ -75,11 +75,11 @@ def assess(stock_summary,year_summary,meta):
         raise ValueError("Impossible negative/missing stock history bucket")
     if sum(stock_summary[k] for k in BUCKETS)!=stock_summary["current_master"]:
         raise ValueError("Stock history buckets do not sum to actual TPEx master")
-    if not isinstance(meta.get("latest_session"),__import__("datetime").date) or (
+    if type(meta.get("latest_session")) is not date or (
         type(meta.get("bytes")) is not int or meta["bytes"]<=0):
         raise ValueError("Invalid real observed latest source session or Neon size")
-    if len(year_summary)<5 or len(year_summary)>6:
-        raise ValueError("Expected five years of actual observed source dates")
+    if len(year_summary)!=6:
+        raise ValueError("Five-year rolling period must include six calendar-year segments")
     years=set()
     annual=[]
     for year in year_summary:
@@ -97,9 +97,10 @@ def assess(stock_summary,year_summary,meta):
                        "unfilled_market_sessions":known-official,
                        "official_market_coverage_percent":round(official/known*100,2)})
     annual.sort(key=lambda item:item["year"])
-    if annual[-1]["year"]!=meta["latest_session"].year or not all(
+    if (annual[0]["year"]!=meta["latest_session"].year-5 or
+        annual[-1]["year"]!=meta["latest_session"].year or not all(
         annual[i+1]["year"]==annual[i]["year"]+1 for i in range(len(annual)-1)
-    ):
+    )):
         raise ValueError("Missing real calendar year from a five-year stock-source report")
     total=sum(x["observed_anchored_sessions"] for x in annual)
     official=sum(x["official_full_market_sessions"] for x in annual)
