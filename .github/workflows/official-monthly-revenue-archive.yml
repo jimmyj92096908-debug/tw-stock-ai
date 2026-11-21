@@ -117,6 +117,10 @@ jobs:
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL unavailable"; exit 1; fi
           python scripts/capture_official_balance_sheet.py --apply --report balance-sheet-first-seen-evidence.json
+      - name: Audit true market-session fundamental availability after first observations
+        run: |
+          python -m unittest tests.test_official_fundamental_pit_coverage -v
+          python scripts/audit_official_fundamentals_pit.py --out official-fundamental-pit-audit.json
       - name: Keep only aggregated proof, never expose issuer records or secrets
         if: always()
         uses: actions/upload-artifact@v4
@@ -126,5 +130,6 @@ jobs:
             official-revenue-archive-evidence.json
             quarterly-income-first-seen-evidence.json
             balance-sheet-first-seen-evidence.json
+            official-fundamental-pit-audit.json
           retention-days: 14
           if-no-files-found: ignore
