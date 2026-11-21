@@ -190,6 +190,9 @@ class BackfilledTPExFactorRefreshTests(unittest.TestCase):
         self.assertIn("a.score_at<GREATEST",sql)
         self.assertIn("LEFT JOIN public.daily_adjusted_prices",sql)
         self.assertIn("d.trade_date IS NULL OR t.trade_date IS NULL",sql)
+        for factor in ("d", "t", "s"):
+            self.assertIn(f"{factor}.calculated_at IS NULL",sql)
+            self.assertIn(f"{factor}.calculated_at<a.last_source_write",sql)
         self.assertIn("calculated_at=clock_timestamp()",refresh.STAMP_VERIFIED_SCORE_SQL)
         self.assertIn("c.stock_id=%s AND c.as_of_date=%s",refresh.STAMP_VERIFIED_SCORE_SQL)
         self.assertNotIn("UPDATE public.daily_prices",sql.upper())
