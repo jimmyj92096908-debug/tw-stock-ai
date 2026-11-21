@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/tpex-official-long-history-two-symbol-20261121.txt"
+      - ".github/tpex-official-long-history-two-symbol-v2-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -16,8 +16,8 @@ on:
 permissions:
   contents: read
 
-# Reuse the existing TPEx dated writer mutex. One new marker triggers only once.
-# No recurring workflow; future changes do not reauthorize this canary.
+# Reuse existing TPEx writer mutex. One distinct v2 marker, only newly added.
+# The first marker has already been used; no recurring run or automatic retry.
 concurrency:
   group: twstock-tpex-dated-official-history
   cancel-in-progress: false
@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ] &&
-             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-long-history-two-symbol-20261121.txt"; then
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-long-history-two-symbol-v2-20261121.txt"; then
             echo "approved=true" >> "$GITHUB_OUTPUT"
           else
             echo "approved=false" >> "$GITHUB_OUTPUT"
