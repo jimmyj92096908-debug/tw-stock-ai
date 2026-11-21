@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - ".github/official-revenue-archive-authorized-canary-20261121.txt"
+      - ".github/official-revenue-archive-authorized-canary-v2-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -43,7 +44,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ] &&
              git diff --name-only --diff-filter=A HEAD^ HEAD |
-               grep -Fxq ".github/official-revenue-archive-authorized-canary-20261121.txt"; then
+               grep -Fxq ".github/official-revenue-archive-authorized-canary-v2-20261121.txt"; then
             echo "apply=true" >> "$GITHUB_OUTPUT"
           else
             echo "apply=false" >> "$GITHUB_OUTPUT"

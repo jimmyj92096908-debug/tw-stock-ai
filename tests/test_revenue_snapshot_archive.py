@@ -61,6 +61,18 @@ class RevenueParserTests(unittest.TestCase):
         self.assertEqual(later["revenue"]["reported_revenue_thousands_ntd"],"130000")
         self.assertNotEqual(versions[0]["payload_sha256"],versions[1]["payload_sha256"])
 
+    def test_official_extreme_yoy_is_suppressed_not_fabricated_or_import_blocked(self):
+        # Real official OpenAPI can report extreme % changes near a zero
+        # base. Retain actual monthly revenue, never use that YoY as a factor.
+        out=archive.parse_snapshot("twse",[row(yoy="123,456,789.00")],observed_at=AT)
+        self.assertEqual(len(out),1)
+        self.assertIsNone(out[0]["reported_yoy_pct"])
+        self.assertTrue(out[0]["official_yoy_outlier_suppressed"])
+        self.assertEqual(out[0]["reported_revenue_thousands_ntd"],"123456")
+        normal=archive.parse_snapshot("twse",[row(yoy="18.25")],observed_at=AT)
+        self.assertFalse(normal[0]["official_yoy_outlier_suppressed"])
+        self.assertNotEqual(normal[0]["payload_sha256"],out[0]["payload_sha256"])
+
     def test_rejects_fabrication_invalid_dates_missing_official_fields_and_duplicates(self):
         cases=[
             [row(table="1151122")],
