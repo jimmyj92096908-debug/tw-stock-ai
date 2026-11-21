@@ -125,16 +125,21 @@ def upsert_csv(conn: psycopg.Connection, path: Path, market: str) -> int:
                 )
                 run_id = cur.fetchone()["run_id"]
                 cur.executemany(INSERT_MISSING_PRICE_SQL, rows)
+                # psycopg3 executemany rowcount is the cumulative affected-row
+                # count, so ON CONFLICT DO NOTHING contributes zero.
+                inserted = cur.rowcount
+                if not 0 <= inserted <= len(rows):
+                    raise RuntimeError("Unexpected history insert row count")
                 cur.execute(
                     """
                     UPDATE import_runs
                     SET finished_at = NOW(), rows_upserted = %s, status = 'success'
                     WHERE run_id = %s
                     """,
-                    (len(rows), run_id),
+                    (inserted, run_id),
                 )
-        logger.info("%s %s：寫入 %s 筆", market.upper(), stock_id, len(rows))
-        return len(rows)
+        logger.info("%s %s：新增 %s / 收到 %s 筆", market.upper(), stock_id, inserted, len(rows))
+        return inserted
     except Exception as exc:
         if run_id is not None:
             with conn.transaction():
