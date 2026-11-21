@@ -132,6 +132,12 @@ class TWSE240ResearchAcceptanceTests(TestCase):
                 task.execute("fake",apply=True,max_rounds=1)
             scores.assert_not_called()
 
+    def test_both_240_cohorts_exclude_owner_blocked_stocks(self):
+        for query in (task.STATE_SQL, task.SCORE_PAGE_SQL):
+            self.assertIn("public.model_stock_exclusions", query)
+            self.assertIn("x.market=p.market AND x.stock_id=p.stock_id", query)
+            self.assertIn("INNER JOIN official_current_listed listed", query)
+
     def test_scoped_score_pages_and_amount_limits(self):
         for invalid in (-1,1201,True):
             with self.assertRaisesRegex(ValueError,"score offset"):
