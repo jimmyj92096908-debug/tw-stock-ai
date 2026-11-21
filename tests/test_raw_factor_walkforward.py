@@ -53,11 +53,13 @@ class RawFactorOfflineWalkforwardTests(TestCase):
             next(iter(stock.values()))[270]["trade_date"]],
             label_cutoff=date(2026,6,30))
         replacement=input_roster()
-        for p in replacement["1700"][271:]:
-            p["close"]*=1.05
-            p["open"]*=1.05
-            p["high"]*=1.05
-            p["low"]*=1.05
+        # Change only the forward EXIT day, not both entry and exit,
+        # so the label must change while the as-of features remain identical.
+        p=replacement["1700"][276]
+        p["close"]*=1.05
+        p["open"]*=1.05
+        p["high"]*=1.05
+        p["low"]*=1.05
         after=frozen_unadjusted_dataset(replacement,signal_dates=[
             next(iter(stock.values()))[270]["trade_date"]],
             label_cutoff=date(2026,6,30))
