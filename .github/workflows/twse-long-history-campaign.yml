@@ -1,6 +1,10 @@
-name: One-Time TWSE Official Long-History 240-Session Research Catch-Up
+name: Guarded TWSE Official Rolling Five-Year Source Catch-Up
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/twse-long-history-campaign.yml'
   schedule:
     # Independent root: 17:30 Asia/Taipei daily; never 4th workflow_run.
     - cron: '30 9 * * *'
@@ -25,7 +29,7 @@ jobs:
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       (
-        (github.event_name == 'schedule' && github.ref == 'refs/heads/main')
+        ((github.event_name == 'schedule' || github.event_name == 'push') && github.ref == 'refs/heads/main')
         ||
         (github.event_name == 'workflow_dispatch' &&
          github.ref == 'refs/heads/main' && inputs.apply == true)
@@ -42,16 +46,16 @@ jobs:
           python-version: '3.11'
       - name: Use preexisting free Python dependencies
         run: pip install -r requirements.txt
-      - name: Read-only prerequisites from completed TPEx source and derived units
+      - name: Read-only five-year missing weekdays, current listing and free storage prerequisites
         id: gate
-        run: python scripts/twse_240_release_gate.py --mode source
+        run: python scripts/twse_five_year_source_gate.py
       - name: Verify official TWSE date/coverage parsing and fail-closed batch rules
         if: steps.gate.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           test -n "$DATABASE_URL"
-          python -m py_compile src/twse_dated_history.py scripts/twse_long_history_campaign.py
-          python -m unittest tests.test_twse_dated_history tests.test_twse_long_history_campaign tests.test_official_market_feed -v
+          python -m py_compile src/twse_dated_history.py scripts/twse_long_history_campaign.py scripts/twse_five_year_source_gate.py
+          python -m unittest tests.test_twse_dated_history tests.test_twse_long_history_campaign tests.test_twse_five_year_source_gate tests.test_official_market_feed -v
       - name: Preview initial TWSE source depth; no writes or API fetch
         if: steps.gate.outputs.should_run == 'true'
         run: python scripts/twse_long_history_campaign.py --max-rounds 14 --report twse-long-preview.json
