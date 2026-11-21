@@ -1,0 +1,10 @@
+Owner-approved one-time TPEx official insert-only history canary.
+Date: 2026-11-21.
+Scope: exactly at most two TPEx symbols with 1..59 genuine positive
+closing-price sessions, five official monthly source requests per symbol.
+Existing daily_prices primary keys must remain completely unchanged.
+No paid APIs, payment plan upgrade, LINE message or trading activity.
+The canary uses the indicator catch-up lock and must wait until the
+ongoing eligible-100 indicator/composite writer has finished.
+Future official history may run only inside free-plan bounded daily quotas.
+This unique marker must not be modified or recommitted.
