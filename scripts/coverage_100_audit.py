@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter,defaultdict
-from datetime import date,datetime,timezone
+from datetime import date,datetime,timedelta
 import json
 import os
 from pathlib import Path
@@ -97,7 +97,7 @@ def classify(row):
         raise ValueError("A stock without a valid close cannot have current analysis")
     if last is not None:
         expected_recent=(date.fromisoformat(last) >=
-                         date.fromisoformat(latest).__sub__(__import__("datetime").timedelta(days=7)))
+                         date.fromisoformat(latest)-timedelta(days=7))
         if row["recent"]!=expected_recent:
             raise ValueError("Inconsistent recency evidence")
     if n==0:
