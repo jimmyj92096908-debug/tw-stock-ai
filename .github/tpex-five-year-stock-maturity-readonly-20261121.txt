@@ -1,0 +1,1 @@
+One-shot stock-master and per-year official TPEx data maturity read-only audit. No original-price writes, no backtest approval, no paid services.\n
