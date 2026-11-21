@@ -122,12 +122,15 @@ class Eligible100Tests(unittest.TestCase):
             task.unchanged_market_data(snap(),{**snap(),"database_bytes":800000000})
         with self.assertRaisesRegex(RuntimeError,"changed"):
             task.unchanged_market_data(snap(),snap(eligible=1106))
-        with patch.object(task,"snapshot",return_value=snap(matched=994,both=994)):
-            with patch.dict(os.environ,{"STOCK_ELIGIBLE_100_COVERAGE_WRITE_ENABLED":"yes",
-                                         "STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes"}):
-                with patch.object(task,"indicator_run",return_value=[{"status":"verified"}]):
-                    with self.assertRaisesRegex(StopIteration,""):
-                        task.execute("fake",apply=True,max_rounds=1)
+        with patch.dict(os.environ,{"STOCK_ELIGIBLE_100_COVERAGE_WRITE_ENABLED":"yes",
+                                     "STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes"}),\
+             patch.object(task,"snapshot",side_effect=[
+                 snap(),snap(both=1020,matched=994)]),\
+             patch.object(task,"indicator_run",return_value=[{"status":"verified"}]),\
+             patch.object(task,"calculate_all") as score:
+            with self.assertRaisesRegex(RuntimeError,"Hard round ceiling"):
+                task.execute("fake",apply=True,max_rounds=1)
+            score.assert_not_called()
 
 
 if __name__=="__main__":
