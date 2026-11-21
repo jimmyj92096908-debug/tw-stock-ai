@@ -141,7 +141,7 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("待補 1044", output)
         self.assertIn("技術／SMC 待補總量：1044/1106", output)
         self.assertEqual(result["indicator_backlog"][1]["unstarted"], 942)
-        self.assertEqual(conn.cur.calls[-2][0], INDICATOR_BACKLOG_SQL)
+        self.assertEqual(conn.cur.calls[-3][0], INDICATOR_BACKLOG_SQL)
         self.assertEqual(conn.cur.calls[-2][0], LATEST_VALID_DAY_COVERAGE_SQL)
         self.assertEqual(conn.cur.calls[-1][0], COHORT_INTERSECTION_SQL)
         self.assertEqual(result["matched_cohort_coverage"]["complete"],1107)
