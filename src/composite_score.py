@@ -222,8 +222,6 @@ def calculate_all(database_url, *, stocks=None, missing_only=False):
 
     upsert = COMPOSITE_UPSERT_SQL
     if missing_only:
-        upsert = upsert[:upsert.index("    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET")]
-    if missing_only:
         upsert = upsert[:upsert.index("    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET")] + (
             "    ON CONFLICT (market,stock_id,as_of_date) DO NOTHING RETURNING stock_id"
         )
