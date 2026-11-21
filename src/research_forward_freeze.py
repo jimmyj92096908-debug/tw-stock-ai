@@ -22,7 +22,7 @@ from src.trained_factor_model import (
 TAIPEI=ZoneInfo("Asia/Taipei")
 MIN_FROZEN_UNIVERSE=50
 MAX_FROZEN_UNIVERSE=2500
-MAX_STALE_CALENDAR_DAYS=4
+MAX_STALE_CALENDAR_DAYS=3
 
 
 def canonical(value):
