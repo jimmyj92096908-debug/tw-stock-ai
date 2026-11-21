@@ -15,3 +15,7 @@
 ## ③ 免費與自動化設置
 
 `.github/workflows/tpex-five-year-free-research-audits.yml` 由本次首次新增的一次性標記觸發今天正式兩項唯讀驗證，往後也會在**原有每月官方收入/季報來源工作成功完成後自動再次稽核**。不新增每分鐘／每日定期爬蟲、不新增任何 Neon 寫入、不影響現有 LINE、真實交易和成本。若任何來源缺漏或時間門檻錯誤，工作保留失敗證據，不能視為已完成模型驗收。
+
+## 一次性正式執行的連線故障與安全修復
+
+原定的首次唯讀自動工作 [#44912438098](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44912438098) 的全部 Python 測試已成功，但正式 Neon 在第一個 `SET TRANSACTION ... READ ONLY` 出現 `psycopg.OperationalError: SSL connection has been closed unexpectedly`，因而阻止後續財報時序證據輸出；此情況**不代表**原始行情或因子損毀。重試版本僅為兩項**完全唯讀操作**提供至多 **3 次**（每次 5 秒間隔），仍必須通過完整來源與期限驗證，失敗後保留 workflow failure，不發 LINE、不改交易、不啟動原始行情回補。使用單一全新來源稽核標記 `.github/tpex-free-on-demand-pit-audit-v2-20261121.txt` 重新觸發。
