@@ -4,6 +4,8 @@ GitHub limits workflow_run nesting to three levels, so post-TPEx TWSE
 long-history and research follow-on workflows are independent scheduled roots.
 These SELECT-only gates prevent premature writes, unnecessary repeats, and
 overlapping source/research quality assumptions. No GitHub tokens or LINE.
+PostgreSQL MIN(calculated_at) skips NULL, so the correlated per-raw-date audit
+also explicitly rejects missing or NULL historical factor timestamps.
 """
 from __future__ import annotations
 
@@ -94,7 +96,15 @@ WITH last_market AS (
      LEFT JOIN public.daily_smc s
        ON s.market=p.market AND s.stock_id=p.stock_id AND s.trade_date=p.trade_date
      WHERE p.market=e.market AND p.stock_id=e.stock_id
-       AND (a.trade_date IS NULL OR t.trade_date IS NULL OR s.trade_date IS NULL)
+       AND (
+         a.trade_date IS NULL OR t.trade_date IS NULL OR s.trade_date IS NULL
+         OR a.calculated_at IS NULL OR t.calculated_at IS NULL
+         OR s.calculated_at IS NULL
+         OR (e.market='tpex' AND e.latest_official_ingest IS NOT NULL
+             AND (a.calculated_at<e.latest_official_ingest
+                  OR t.calculated_at<e.latest_official_ingest
+                  OR s.calculated_at<e.latest_official_ingest))
+       )
    ) missing_historical_derived_date,
    EXISTS(SELECT 1 FROM public.daily_technicals t
      WHERE t.market=e.market AND t.stock_id=e.stock_id
