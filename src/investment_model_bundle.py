@@ -12,6 +12,7 @@ import math
 from trained_factor_model import (
     FEATURE_NAMES, VERSION, research_rank,
 )
+from research_confidence import data_quality_assessment
 
 # Operational descriptive-ranking coverage, NOT a probability or performance gate.
 MIN_DESCRIPTIVE_RANK_UNIVERSE = 30
@@ -25,9 +26,13 @@ SELECT
    AND p.close IS NOT NULL AND p.close > 0 AND p.stock_id <> '1808')
    AS ranked_date_priced_universe,
  (SELECT MAX(trade_date) FROM public.daily_prices
-   WHERE market=%s AND stock_id=%s AND close IS NOT NULL) AS latest_price_date,
- (SELECT MAX(trade_date) FROM public.daily_technicals
-   WHERE market=%s AND stock_id=%s) AS latest_technical_date,
+   WHERE market=%s AND stock_id=%s AND close > 0) AS latest_price_date,
+ (SELECT MAX(t.trade_date) FROM public.daily_technicals t
+   WHERE t.market=%s AND t.stock_id=%s AND EXISTS (
+     SELECT 1 FROM public.daily_prices p
+     WHERE p.market=t.market AND p.stock_id=t.stock_id
+       AND p.trade_date=t.trade_date AND p.close>0
+   )) AS latest_technical_date,
  (SELECT MAX(as_of_date) FROM public.daily_composite_scores
    WHERE market=%s AND stock_id=%s AND total_score IS NOT NULL) AS latest_composite_date,
  (SELECT total_score FROM public.daily_composite_scores
@@ -46,7 +51,18 @@ SELECT
  (SELECT coverage_weight FROM public.daily_chip_scores
    WHERE market=%s AND stock_id=%s AND total_score IS NOT NULL
    AND coverage_weight >= 0.50 ORDER BY as_of_date DESC LIMIT 1)
-   AS latest_publishable_chip_coverage
+   AS latest_publishable_chip_coverage,
+ (SELECT COUNT(*)::int FROM public.daily_prices
+   WHERE market=%s AND stock_id=%s AND close>0) AS valid_price_days,
+ (SELECT coverage_weight FROM public.daily_composite_scores
+   WHERE market=%s AND stock_id=%s AND total_score IS NOT NULL
+   ORDER BY as_of_date DESC LIMIT 1) AS latest_composite_coverage,
+ (SELECT MAX(s.trade_date) FROM public.daily_smc s
+   WHERE s.market=%s AND s.stock_id=%s AND EXISTS (
+     SELECT 1 FROM public.daily_prices p
+     WHERE p.market=s.market AND p.stock_id=s.stock_id
+       AND p.trade_date=s.trade_date AND p.close>0
+   )) AS latest_smc_date
 """
 
 
@@ -219,6 +235,7 @@ def assemble_research_bundle(
         "report_type": "taiwan_stock_research_model_bundle_v1",
         "model": audit,
         "stock_data": stock,
+        "data_quality": data_quality_assessment(stock, stock_raw),
         "ranking": safe_ranking,
         "ranking_matches_reference_price_date": latest_ranking_is_price_current,
         "ranked_date_priced_universe": priced_count,
