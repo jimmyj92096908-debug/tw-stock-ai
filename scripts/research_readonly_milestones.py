@@ -57,12 +57,15 @@ def report_from_evidence(state,frozen):
     if any(type(state.get(k)) is not int for k in (
         "tpex_source_days","twse_source_days","legacy_rows",
         "bad_legacy_volume","bad_legacy_turnover","tpex_eligible",
-        "tpex_matched","twse_240_eligible","twse_full_indicators",
+        "tpex_matched","tpex_historical_factors_current",
+        "twse_240_eligible","twse_full_indicators",
         "twse_complete_scores","database_bytes"
     )):
         raise ValueError("Unverified official source milestones")
     if (min(state.values())<0 or state["bad_legacy_volume"]>state["legacy_rows"]
-        or state["bad_legacy_turnover"]>state["legacy_rows"]):
+        or state["bad_legacy_turnover"]>state["legacy_rows"]
+        or not (state["tpex_historical_factors_current"]<=state["tpex_matched"]
+                <=state["tpex_eligible"])):
         raise ValueError("Contradictory legacy market-unit statistics")
     if not isinstance(frozen,dict) or type(frozen.get("frozen_cohorts")) is not int:
         raise ValueError("Missing immutable model roster evidence")
@@ -93,6 +96,10 @@ def report_from_evidence(state,frozen):
         "current_research":{
             "tpex_60_session_eligible":state["tpex_eligible"],
             "tpex_latest_full_stack":state["tpex_matched"],
+            "tpex_historical_full_stack":state["tpex_historical_factors_current"],
+            "tpex_historical_repair_backlog":(
+                state["tpex_eligible"] - state["tpex_historical_factors_current"]
+            ),
             "twse_240_session_eligible":state["twse_240_eligible"],
             "twse_full_240_session_indicators":state["twse_full_indicators"],
             "twse_latest_scores_on_full_240_factors":state["twse_complete_scores"],
