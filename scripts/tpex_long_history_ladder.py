@@ -167,9 +167,22 @@ def run(url: str, *, apply=False, limit=2, months=5,
                 # another stock. Per-stock transaction rolls back on guard fail.
                 existing._size_guard(conn)
                 try:
-                    raw=official_months(stock["stock_id"],window,today=today,
-                                        pause_seconds=pause_seconds)
-                    calls+=len(window)
+                    # A separately verified anchor request must succeed FIRST.
+                    # Do not burn older-month calls if the official source is
+                    # temporarily incomplete or incompatible with saved closes.
+                    anchor=official_months(stock["stock_id"],[window[-1]],today=today,
+                                           pause_seconds=pause_seconds)
+                    calls+=1
+                    verified_anchor=verify_existing_anchor(
+                        conn,stock["stock_id"],window[-1],anchor)
+                    earlier_months=window[:-1]
+                    if earlier_months and pause_seconds:
+                        time.sleep(pause_seconds)
+                    older=(official_months(stock["stock_id"],earlier_months,
+                                          today=today,pause_seconds=pause_seconds)
+                           if earlier_months else [])
+                    calls+=len(earlier_months)
+                    raw=older+anchor
                     with conn.transaction():
                         with conn.cursor() as cur:
                             cur.execute("SET LOCAL statement_timeout='20000ms'")
@@ -177,7 +190,9 @@ def run(url: str, *, apply=False, limit=2, months=5,
                         if (before["days"]!=stock["valid_days"] or
                                 before["first_observed"]!=stock["first_observed"]):
                             raise ValueError("Concurrent stock price history change")
-                        matches=verify_existing_anchor(conn,stock["stock_id"],window[-1],raw)
+                        matches=verify_existing_anchor(conn,stock["stock_id"],window[-1],anchor)
+                        if matches!=verified_anchor:
+                            raise ValueError("Official anchor changed before stock import")
                         with conn.cursor() as cur:
                             if raw:
                                 cur.executemany(existing.PRICE_INSERT_ONLY_SQL,raw)
