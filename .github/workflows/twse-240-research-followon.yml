@@ -22,6 +22,11 @@ concurrency:
 
 jobs:
   twse-240-research-only:
+    # Acquire the dated-TWSE writer lock as well as the indicator mutex;
+    # no raw historical source write may race long-factor recalculation.
+    concurrency:
+      group: twstock-dated-twse-history
+      cancel-in-progress: false
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       (
