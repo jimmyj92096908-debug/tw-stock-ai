@@ -55,6 +55,24 @@ class TPExDatedBulkCanaryTests(TestCase):
         with self.assertRaisesRegex(ValueError, "OHLC"):
             canary.parse_day(bad, date(2026, 11, 18))
 
+    def test_one_malformed_numeric_quote_is_skipped_and_reported(self):
+        batch = fixture()
+        batch["tables"][0]["data"].append(
+            ["1500", "TEST", "20", "0", "20", "21", "19",
+             "1,000", "20,000", "10"]
+        )
+        batch["tables"][0]["data"][0][7] = "Not-a-number"
+        result = canary.parse_day(batch, date(2026, 11, 18))
+        self.assertEqual(result["valid_four_digit_codes"], 500)
+        self.assertEqual(result["skipped_invalid_numeric"], 1)
+
+    def test_excess_invalid_quote_rows_fail_closed(self):
+        batch = fixture()
+        for row in batch["tables"][0]["data"][:51]:
+            row[7] = "Invalid!"
+        with self.assertRaisesRegex(ValueError, "Too many malformed"):
+            canary.parse_day(batch, date(2026, 11, 18))
+
     def test_bounded_get_only_no_import(self):
         fake = FakeSession()
         result = canary.probe([date(2026, 11, 18), date(2026, 11, 19)], fake)
