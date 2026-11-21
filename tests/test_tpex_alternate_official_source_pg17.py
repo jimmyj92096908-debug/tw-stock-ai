@@ -25,6 +25,8 @@ class TPExAlternateOfficialSourcePostgresTests(unittest.TestCase):
         if parsed.hostname not in ("localhost","127.0.0.1") or parsed.path!="/stock_ci_test":
             raise RuntimeError("Refusing non-disposable Postgres database")
         with psycopg.connect(URL,row_factory=dict_row) as conn:
+            conn.execute("""CREATE TABLE public.twse_history_day_progress (
+                trade_date date PRIMARY KEY,status text NOT NULL)""")
             conn.execute("""CREATE TABLE public.daily_prices(
                 market text, stock_id text, trade_date date, close numeric,
                 volume bigint, turnover numeric, source text,
