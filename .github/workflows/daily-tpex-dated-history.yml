@@ -1,0 +1,55 @@
+name: TPEx Dated Official Historical Backfill
+
+on:
+  schedule:
+    # 02:30 Asia/Taipei Tue-Sat after the official daily market close.
+    - cron: '30 18 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      apply:
+        type: boolean
+        required: true
+        default: false
+        description: '確定執行受控官方上櫃歷史行情回補？預設只預覽'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-dated-official-history
+  cancel-in-progress: false
+
+jobs:
+  bounded-tpex-history:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing project dependencies
+        run: pip install -r requirements.txt
+      - name: Verify dated-source parsing and bounded write gates
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+          python -m py_compile src/tpex_dated_bulk_canary.py src/tpex_dated_history.py
+          python -m unittest tests.test_tpex_dated_bulk_canary tests.test_tpex_dated_history -v
+      - name: List missing dates without HTTP requests or writes
+        run: python src/tpex_dated_history.py --batch-days 4 --lookback-days 90
+      - name: Add at most four verified TPEx historical dates
+        if: >-
+          github.event_name == 'schedule' ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
+        run: python src/tpex_dated_history.py --apply --batch-days 4 --lookback-days 90
+      - name: Confirm manual preview never wrote data
+        if: github.event_name == 'workflow_dispatch' && inputs.apply != true
+        run: echo 'Only read-only dry run occurred; production prices unchanged.'
