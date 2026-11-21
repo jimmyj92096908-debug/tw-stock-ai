@@ -173,8 +173,8 @@ def run(url,*,apply=False,max_days=10,pause_seconds=2.0,
                       "previous_official":entry["previous_official"],"status":"started"}
             try:
                 ensure_size(conn)
-                bars,proof=verified_source_bars(conn,day,allowed,fetcher=fetcher)
                 result["source_requests"]+=1
+                bars,proof=verified_source_bars(conn,day,allowed,fetcher=fetcher)
                 result["date_anchors_checked"]+=1
                 # Captured fact rows are for exactly the requested day.
                 if any(x["market"]!="tpex" or x["trade_date"]!=day for x in bars):
@@ -189,7 +189,6 @@ def run(url,*,apply=False,max_days=10,pause_seconds=2.0,
                 result["verified_days"]+=1
                 result["new_price_rows"]+=inserted
             except Exception as ex:
-                result["source_requests"]+=1 if "bars" not in locals() else 0
                 observed.update({"status":"rejected","error_type":type(ex).__name__})
                 result["failures"].append({"date":day.isoformat(),
                                           "error_type":type(ex).__name__})
@@ -200,6 +199,11 @@ def run(url,*,apply=False,max_days=10,pause_seconds=2.0,
                     raise RuntimeError(">=3 invalid TPEx historical source dates; stop safely") from ex
             result["processed_dates"].append(observed)
             report_to(report_path,result)
+            print(json.dumps({"official_day":day.isoformat(),
+                "status":observed["status"],"inserted":observed.get("inserted",0),
+                "verified_days":result["verified_days"],
+                "database_bytes_after":observed.get("database_bytes_after")}),
+                flush=True)
             if pause_seconds:
                 time.sleep(pause_seconds)
         result["database_bytes_after"]=ensure_size(conn)
