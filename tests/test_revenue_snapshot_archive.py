@@ -138,6 +138,10 @@ class RevenueParserTests(unittest.TestCase):
         self.assertIn("ON CONFLICT (MARKET,STOCK_ID,PERIOD_END,PAYLOAD_SHA256) DO NOTHING",sql)
         self.assertIn("EXISTS(SELECT 1 FROM PUBLIC.STOCK_MASTER",sql)
         self.assertIn("FIRST_OBSERVED_AT",sql)
+        self.assertIn("%(MARKET)S::TEXT",sql)
+        self.assertIn("%(STOCK_ID)S::VARCHAR(6)",sql)
+        self.assertIn("%(PERIOD_END)S::DATE",sql)
+        self.assertIn("%(FIRST_OBSERVED_AT)S::TIMESTAMPTZ",sql)
         self.assertIn("PRIMARY KEY (MARKET,STOCK_ID,PERIOD_END,PAYLOAD_SHA256)",ddl)
         for forbidden in ("DO UPDATE","DELETE FROM","TRUNCATE","DROP TABLE"):
             self.assertNotIn(forbidden,sql)
