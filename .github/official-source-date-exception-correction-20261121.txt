@@ -1,0 +1,1 @@
+Append-only correction of first official current-stock observation for actual TPEx DateOfListing field, plus strict 21-day dividend reference date filtering. No old source price or original immutable receipt overwrite.\n

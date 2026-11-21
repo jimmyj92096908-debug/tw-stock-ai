@@ -166,7 +166,24 @@ def assess(groups,*,start,end,observed_at,current_stocks,existing_counts):
         if not isinstance(raw,list) or len(raw)>MAX_RETURNED_EVENTS:
             raise ValueError("Oversized official event response")
         matched=0
+        out_of_requested_range=0
         for item in raw:
+            if not isinstance(item,dict):
+                raise ValueError("Malformed official event row")
+            symbol=str(_pick(item,["股票代號","證券代號","代號",
+                                   "Code","SecuritiesCompanyCode"]) or "").strip()
+            if re.fullmatch(r"\d{4}",symbol):
+                date_raw=_pick(item,["除權息日期","除權日期","恢復買賣日期",
+                                    "恢復交易日期","資料日期","日期","Date"])
+                if date_raw is None:
+                    raise ValueError("Official event missing effective date")
+                raw_day=date.fromisoformat(parse_date(date_raw))
+                if not start<=raw_day<=end:
+                    # Some public endpoints ignore their query parameters.
+                    # Reject out-of-window rows from the requested evidence
+                    # WITHOUT falsely claiming the whole feed is this month.
+                    out_of_requested_range+=1
+                    continue
             candidate=_candidate(item,market=market,kind=kind,source=source,
                 observed_at=observed_at,start=start,end=end,
                 current_set=current_stocks)
@@ -174,7 +191,9 @@ def assess(groups,*,start,end,observed_at,current_stocks,existing_counts):
                 rows.append(candidate);matched+=1
         source_counts.append({"market":market,"kind":kind,
            "source":source,"received_rows":len(raw),
-           "four_digit_candidates":matched})
+           "four_digit_candidates":matched,
+           "excluded_outside_requested_date_range":out_of_requested_range,
+           "excluded_non_common_stock_or_unknown":len(raw)-matched-out_of_requested_range})
     if len(source_counts)!=4:
         raise ValueError("Must verify four official market/type source responses")
     if len(rows)>MAX_RETURNED_EVENTS:

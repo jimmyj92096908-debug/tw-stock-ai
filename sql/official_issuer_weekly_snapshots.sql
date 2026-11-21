@@ -20,3 +20,21 @@ $$;
 CREATE OR REPLACE TRIGGER block_official_issuer_weekly_update_delete
 BEFORE UPDATE OR DELETE ON public.official_issuer_weekly_snapshots
 FOR EACH ROW EXECUTE FUNCTION public.block_official_issuer_snapshot_changes();
+
+-- Never UPDATE the 2026-11-21 first observed unparsed TPEx snapshot.
+-- A corrected official-field extractor can ONLY append a contemporaneous,
+-- hash-linked correction. This preserves original evidence and auditability.
+CREATE TABLE IF NOT EXISTS public.official_issuer_snapshot_corrections (
+    observed_week DATE NOT NULL REFERENCES public.official_issuer_weekly_snapshots(observed_week),
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    supersedes_sha256 CHAR(64) NOT NULL,
+    payload_sha256 CHAR(64) NOT NULL,
+    snapshot JSONB NOT NULL,
+    PRIMARY KEY (observed_week,payload_sha256),
+    CHECK (jsonb_typeof(snapshot)='object'),
+    CHECK (snapshot->>'payload_sha256'=btrim(payload_sha256)),
+    CHECK (payload_sha256<>supersedes_sha256)
+);
+CREATE OR REPLACE TRIGGER block_official_issuer_corrections_update_delete
+BEFORE UPDATE OR DELETE ON public.official_issuer_snapshot_corrections
+FOR EACH ROW EXECUTE FUNCTION public.block_official_issuer_snapshot_changes();
