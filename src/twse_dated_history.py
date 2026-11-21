@@ -37,6 +37,10 @@ SELECT m.market,m.stock_id FROM public.stock_master m
 INNER JOIN official_current_listed o
   ON o.market=m.market AND o.stock_id=m.stock_id
 WHERE m.market='twse'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.model_stock_exclusions x
+    WHERE x.market=m.market AND x.stock_id=m.stock_id
+  )
 """
 
 
