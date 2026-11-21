@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/tpex-five-year-stock-maturity-readonly-20261121.txt"
+      - ".github/tpex-five-year-stock-maturity-sqlfix-20261121.txt"
   workflow_run:
     workflows:
       - "TPEx Five-Year Dated Market Full Free Campaign"
@@ -45,7 +46,7 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ] &&
              git diff --name-only --diff-filter=A HEAD^ HEAD |
-             grep -Fxq ".github/tpex-five-year-stock-maturity-readonly-20261121.txt"; then
+             grep -Fxq ".github/tpex-five-year-stock-maturity-sqlfix-20261121.txt"; then
             echo "verified=true" >> "$GITHUB_OUTPUT"
           else
             echo "verified=false" >> "$GITHUB_OUTPUT"

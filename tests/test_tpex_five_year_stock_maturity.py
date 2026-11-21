@@ -85,6 +85,7 @@ class FiveYearPerStockMaturityTests(TestCase):
         self.assertIn("default_transaction_read_only=on",connector.call_args.kwargs["options"])
         self.assertIn("REPEATABLE READ READ ONLY",conn.execute.call_args_list[0].args[0])
         self.assertIn("sm.market='tpex'",m.STOCK_DAYS_SQL)
+        self.assertIn('EXTRACT(YEAR FROM trade_date)::int AS "year"',m.YEARLY_SQL)
         self.assertIn("dp.source='TPEX_DATED_OTC_EW'",m.YEARLY_SQL)
         self.assertIn("dp.source='TPEX_DAILY_CLOSE_OPENAPI'",m.YEARLY_SQL)
         for sql in (m.STOCK_DAYS_SQL,m.YEARLY_SQL,m.META_SQL):
@@ -97,6 +98,7 @@ class FiveYearPerStockMaturityTests(TestCase):
         wf=(ROOT/".github/workflows/tpex-five-year-stock-maturity.yml").read_text()
         marker=".github/tpex-five-year-stock-maturity-readonly-20261121.txt"
         self.assertIn(marker,wf)
+        self.assertIn(".github/tpex-five-year-stock-maturity-sqlfix-20261121.txt",wf)
         self.assertIn("git diff --name-only --diff-filter=A HEAD^ HEAD",wf)
         self.assertIn("  workflow_run:",wf)
         self.assertIn("TPEx Five-Year Dated Market Full Free Campaign",wf)

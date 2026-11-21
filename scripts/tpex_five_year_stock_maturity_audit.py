@@ -55,7 +55,7 @@ YEARLY_SQL="""WITH latest AS (
  WHERE dp.market='tpex' AND dp.trade_date >= (l.d-INTERVAL '5 years')
  AND dp.trade_date<=l.d GROUP BY dp.trade_date
 )
-SELECT EXTRACT(YEAR FROM trade_date)::int year,
+SELECT EXTRACT(YEAR FROM trade_date)::int AS "year",
  COUNT(*) FILTER(WHERE valid>=10)::int anchored_sessions,
  COUNT(*) FILTER(WHERE valid>=10 AND
    GREATEST(dated,openapi)>=500)::int official_full_market_sessions
