@@ -1,0 +1,1 @@
+Second and final explicit read-only Neon PIT and in-memory TPEx indicators retry, bounded 3 attempts, no price/derived writes, 2026-11-21.\n
