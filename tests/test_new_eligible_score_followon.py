@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from datetime import date
 import os
-from unittest import TestCase,unittest
+import unittest
+from unittest import TestCase
 from unittest.mock import MagicMock,patch
 
 from scripts import new_eligible_score_followon as follow
@@ -168,8 +169,6 @@ class CompositeBoundedModeTests(TestCase):
         self.assertIn("DO NOTHING RETURNING stock_id",sqls[-1])
         self.assertNotIn("DO UPDATE",sqls[-1])
         self.assertNotIn("SCORABLE_STOCKS_SQL",str(sqls))
-        self.assertIn("LATEST_VALID_TECH_SQL",composite_score.calculate_all.__doc__ or ""
-                      ) if False else None
 
 
 if __name__=="__main__":
