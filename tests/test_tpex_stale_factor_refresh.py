@@ -204,7 +204,11 @@ class BackfilledTPExFactorRefreshTests(unittest.TestCase):
     def test_selector_proves_older_dates_and_unchanged_score_timestamp(self):
         sql=refresh.CANDIDATES_SQL
         self.assertIn("last_source_write",sql)
-        self.assertIn("FILTER(WHERE source='TPEX_DATED_OTC_EW')",sql)
+        self.assertIn("FILTER(WHERE source IN (",sql)
+        for official in ("TPEX_DATED_OTC_EW","TPEX_TRADING_STOCK",
+                         "TPEX_DAILY_CLOSE_OPENAPI"):
+            self.assertIn(official,sql)
+            self.assertIn(official,refresh.CHECK_STOCK_SQL)
         self.assertIn("a.technical_rows<a.price_rows",sql)
         self.assertIn("LEAST(a.adjusted_rows,a.technical_rows,a.smc_rows)",sql)
         self.assertIn("newest_official_ingest",refresh.CHECK_STOCK_SQL)
