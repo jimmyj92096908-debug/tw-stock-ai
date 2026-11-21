@@ -1,0 +1,66 @@
+name: TPEx Official Backward History Ladder Canary (Manual Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply at most two stocks x five official months? Default is fully read-only."
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Reuse the existing TPEx dated writer mutex. No recurring workflow.
+concurrency:
+  group: twstock-tpex-dated-official-history
+  cancel-in-progress: false
+
+jobs:
+  verify-and-backfill:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify finite request budget and immutable original price keys
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_long_history_ladder.py
+          python -m unittest tests.test_tpex_long_history_ladder tests.test_tpex_official_history_insert_only -v
+          python - <<'PY'
+          from scripts import tpex_long_history_ladder as m
+          assert m.MAX_STOCKS == 2 and m.MAX_SOURCE_CALLS == 10
+          assert m.MAX_DB_BYTES == 800_000_000
+          assert "ON CONFLICT (market,stock_id,trade_date) DO NOTHING" in m.existing.PRICE_INSERT_ONLY_SQL
+          assert "DO UPDATE" not in m.existing.PRICE_INSERT_ONLY_SQL
+          PY
+      - name: Read-only candidate and anchored window preview
+        run: python scripts/tpex_long_history_ladder.py --limit 2 --months 5 --report tpex-long-history-preview.json
+      - name: Import only verified older official price dates
+        if: github.event_name == 'workflow_dispatch' && inputs.apply == true
+        env:
+          STOCK_TPEX_LONG_HISTORY_ENABLED: "yes"
+        run: python scripts/tpex_long_history_ladder.py --apply --limit 2 --months 5 --report tpex-long-history-apply.json
+      - name: Preserve nonsecret date/provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-official-long-history-canary
+          path: |
+            tpex-long-history-preview.json
+            tpex-long-history-apply.json
+          retention-days: 14
+          if-no-files-found: ignore
