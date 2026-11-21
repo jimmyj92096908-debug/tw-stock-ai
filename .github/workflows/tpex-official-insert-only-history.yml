@@ -12,6 +12,7 @@ on:
       - ".github/tpex-official-history-authorized-batch10-20261121.txt"
       - ".github/tpex-official-history-authorized-batch10-v2-20261121.txt"
       - ".github/tpex-official-history-authorized-batch10-v3-20261121.txt"
+      - ".github/tpex-official-history-authorized-batch10-v4-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -54,7 +55,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "push" ] &&
-             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-history-authorized-batch10-v3-20261121.txt"; then
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-history-authorized-batch10-v4-20261121.txt"; then
             echo "extended=true" >> "$GITHUB_OUTPUT"
           else
             echo "extended=false" >> "$GITHUB_OUTPUT"
