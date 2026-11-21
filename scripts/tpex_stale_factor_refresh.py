@@ -66,6 +66,15 @@ WITH latest_market AS (
     WHERE t.market='tpex' AND t.stock_id=p.stock_id) technical_at,
    (SELECT min(s.calculated_at) FROM public.daily_smc s
     WHERE s.market='tpex' AND s.stock_id=p.stock_id) smc_at,
+   -- MIN proves each source-derived series predates no official history.
+   -- MAX independently proves the latest research score follows the
+   -- most recently modified date, including a non-latest historical date.
+   (SELECT max(a.calculated_at) FROM public.daily_adjusted_prices a
+    WHERE a.market='tpex' AND a.stock_id=p.stock_id) adjusted_latest_at,
+   (SELECT max(t.calculated_at) FROM public.daily_technicals t
+    WHERE t.market='tpex' AND t.stock_id=p.stock_id) technical_latest_at,
+   (SELECT max(s.calculated_at) FROM public.daily_smc s
+    WHERE s.market='tpex' AND s.stock_id=p.stock_id) smc_latest_at,
    (SELECT max(c.calculated_at) FROM public.daily_composite_scores c
     WHERE c.market='tpex' AND c.stock_id=p.stock_id
       AND c.as_of_date=p.last_valid AND c.total_score IS NOT NULL) score_at
@@ -76,7 +85,8 @@ WITH latest_market AS (
 SELECT a.stock_id,a.price_rows,a.valid_days,a.last_valid,
        a.adjusted_rows,a.technical_rows,a.smc_rows,
        a.last_source_write,a.adjusted_at,a.technical_at,
-       a.smc_at,a.score_at
+       a.smc_at,a.adjusted_latest_at,a.technical_latest_at,
+       a.smc_latest_at,a.score_at
 FROM analysis a
 WHERE
  a.adjusted_rows<a.price_rows OR a.technical_rows<a.price_rows
@@ -90,7 +100,8 @@ WHERE
       OR a.score_at<a.last_source_write))
  OR a.technical_at<a.adjusted_at
  OR a.smc_at<a.adjusted_at
- OR a.score_at<GREATEST(a.technical_at,a.smc_at)
+ OR a.score_at<GREATEST(
+    a.adjusted_latest_at,a.technical_latest_at,a.smc_latest_at)
  OR EXISTS (
    SELECT 1 FROM public.daily_prices p
    LEFT JOIN public.daily_adjusted_prices d
@@ -180,7 +191,15 @@ WHERE c.market='tpex' AND c.stock_id=%s AND c.as_of_date=%s
 CHECK_SCORE_SQL = """
 SELECT c.total_score,c.calculated_at AS scored_at,
   t.calculated_at AS tech_at,s.calculated_at AS smc_at,
-  a.calculated_at AS adjusted_at
+  a.calculated_at AS adjusted_at,
+  GREATEST(
+    (SELECT max(t2.calculated_at) FROM public.daily_technicals t2
+      WHERE t2.market=c.market AND t2.stock_id=c.stock_id),
+    (SELECT max(s2.calculated_at) FROM public.daily_smc s2
+      WHERE s2.market=c.market AND s2.stock_id=c.stock_id),
+    (SELECT max(a2.calculated_at) FROM public.daily_adjusted_prices a2
+      WHERE a2.market=c.market AND a2.stock_id=c.stock_id)
+  ) AS historical_latest_factor_at
 FROM public.daily_composite_scores c
 JOIN public.daily_technicals t
  ON t.market=c.market AND t.stock_id=c.stock_id AND t.trade_date=c.as_of_date
@@ -251,12 +270,14 @@ def verify_latest_score(conn,stock):
         result=cur.fetchone()
     if not result or result["total_score"] is None:
         raise RuntimeError("Missing latest TPEx research score")
-    timestamps=("scored_at","tech_at","smc_at","adjusted_at")
+    timestamps=("scored_at","tech_at","smc_at","adjusted_at",
+                "historical_latest_factor_at")
     if any(result[k] is None for k in timestamps):
         raise RuntimeError("Missing TPEx factor calculation timestamp")
     if result["scored_at"]<max(result["tech_at"],result["smc_at"],
-                               result["adjusted_at"]):
-        raise RuntimeError("Latest research score is stale against factor rebuild")
+                               result["adjusted_at"],
+                               result["historical_latest_factor_at"]):
+        raise RuntimeError("Latest research score is stale against historical factor rebuild")
 
 
 def save(path,report):
