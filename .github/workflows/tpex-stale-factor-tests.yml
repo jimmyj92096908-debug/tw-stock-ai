@@ -5,6 +5,9 @@ on:
     paths:
       - 'scripts/tpex_stale_factor_refresh.py'
       - 'tests/test_tpex_stale_factor_refresh.py'
+      - 'tests/test_tpex_factor_bounded_campaign.py'
+      - 'scripts/tpex_factor_bounded_campaign.py'
+      - '.github/workflows/tpex-five-batch-history-campaign.yml'
       - 'tests/test_tpex_factor_bootstrap_workflow.py'
       - 'tests/test_tpex_stale_factor_refresh_postgres.py'
       - '.github/workflows/tpex-historical-factor-freshness.yml'
@@ -28,7 +31,7 @@ jobs:
       - name: Historical source and score no-price-write regression
         run: |
           python -m py_compile scripts/tpex_stale_factor_refresh.py
-          python -m unittest tests.test_tpex_stale_factor_refresh tests.test_tpex_factor_bootstrap_workflow -v
+          python -m unittest tests.test_tpex_stale_factor_refresh tests.test_tpex_factor_bootstrap_workflow tests.test_tpex_factor_bounded_campaign -v
 
   isolated-postgresql:
     runs-on: ubuntu-latest
