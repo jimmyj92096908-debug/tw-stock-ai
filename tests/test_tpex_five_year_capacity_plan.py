@@ -39,8 +39,23 @@ class TPExCapacityPlannerTests(TestCase):
         self.assertFalse(result["full_five_year_per_stock_history_verified"])
         self.assertFalse(result["derived_rows_modified"])
         self.assertFalse(result["LINE_or_trading_enabled"])
-        self.assertGreater(result["source_plus_full_derived_projection_bytes"],
-                           result["estimated_database_after_full_derived"])
+        self.assertEqual(result["scenario_assumed_new_market_quotes_per_day"],900)
+        self.assertEqual(result["scenario_unverified_future_raw_price_rows"],
+                         962*900)
+        expected_future_derived=(
+           result["scenario_unverified_future_raw_price_rows"]*
+           sum(result["conservative_bytes_per_new_row"][k] for k in (
+             "missing_adjusted","missing_technical","missing_smc"
+           ))
+        )
+        self.assertEqual(result["estimated_future_source_derived_extra_bytes"],
+                         expected_future_derived)
+        self.assertEqual(result["source_plus_full_derived_projection_bytes"],
+           result["estimated_database_after_full_derived"]+
+           result["estimated_unfilled_raw_source_extra_bytes"]+
+           expected_future_derived)
+        self.assertFalse(result["full_history_derivatives_fit_free_safety_budget_estimate"])
+        self.assertTrue(result["scenario_not_verified_listing_history"])
         self.assertGreater(result["conservative_bytes_per_new_row"]["daily_prices"],240)
 
     def test_exceeding_safety_stop_refuses_new_derived_batches(self):
@@ -49,6 +64,7 @@ class TPExCapacityPlannerTests(TestCase):
              "incomplete_anchor_days":112},cohort(3,400,300))
         self.assertFalse(value["bounded_preview_passes_free_storage_check"])
         self.assertFalse(value["full_history_derivatives_fit_free_safety_budget_estimate"])
+        self.assertFalse(value["current_missing_derived_only_fits_free_safety_budget_estimate"])
         self.assertFalse(value["manual_derived_recompute_permitted_now"])
 
     def test_report_rejects_wrong_or_duplicate_cohort_and_impossible_counts(self):
