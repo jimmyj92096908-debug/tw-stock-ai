@@ -23,7 +23,7 @@ class RealRawFactorReadOnlyAdapterTests(TestCase):
         histories={sid:source(sid) for sid in m.PROTOTYPE_STOCKS}
         dates=[histories[m.PROTOTYPE_STOCKS[0]][i]["trade_date"]
                for i in range(250,310)]
-        signals=list(reversed(dates))
+        signals=list(reversed(dates[-50:]))
         def execute(sql,args=None):
             q=MagicMock()
             if sql==m.MASTER_SQL:
