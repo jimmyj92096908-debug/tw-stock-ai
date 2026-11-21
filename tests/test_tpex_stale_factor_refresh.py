@@ -211,6 +211,9 @@ class BackfilledTPExFactorRefreshTests(unittest.TestCase):
         self.assertIn("stale_derived_days",refresh.CHECK_STOCK_SQL)
         self.assertIn("adjusted_at IS NULL",refresh.CHECK_STOCK_SQL)
         self.assertIn("a.score_at<GREATEST",sql)
+        self.assertIn("a.adjusted_latest_at,a.technical_latest_at,a.smc_latest_at",sql)
+        self.assertIn("historical_latest_factor_at",refresh.CHECK_SCORE_SQL)
+        self.assertIn("max(t2.calculated_at)",refresh.CHECK_SCORE_SQL)
         self.assertIn("LEFT JOIN public.daily_adjusted_prices",sql)
         self.assertIn("d.trade_date IS NULL OR t.trade_date IS NULL",sql)
         for factor in ("d", "t", "s"):

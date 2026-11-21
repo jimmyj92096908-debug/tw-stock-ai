@@ -96,6 +96,24 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
             conn.commit()
             self.assertEqual(refresh.choose(conn),[])
 
+            # A NON-LATEST historical factor rebuilt AFTER the last score
+            # must invalidate that score, even though MIN factor times are
+            # unchanged and every official source timestamp is satisfied.
+            conn.execute("""UPDATE public.daily_technicals
+                SET calculated_at=clock_timestamp() + interval '1 second'
+                WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                (dates[0],))
+            conn.commit()
+            self.assertEqual(len(refresh.choose(conn)),1)
+            with self.assertRaisesRegex(RuntimeError,"stale against historical factor"):
+                refresh.verify_latest_score(conn,before[0])
+            conn.execute("""UPDATE public.daily_technicals
+                SET calculated_at='2026-11-20 02:00:00+00'
+                WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                (dates[0],))
+            conn.commit()
+            self.assertEqual(refresh.choose(conn),[])
+
             # PostgreSQL MIN(calculated_at) ignores NULL: even one historical
             # NULL timestamp must still block model-factor completion.
             conn.execute("""UPDATE public.daily_smc

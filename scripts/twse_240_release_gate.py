@@ -84,6 +84,12 @@ WITH last_market AS (
      WHERE t.market=e.market AND t.stock_id=e.stock_id) technical_at,
    (SELECT min(s.calculated_at) FROM public.daily_smc s
      WHERE s.market=e.market AND s.stock_id=e.stock_id) smc_at,
+   (SELECT max(a.calculated_at) FROM public.daily_adjusted_prices a
+     WHERE a.market=e.market AND a.stock_id=e.stock_id) adjusted_latest_at,
+   (SELECT max(t.calculated_at) FROM public.daily_technicals t
+     WHERE t.market=e.market AND t.stock_id=e.stock_id) technical_latest_at,
+   (SELECT max(s.calculated_at) FROM public.daily_smc s
+     WHERE s.market=e.market AND s.stock_id=e.stock_id) smc_latest_at,
    (SELECT max(c.calculated_at) FROM public.daily_composite_scores c
      WHERE c.market=e.market AND c.stock_id=e.stock_id
        AND c.as_of_date=e.latest_close AND c.total_score IS NOT NULL) score_at,
@@ -127,7 +133,8 @@ SELECT s.tpex_source_days,s.twse_source_days,
          AND c.adjusted_at>=c.latest_official_ingest
          AND c.technical_at>=c.latest_official_ingest
          AND c.smc_at>=c.latest_official_ingest
-         AND c.score_at>=GREATEST(c.adjusted_at,c.technical_at,c.smc_at)
+         AND c.score_at>=GREATEST(c.adjusted_latest_at,
+                                     c.technical_latest_at,c.smc_latest_at)
        )::int tpex_historical_factors_current,
        count(*) FILTER(WHERE c.market='twse')::int twse_240_eligible,
        count(*) FILTER(WHERE c.market='twse' AND c.tech_latest
