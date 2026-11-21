@@ -16,7 +16,8 @@ def state(**changes):
         "tpex_source_days":61,"twse_source_days":137,
         "legacy_rows":26504,"bad_legacy_volume":24895,
         "bad_legacy_turnover":25026,"tpex_eligible":794,
-        "tpex_matched":63,"twse_240_eligible":20,
+        "tpex_matched":63,"tpex_historical_factors_current":60,
+        "twse_240_eligible":20,
         "twse_full_indicators":20,"twse_complete_scores":20,
         "database_bytes":269000000,
     }
@@ -50,6 +51,8 @@ class ResearchReadOnlyMilestoneTests(TestCase):
             self.assertEqual(report["future_research"]["latest_signal_date"],"2026-11-20")
             self.assertFalse(report["future_research"]["independently_verified_positive_alpha"])
             self.assertFalse(report["future_research"]["future_holdout_statistically_validated"])
+            self.assertEqual(report["current_research"]["tpex_historical_repair_backlog"],734)
+            self.assertEqual(report["current_research"]["tpex_latest_full_stack"],63)
             self.assertFalse(report["safety"]["orders_enabled"])
             self.assertFalse(report["safety"]["raw_price_updates"])
             snapshot.assert_called_once_with("postgresql://readonly")
@@ -61,6 +64,7 @@ class ResearchReadOnlyMilestoneTests(TestCase):
         self.assertFalse(result["legacy_tpex_units"]["all_source_units_verified"])
         done=audit.report_from_evidence(
             state(tpex_source_days=91,tpex_matched=794,
+                  tpex_historical_factors_current=794,
                   bad_legacy_volume=0,bad_legacy_turnover=0),
             frozen(frozen_cohorts=2,frozen_signal_days=2,
                    latest_signal=date(2026,11,23)))
@@ -73,6 +77,7 @@ class ResearchReadOnlyMilestoneTests(TestCase):
             state(bad_legacy_volume=26505),
             state(bad_legacy_turnover=-1),
             state(database_bytes="unknown"),
+            state(tpex_historical_factors_current=900),
         ):
             with self.assertRaises(ValueError):
                 audit.report_from_evidence(broken,frozen())
