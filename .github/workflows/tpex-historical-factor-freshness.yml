@@ -1,0 +1,92 @@
+name: TPEx Backfilled Historical Factor Freshness (Research Only)
+
+on:
+  schedule:
+    # Two small bounded source-verified windows per day (Asia/Taipei 10:40,22:40).
+    - cron: '40 2,14 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Explicitly rebuild source-stale TPEx historical factors and latest scores?'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Mutually exclude all other adjusted/technical/SMC research writers.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+      )
+    # Job-level lock prevents price-history writers running during factor
+    # backfill and stable raw-price invariants.
+    concurrency:
+      group: twstock-tpex-dated-official-history
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies only
+        run: pip install -r requirements.txt
+      - name: Verify historical source/score freshness regression
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_stale_factor_refresh.py
+          python -m unittest tests.test_tpex_stale_factor_refresh -v
+      - name: Read-only official history and legacy unit readiness
+        id: gate
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.tpex_stale_factor_refresh import release_snapshot, release_ready
+          state=release_snapshot(os.environ["DATABASE_URL"])
+          ready=release_ready(state)
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as f:
+              f.write("ready="+("true" if ready else "false")+"\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as f:
+              f.write("TPEx official dated history: "+str(state["tpex_source_days"])+
+                      " sessions; legacy derived unit discrepancies "+
+                      str(state["bad_legacy_volume"])+"/"+
+                      str(state["bad_legacy_turnover"])+
+                      "; source verified and ready="+str(ready)+"\n")
+          PY
+      - name: Preview stale history-derived cohort
+        if: steps.gate.outputs.ready == 'true'
+        run: python scripts/tpex_stale_factor_refresh.py --rounds 5 --report tpex-factor-preview.json
+      - name: Rebuild at most 100 stale TPEx stocks with verified historical scores
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          STOCK_TPEX_STALE_FACTOR_WRITE_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_STALE_SCORE_WRITE_ENABLED: 'yes'
+        run: |
+          python scripts/tpex_stale_factor_refresh.py --apply --rounds 5 --report tpex-factor-refresh-evidence.json
+      - name: Preserve aggregate-only research reconciliation proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-historical-factor-freshness
+          path: |
+            tpex-factor-preview.json
+            tpex-factor-refresh-evidence.json
+          if-no-files-found: ignore
+          retention-days: 14
