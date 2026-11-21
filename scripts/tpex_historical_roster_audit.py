@@ -33,19 +33,19 @@ SELECT
   LEFT JOIN m ON m.stock_id=p.stock_id
   WHERE m.stock_id IS NULL) AS price_stocks_not_in_current_master,
  COUNT(*) FILTER(WHERE p.first_observed>=latest.latest_day-interval '3 years')::int
-  AS first_seen_last_three_years_NOT_VERIFIED_IPO,
+  AS first_seen_last_three_years_not_verified_ipo,
  COUNT(*) FILTER(WHERE p.n>=1000)::int AS current_master_1000_price_rows,
  latest.latest_day AS last_real_market_day
 FROM m LEFT JOIN p ON p.stock_id=m.stock_id CROSS JOIN latest
 GROUP BY latest.latest_day"""
 NONMASTER_SAMPLE_SQL="""WITH src AS(
  SELECT stock_id,MIN(trade_date) first_price_day,
- MAX(trade_date) last_price_day,COUNT(*)::int rows
+ MAX(trade_date) last_price_day,COUNT(*)::int price_rows
  FROM public.daily_prices
  WHERE market='tpex' AND close>0 AND volume>=0
  GROUP BY stock_id
 )
-SELECT p.stock_id,p.first_price_day,p.last_price_day,p.rows
+SELECT p.stock_id,p.first_price_day,p.last_price_day,p.price_rows
 FROM src p LEFT JOIN public.stock_master m
 ON m.market='tpex' AND m.stock_id=p.stock_id
 WHERE m.stock_id IS NULL ORDER BY p.stock_id LIMIT 20"""
@@ -62,7 +62,7 @@ def evaluate(columns,summary,nonmaster_samples):
         raise ValueError("Unexpected original stock_master schema")
     values=("current_master","observed_price_stocks","current_master_no_price",
             "price_stocks_not_in_current_master",
-            "first_seen_last_three_years_NOT_VERIFIED_IPO",
+            "first_seen_last_three_years_not_verified_ipo",
             "current_master_1000_price_rows")
     if any(type(summary.get(k)) is not int or summary[k]<0 for k in values):
         raise ValueError("Invalid current stock vs source summary")
@@ -71,7 +71,7 @@ def evaluate(columns,summary,nonmaster_samples):
     if (summary["current_master_no_price"]>summary["current_master"] or
         summary["price_stocks_not_in_current_master"]>summary["observed_price_stocks"] or
         summary["current_master_1000_price_rows"]>summary["current_master"] or
-        summary["first_seen_last_three_years_NOT_VERIFIED_IPO"]>
+        summary["first_seen_last_three_years_not_verified_ipo"]>
             summary["current_master"]):
         raise ValueError("Historically impossible source stock counts")
     if len(nonmaster_samples)>20 or any(
@@ -94,7 +94,7 @@ def evaluate(columns,summary,nonmaster_samples):
         "current_master_stocks_with_1000_raw_rows":
             summary["current_master_1000_price_rows"],
         "recent_first_seen_not_proven_ipo":
-            summary["first_seen_last_three_years_NOT_VERIFIED_IPO"],
+            summary["first_seen_last_three_years_not_verified_ipo"],
         "missing_historic_listing_effective_date_fields":missing_cols,
         "current_master_updated_at_is_not_first_listing_date":True,
         "first_saved_price_is_not_exchange_ipo_date":True,
