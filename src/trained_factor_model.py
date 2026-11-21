@@ -151,7 +151,7 @@ def groups_from_rows(rows, *, holdout_start):
             continue
         seen.add(key)
         features = feature_vector(raw)
-        if features is None or market not in ("twse", "tpex") or stock_id == "1808":
+        if features is None or market not in ("twse", "tpex") or stock_id in ("1808", "1589"):
             rejected["bad_signal"] += 1
             continue
         adj_close = number(raw.get("adjusted_close"))
