@@ -1,7 +1,9 @@
 """Read-only TPEx current-price short-history gap audit.
 
-A first OBSERVED price date is never an official IPO/listing date. No inferred
-historic sessions, retroactive scores, paid APIs, LINE sends or raw writes.
+A first OBSERVED price date is never an official IPO/listing date. Existing
+60-day factor completeness is distinct from raw-price maturity: >=120/240/1000
+actual sessions and >=5y observed spans do NOT prove a complete five-year
+archive. No inferred sessions, retroactive scores, paid APIs, LINE or writes.
 This aggregates counts only; no ticker lists in scheduled artifacts.
 """
 from __future__ import annotations
@@ -45,6 +47,11 @@ SELECT CASE
  WHEN valid_days>=20 THEN '20-29'
  ELSE '0-19' END AS band,
  COUNT(*)::int AS stocks,
+ COUNT(*) FILTER(WHERE valid_days>=120)::int AS at_least_120,
+ COUNT(*) FILTER(WHERE valid_days>=240)::int AS at_least_240,
+ COUNT(*) FILTER(WHERE valid_days>=1000)::int AS at_least_1000,
+ COUNT(*) FILTER(WHERE valid_days>=1000
+   AND first_observed<=latest_date-INTERVAL '5 years')::int AS span_five_years_1000,
  MIN(first_observed) AS earliest_observed_start,
  MAX(first_observed) AS latest_observed_start,
  MAX(latest_date) AS latest_market_date
@@ -61,6 +68,8 @@ def check_and_aggregate(rows):
     result={label:0 for label in EXPECTED_BANDS}
     dates=set()
     start_by_band={}
+    depth_keys=("at_least_120","at_least_240","at_least_1000","span_five_years_1000")
+    depth={key:0 for key in depth_keys}
     for raw in rows:
         if not isinstance(raw,dict):
             raise ValueError("Unexpected TPEx gap row")
@@ -70,6 +79,15 @@ def check_and_aggregate(rows):
             raise ValueError("Invalid or duplicate TPEx gap band")
         seen.add(band)
         result[band]=n
+        levels=[raw.get(key) for key in depth_keys]
+        if any(type(value) is not int or value<0 for value in levels):
+            raise ValueError("Missing or invalid real-session depth")
+        if not 0<=levels[3]<=levels[2]<=levels[1]<=levels[0]<=n:
+            raise ValueError("Impossible 120/240/1000-session maturity")
+        if band!="60+" and any(levels):
+            raise ValueError("Short-history band cannot hold 120-day maturity")
+        if band=="60+":
+            depth=dict(zip(depth_keys,levels))
         market_day=raw.get("latest_market_date")
         first=raw.get("earliest_observed_start")
         latest=raw.get("latest_observed_start")
@@ -81,7 +99,7 @@ def check_and_aggregate(rows):
             "first_observed_earliest":first.isoformat(),
             "first_observed_latest":latest.isoformat(),
         }
-    if len(dates)!=1 or sum(result.values())<500:
+    if "60+" not in seen or len(dates)!=1 or sum(result.values())<500:
         raise ValueError("Invalid whole-TPEx daily market coverage")
     total=sum(result.values())
     below=sum(result[k] for k in EXPECTED_BANDS if k!="60+")
@@ -93,6 +111,15 @@ def check_and_aggregate(rows):
         "eligible_real_60_session_history":result["60+"],
         "below_60_session_history":below,
         "bands":result,
+        "observed_session_depth":{
+            "at_least_60":result["60+"],
+            "only_60_to_119":result["60+"]-depth["at_least_120"],
+            "at_least_120":depth["at_least_120"],
+            "at_least_240":depth["at_least_240"],
+            "at_least_1000":depth["at_least_1000"],
+            "at_least_1000_with_five_year_observed_span":depth["span_five_years_1000"],
+        },
+        "full_five_year_official_history_verified":False,
         "observed_price_date_ranges":start_by_band,
         "official_listing_dates_independently_verified":False,
         "new_listing_vs_missing_history_not_yet_classified":True,
@@ -134,6 +161,8 @@ def main():
         "real_60_session_eligible":result["eligible_real_60_session_history"],
         "below_60":result["below_60_session_history"],
         "bands":result["bands"],
+        "observed_session_depth":result["observed_session_depth"],
+        "full_five_year_official_history_verified":False,
         "listing_date_verified":False,
         "database_written":False,
     },ensure_ascii=False))
