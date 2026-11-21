@@ -14,6 +14,7 @@ import json
 import math
 
 import numpy as np
+from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 VERSION = "tw-factor-ridge-1"
 FEATURES = (
@@ -32,8 +33,7 @@ MIN_TRAIN_ROWS = 200
 
 # Window over raw-price trading sessions, never over sparse adjusted-price rows.
 # All labels are fetched only for evaluation/training, never for a live ranking.
-TRAINING_SQL = """
-WITH sessions AS (
+TRAINING_SQL = f"""{CURRENT_OFFICIAL_LISTED_CTE}, sessions AS (
  SELECT p.market,p.stock_id,p.trade_date,p.close AS raw_close,
         a.close AS adjusted_close,
         LEAD(p.trade_date,6) OVER w AS exit_date,
@@ -52,6 +52,10 @@ SELECT s.market,s.stock_id,s.as_of_date,s.total_score,
        s.long_term_score,s.coverage_weight,
        p.adjusted_close,p.entry_date,p.entry_close,p.exit_close,p.exit_date
 FROM public.daily_composite_scores s
+JOIN official_current_listed active
+ ON active.market=s.market AND active.stock_id=s.stock_id
+JOIN public.stock_master sm
+ ON sm.market=s.market AND sm.stock_id=s.stock_id
 JOIN sessions p
  ON p.market=s.market AND p.stock_id=s.stock_id
  AND p.trade_date=s.as_of_date
@@ -61,8 +65,7 @@ WHERE s.as_of_date BETWEEN %s AND %s
 ORDER BY s.as_of_date,s.market,s.stock_id
 """
 
-LATEST_MODEL_SQL = """
-WITH latest AS (
+LATEST_MODEL_SQL = f"""{CURRENT_OFFICIAL_LISTED_CTE}, latest AS (
  SELECT MAX(as_of_date) AS score_date
  FROM public.daily_composite_scores WHERE total_score IS NOT NULL
 )
@@ -77,6 +80,8 @@ JOIN public.daily_prices p
  AND p.trade_date=s.as_of_date
 JOIN public.stock_master sm
  ON sm.market=s.market AND sm.stock_id=s.stock_id
+JOIN official_current_listed active
+ ON active.market=s.market AND active.stock_id=s.stock_id
 WHERE p.close>0 AND s.stock_id<>'1808' AND s.total_score IS NOT NULL
 ORDER BY s.market,s.stock_id
 """

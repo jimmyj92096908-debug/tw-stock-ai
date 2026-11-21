@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import date
 from statistics import mean
 import math
+from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 MODEL_VERSION = "composite-rank-v2-adjusted"
 TOP_FRACTION = 0.20
@@ -21,8 +22,7 @@ ROUND_TRIP_COST_BPS = 30  # research-only illustrative estimate; not broker quot
 # from corresponding dates. A missing adjusted bar never shifts the window.
 # A future verified corporate-action change can revise the adjusted price
 # history: do not treat this research series as an immutable historical feed.
-ADJUSTED_EVALUATION_SQL = """
-WITH bars AS (
+ADJUSTED_EVALUATION_SQL = f"""{CURRENT_OFFICIAL_LISTED_CTE}, bars AS (
  SELECT p.market,p.stock_id,p.trade_date,
         p.close AS raw_close,a.close AS adjusted_close,
         LEAD(p.trade_date,1) OVER w AS entry_date,
@@ -40,6 +40,10 @@ SELECT s.market,s.stock_id,s.as_of_date,s.total_score,s.coverage_weight,
        b.raw_close,b.adjusted_close,b.entry_date,b.exit_date,
        b.entry_close,b.exit_close
 FROM public.daily_composite_scores s
+JOIN official_current_listed active
+ ON active.market=s.market AND active.stock_id=s.stock_id
+JOIN public.stock_master sm
+ ON sm.market=s.market AND sm.stock_id=s.stock_id
 JOIN bars b ON b.market=s.market AND b.stock_id=s.stock_id
  AND b.trade_date=s.as_of_date
 WHERE s.total_score IS NOT NULL
