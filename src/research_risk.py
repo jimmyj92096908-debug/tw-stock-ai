@@ -75,6 +75,21 @@ def nonoverlapping_path(outcomes: list[dict]) -> dict:
         "mean_net_return": round(mean(returns), 8) if returns else None,
         "mean_net_excess_vs_universe": round(mean(excess), 8) if returns else None,
         "mean_original_score_net_return": round(mean(baseline), 8) if returns else None,
+        "mean_net_advantage_over_original_score": (
+            round(mean(x - y for x, y in zip(returns, baseline)), 8) if returns else None
+        ),
+        "model_beats_original_score_fraction": (
+            round(sum(x > y for x, y in zip(returns, baseline)) / len(returns), 6)
+            if returns else None
+        ),
+        "mean_net_advantage_over_external_benchmark": (
+            round(mean(x - y for x, y in zip(returns, benchmark)), 8)
+            if len(benchmark) == len(returns) and returns else None
+        ),
+        "model_beats_external_benchmark_fraction": (
+            round(sum(x > y for x, y in zip(returns, benchmark)) / len(returns), 6)
+            if len(benchmark) == len(returns) and returns else None
+        ),
         "worst_net_return": round(min(returns), 8) if returns else None,
         "external_benchmark_mean_net_return": (
             round(mean(benchmark), 8) if len(benchmark) == len(returns) and benchmark else None
