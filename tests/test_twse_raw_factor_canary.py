@@ -11,6 +11,11 @@ class TWSEInMemoryCanaryTests(TestCase):
         self.assertIn("official_current_listed",canary.CANDIDATES_SQL)
         self.assertIn("INTERVAL '14 days'",canary.CANDIDATES_SQL)
         self.assertIn("m.valid_days>=240",canary.CANDIDATES_SQL)
+        self.assertIn("m.valid_days>=241",canary.RECENT_MATURED_SQL)
+        self.assertIn("ORDER BY m.valid_days ASC",canary.RECENT_MATURED_SQL)
+        self.assertIn("ORDER BY m.valid_days DESC",canary.CANDIDATES_SQL)
+        with self.assertRaisesRegex(ValueError,"cohort"):
+            canary.run("fake",cohort="unknown")
         self.assertIn("m.latest=l.day",canary.CANDIDATES_SQL)
         self.assertIn("ORDER BY trade_date DESC LIMIT %s",canary.SOURCE_SQL)
         self.assertNotIn("INSERT INTO",canary.SOURCE_SQL.upper())
@@ -39,7 +44,7 @@ class TWSEInMemoryCanaryTests(TestCase):
                 return response
             if "pg_database_size" in sql:
                 response.fetchone.return_value={"bytes":550_000_000}
-            elif sql==canary.CANDIDATES_SQL:
+            elif sql in (canary.CANDIDATES_SQL,canary.RECENT_MATURED_SQL):
                 response.fetchall.return_value=eligible
             elif sql==canary.SOURCE_SQL:
                 response.fetchall.return_value=records[params[0]]
@@ -50,6 +55,11 @@ class TWSEInMemoryCanaryTests(TestCase):
         with patch.object(canary.psycopg,"connect",return_value=conn) as connected:
             result=canary.run("postgresql://disposable-stub")
         self.assertEqual(result["real_stock_sample_count"],5)
+        self.assertEqual(result["source_history_cohort"],"deep")
+        with patch.object(canary.psycopg,"connect",return_value=conn):
+            recent=canary.run("postgresql://disposable-stub",cohort="recent")
+        self.assertEqual(recent["source_history_cohort"],"recent")
+        self.assertEqual(recent["verified_no_future_suffix_samples"],5)
         self.assertEqual(result["original_source_price_rows"],1600)
         self.assertEqual(result["verified_no_future_suffix_samples"],5)
         self.assertEqual(result["persistent_technical_or_smc_rows_written"],0)
