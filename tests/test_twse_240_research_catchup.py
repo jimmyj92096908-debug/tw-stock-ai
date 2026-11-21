@@ -6,12 +6,14 @@ from unittest.mock import patch
 from scripts import twse_240_research_catchup as task
 
 
-def snap(*,source_days=245,eligible=500,indicators=480,scores=300,
+def snap(*,source_days=1100,eligible=500,indicators=480,scores=300,
+         missing_weekdays=0,
          rows=270000,db_bytes=400_000_000):
     return {
         "raw_twse_rows":rows,"verified_source_days":source_days,
         "database_bytes":db_bytes,"eligible":eligible,
         "current_indicators":indicators,"current_scores":scores,
+        "missing_five_year_weekdays":missing_weekdays,
     }
 
 
@@ -58,6 +60,23 @@ class TWSE240ResearchAcceptanceTests(TestCase):
                 ind.assert_not_called()
                 score.assert_not_called()
         self.assertIn("valid_days>=240",task.STATE_SQL)
+        self.assertIn("missing_five_year_weekdays",task.STATE_SQL)
+        self.assertIn("twse_history_day_progress",task.STATE_SQL)
+        for source in (
+            snap(source_days=999),
+            snap(missing_weekdays=1),
+            snap(db_bytes=650_000_000),
+        ):
+            with (
+                patch.dict(os.environ,GATES),
+                patch.object(task,"capture",return_value=source),
+                patch.object(task,"indicator_run") as indicators,
+                patch.object(task,"calculate_all") as scores,
+            ):
+                with self.assertRaisesRegex(RuntimeError,"five-year source backlog"):
+                    task.execute("fake",apply=True)
+                indicators.assert_not_called()
+                scores.assert_not_called()
         self.assertIn("INNER JOIN official_current_listed listed",task.STATE_SQL)
         self.assertIn("INNER JOIN official_current_listed listed",task.SCORE_PAGE_SQL)
         self.assertIn("INTERVAL '14 days'",task.STATE_SQL)
