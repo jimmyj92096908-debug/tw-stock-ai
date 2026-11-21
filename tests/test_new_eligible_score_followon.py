@@ -50,7 +50,7 @@ class NewEligibleFollowonTests(TestCase):
              patch.object(follow,"candidates",return_value=[missing()]),\
              patch.object(follow,"build_adjusted_stock") as adj,\
              patch.object(follow,"calculate_all") as calc:
-            out=follow.execute("protected",apply=False)
+            out=follow.execute("postgresql://reader:fake@example.invalid/twstock",apply=False)
         self.assertEqual(len(out["selected"]),1)
         self.assertFalse(out["complete"])
         self.assertFalse(out["raw_prices_modified"])
@@ -74,14 +74,14 @@ class NewEligibleFollowonTests(TestCase):
                  "adj":True,"tech":True,"smc":True,"score":True,
              }),\
              patch.object(follow,"calculate_all",return_value=2) as calc:
-            out=follow.execute("protected",apply=True,limit=2)
+            out=follow.execute("postgresql://reader:fake@example.invalid/twstock",apply=True,limit=2)
         self.assertTrue(out["complete"])
         self.assertEqual(out["indicator_stocks_computed"],2)
         self.assertEqual(out["new_composite_rows"],2)
         self.assertEqual(adj.call_count,2)
         self.assertEqual(tech.call_count,2)
         self.assertEqual(smc.call_count,2)
-        calc.assert_called_once_with("protected",stocks=[
+        calc.assert_called_once_with("postgresql://reader:fake@example.invalid/twstock",stocks=[
             ("tpex","3523"),("tpex","3632")],missing_only=True)
 
     def test_existing_latest_indicator_skips_unnecessary_indicator_updates(self):
@@ -98,7 +98,7 @@ class NewEligibleFollowonTests(TestCase):
                  "adj":True,"tech":True,"smc":True,"score":True,
              }),\
              patch.object(follow,"calculate_all",return_value=1):
-            out=follow.execute("protected",apply=True)
+            out=follow.execute("postgresql://reader:fake@example.invalid/twstock",apply=True)
         adj.assert_not_called()
         self.assertTrue(out["complete"])
         self.assertEqual(out["indicator_stocks_computed"],0)
@@ -117,7 +117,7 @@ class NewEligibleFollowonTests(TestCase):
              }),\
              patch.object(follow,"calculate_all",return_value=0):
             with self.assertRaisesRegex(RuntimeError,"Not all selected"):
-                follow.execute("protected",apply=True)
+                follow.execute("postgresql://reader:fake@example.invalid/twstock",apply=True)
 
     def test_rejects_source_row_regression_and_storage_limit(self):
         with self.assertRaisesRegex(RuntimeError,"stop line"):
