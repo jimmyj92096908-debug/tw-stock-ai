@@ -33,6 +33,9 @@ OFFICIAL_SOURCE_TAGS=frozenset({
     "TPEX_DATED_OTC_EW","TPEX_DAILY_CLOSE_OPENAPI",
     "TPEX_TRADING_STOCK","TPEX_TRADING_STOCK_NORMALIZED",
 })
+OFFICIAL_TWSE_SOURCE_TAGS=frozenset({
+    "TWSE_MI_INDEX_ALLBUT0999","TWSE_STOCK_DAY",
+})
 
 def _day(v):
     if type(v) is date:
@@ -52,23 +55,27 @@ def _finite(v,name,*,positive=False):
         raise ValueError("Invalid raw source "+name)
     return x
 
-def validate_source(raw,*,stock_id,cutoff):
+def validate_source(raw,*,stock_id,cutoff,market="tpex"):
+    if market not in ("tpex","twse"):
+        raise ValueError("Unknown official market for source factor audit")
+    allowed_sources=(OFFICIAL_SOURCE_TAGS if market=="tpex"
+                     else OFFICIAL_TWSE_SOURCE_TAGS)
     if not isinstance(stock_id,str) or not stock_id.isascii() or not (
         stock_id.isdigit() and 4<=len(stock_id)<=6) or stock_id=="1808":
-        raise ValueError("Fixed real TPEx stock code required")
+        raise ValueError("Fixed real official stock code required")
     end=_day(cutoff)
     if not isinstance(raw,list) or not 1<=len(raw)<=MAX_BARS:
-        raise ValueError("Bounded original TPEx OHLCV required")
+        raise ValueError("Bounded original official OHLCV required")
     prev=None
     observed=[]
     sources={}
     for p in raw:
-        if not isinstance(p,dict) or p.get("market")!="tpex" or p.get("stock_id")!=stock_id:
+        if not isinstance(p,dict) or p.get("market")!=market or p.get("stock_id")!=stock_id:
             raise ValueError("Source stock-market identity failed")
         day=_day(p.get("trade_date"))
         if day>end or prev is not None and day<=prev:
             raise ValueError("Future, duplicate or unsorted official price day")
-        if p.get("source") not in OFFICIAL_SOURCE_TAGS:
+        if p.get("source") not in allowed_sources:
             raise ValueError("Unverified original price provenance")
         op=_finite(p.get("open"),"open",positive=True)
         hi=_finite(p.get("high"),"high",positive=True)
@@ -84,7 +91,7 @@ def validate_source(raw,*,stock_id,cutoff):
         prev=day
     return observed,sources
 
-def build_research_features(raw,*,stock_id,cutoff,signal_dates):
+def build_research_features(raw,*,stock_id,cutoff,signal_dates,market="tpex"):
     """Build *only as-of available* technical/SMC vectors from raw prices.
 
     Features never use a future date: the caller must pass rows <= cutoff.
@@ -92,13 +99,13 @@ def build_research_features(raw,*,stock_id,cutoff,signal_dates):
     raw bars; the 3-bar swing-right feature is exposed only when confirmed.
     """
     asof=_day(cutoff)
-    observed,sources=validate_source(raw,stock_id=stock_id,cutoff=asof)
+    observed,sources=validate_source(raw,stock_id=stock_id,cutoff=asof,market=market)
     if (not isinstance(signal_dates,(list,tuple)) or not 1<=len(signal_dates)<=MAX_SIGNALS):
         raise ValueError("Bounded real signal sessions required")
     days=[_day(x) for x in signal_dates]
     if len(days)!=len(set(days)) or any(x>asof for x in days):
         raise ValueError("Duplicate or future-dated research signal")
-    normalized=normalize_source_units(raw,"tpex")
+    normalized=normalize_source_units(raw,market)
     technical=compute_indicators(normalized)
     smc=compute_smc(normalized)
     if len(technical)!=len(raw) or len(smc)!=len(raw):
@@ -139,7 +146,7 @@ def build_research_features(raw,*,stock_id,cutoff,signal_dates):
         ]
         if not all(math.isfinite(x) for x in values):
             raise ValueError("Nonfinite source-based training feature")
-        features.append({"market":"tpex","stock_id":stock_id,
+        features.append({"market":market,"stock_id":stock_id,
                          "as_of_date":day.isoformat(),"signal_raw_close":close,
                          "feature_vector":[round(x,12) for x in values],
                          "source_session_index":i,
@@ -148,7 +155,7 @@ def build_research_features(raw,*,stock_id,cutoff,signal_dates):
                                   allow_nan=False).encode()).hexdigest()
     return {
         "schema_version":1,"feature_version":VERSION,
-        "stock_id":stock_id,"market":"tpex",
+        "stock_id":stock_id,"market":market,
         "requested_cutoff":asof.isoformat(),
         "raw_first_date":observed[0][0],"raw_last_date":observed[-1][0],
         "source_rows":len(raw),"original_source_tags":sources,

@@ -103,6 +103,34 @@ class CausalRawFactorBridgeTests(TestCase):
         with self.assertRaises(ValueError):
             build_research_features(data,stock_id="1808",cutoff=cutoff,signal_dates=[cutoff])
 
+    def test_official_twse_source_recalculates_causally_without_writing(self):
+        data=[dict(item,market="twse",stock_id="2330",
+                   source="TWSE_MI_INDEX_ALLBUT0999") for item in bars(320)]
+        cutoff=data[-1]["trade_date"]
+        first=data[270]["trade_date"]
+        full=build_research_features(data,stock_id="2330",market="twse",
+                                     cutoff=cutoff,signal_dates=[first,cutoff])
+        truncated=build_research_features(data[:271],stock_id="2330",market="twse",
+                                          cutoff=first,signal_dates=[first])
+        self.assertEqual(full["market"],"twse")
+        self.assertEqual(full["signals"][0]["market"],"twse")
+        self.assertEqual(full["included_signals"],2)
+        self.assertEqual(full["signals"][0]["feature_vector"],
+                         truncated["signals"][0]["feature_vector"])
+        self.assertEqual(full["database_write_operations"],0)
+        self.assertFalse(full["holdout_independently_verified"])
+        self.assertFalse(full["live_trading_approved"])
+        for wrong in (
+            [dict(data[0],source="TPEX_DATED_OTC_EW")]+data[1:],
+            [dict(data[0],market="tpex")]+data[1:],
+        ):
+            with self.assertRaises(ValueError):
+                build_research_features(wrong,stock_id="2330",market="twse",
+                                        cutoff=cutoff,signal_dates=[cutoff])
+        with self.assertRaises(ValueError):
+            build_research_features(data,stock_id="2330",market="fake",
+                                    cutoff=cutoff,signal_dates=[cutoff])
+
     def test_readonly_neon_adapter_uses_most_recent_not_earliest_limit(self):
         conn=MagicMock()
         conn.__enter__.return_value=conn
