@@ -9,6 +9,7 @@ on:
       - 'tests/test_tpex_dated_history.py'
       - 'tests/test_tpex_dated_history_postgres.py'
       - '.github/workflows/tpex-dated-canary-tests.yml'
+      - '.github/workflows/daily-tpex-dated-history.yml'
   workflow_dispatch:
 
 permissions:
