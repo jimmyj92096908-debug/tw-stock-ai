@@ -21,3 +21,9 @@
 `.github/workflows/official-free-issuer-dividend-evidence.yml` 在一次性 GitHub main marker 成功合併時真正執行一次，往後只利用現有 `Taiwan Stock AI - Daily Data` 成功的排程事件，沒有新增高頻 cron。平日執行有限的官方只讀比對與月度候選證據；**每週五**額外經過容量／網路使用（若可得）核對後，最多寫入一份當週不可覆寫的公司名單快照。手動預設仍是唯讀，只有 `apply_weekly_issuer=true` 會允許這份小型資料快照；其他全部資料表都不會被修改。若來源格式、官方 SSL 或容量限制異常則停止並保留 Artifact，不能當成空資料／成功報酬驗證。
 
 每次 GitHub Artifacts 保留 14 日；正式歷史公司名單的可靠累積在 Neon 的 append-only 週快照，不依賴 Artifacts 長期存在。
+
+## 實際生產來源修補（2026-11-21）
+
+第一個真實 GitHub 任務 [#44919958738](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44919958738) 已成功下載 TWSE 1092 檔、TPEx 898 檔並不可覆寫地封存資料庫。它也揭露 **TPEx** 實際原始欄為 `DateOfListing`，不是僅中文 `上櫃日期`：第一次封存如實顯示 898 檔「日期尚未成功解析」，**不能把這張初始紀錄偷偷更動成正確結果**。新解析包含 `DateOfListing`；同週新證據以獨立**訂正證據行**連到原始 SHA-256，原始週快照不動。下一週按正常完整官方來源時也會保留正確解析欄位。
+
+同一任務的除權息來源確實回傳某些**超出所要求 21 個曆日**的原始資料。新版逐筆檢驗有效事件日期，對區間外股票事件記錄 `excluded_outside_requested_date_range`，**不納入月內金額與事件數**，而不是直接當成來源失敗或將過去事件誤報為本月。來源回傳數與實際納入日期數分開報告，絕不拿臆測的歷史公司行動當作完整五年含息回測。
