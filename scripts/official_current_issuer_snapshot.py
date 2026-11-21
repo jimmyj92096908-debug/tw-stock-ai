@@ -36,6 +36,16 @@ INSERT_SQL="""INSERT INTO public.official_issuer_weekly_snapshots
 VALUES (%s,%s,%s::jsonb)
 ON CONFLICT(observed_week) DO NOTHING
 RETURNING payload_sha256"""
+INSERT_CORRECTION_SQL="""INSERT INTO public.official_issuer_snapshot_corrections
+(observed_week,supersedes_sha256,payload_sha256,snapshot)
+VALUES (%s,%s,%s,%s::jsonb)
+ON CONFLICT(observed_week,payload_sha256) DO NOTHING
+RETURNING payload_sha256"""
+READ_CORRECTION_SQL="""SELECT supersedes_sha256,payload_sha256
+FROM public.official_issuer_snapshot_corrections
+WHERE observed_week=%s AND payload_sha256=%s"""
+CORRECTION_COUNT_SQL="""SELECT COUNT(*)::int AS n FROM public.official_issuer_snapshot_corrections
+WHERE observed_week=%s"""
 
 def listing_date(value):
     if value is None or not str(value).strip() or str(value).strip() in ("--","-"):
@@ -167,17 +177,35 @@ def freeze_weekly(url,snapshot,*,apply=False):
                  "sql/official_issuer_weekly_snapshots.sql").read_text()
             conn.execute(ddl)
             created=conn.execute(INSERT_SQL,(week,snapshot["payload_sha256"],data)).fetchone()
-            # ON CONFLICT is never an UPDATE; an existing, different digest
-            # immediately fails instead of overwriting the original evidence.
+            # The first observed original weekly record is permanent. A
+            # different same-week official parse is a NEW append-only and
+            # traceably linked correction, never an UPDATE/DELETE.
             prior=conn.execute(READ_SQL,(week,)).fetchone()
-            if prior is None or prior["payload_sha256"].strip()!=snapshot["payload_sha256"]:
-                raise RuntimeError("Existing weekly official source proof cannot be overwritten")
+            if prior is None:
+                raise RuntimeError("Original weekly issuer evidence absent")
+            original_hash=prior["payload_sha256"].strip()
+            corrected=False
+            new_corr=False
+            if original_hash!=snapshot["payload_sha256"]:
+                previous_count=conn.execute(CORRECTION_COUNT_SQL,(week,)).fetchone()["n"]
+                if type(previous_count) is not int or previous_count>=2:
+                    raise RuntimeError("Do not keep rewriting official original issuer evidence")
+                added=conn.execute(INSERT_CORRECTION_SQL,(
+                    week,original_hash,snapshot["payload_sha256"],data)).fetchone()
+                proof=conn.execute(READ_CORRECTION_SQL,(
+                    week,snapshot["payload_sha256"])).fetchone()
+                if proof is None or proof["supersedes_sha256"].strip()!=original_hash:
+                    raise RuntimeError("New issuer correction not permanently linked to original")
+                corrected=True
+                new_corr=added is not None
             if conn.execute(SIZE_SQL).fetchone()["bytes"]>=STORAGE_STOP_BYTES:
                 raise RuntimeError("Would exceed free safety reserve")
     return {"persisted":True,"observed_week":week.isoformat(),
             "payload_sha256":snapshot["payload_sha256"],
-            "new_or_same_preexisting":created is not None,
-            "database_writes":1 if created is not None else 0}
+            "original_week_hash_sha256":original_hash,
+            "immutable_original_corrected_by_new_receipt":corrected,
+            "new_or_same_preexisting":created is not None or new_corr,
+            "database_writes":int(created is not None)+int(new_corr)}
 
 def run(url,*,apply=False,report_path=None):
     # Download exact two authoritative endpoints; never fabricate historical
