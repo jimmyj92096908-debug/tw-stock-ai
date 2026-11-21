@@ -1,0 +1,11 @@
+2026-11-21: owner authorized ONE final capped verified official TPEx
+source-to-score v4 batch within existing GitHub Actions + Neon Free budget.
+At most ten TPEx symbols, at most five official months each, no more than
+50 source requests. Insert ONLY verified missing price primary keys with
+ON CONFLICT DO NOTHING. No fake prices or historical backdating.
+Under the existing indicator writer mutex, score only newly eligible
+stock names in two <=5 stock rounds, then verify matched==eligible on the
+same stock's latest valid closing day. Stop at 800MB database guard,
+invalid source input, or nonmatching acceptance; no unbounded retry.
+Do not change LINE, webhook, frozen model, signal permissions or orders.
+Never reuse, change, or recommit this one-time authorization marker.
