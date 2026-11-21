@@ -136,7 +136,18 @@ def formulate_plan(db_bytes,tables,source_stats,cohort):
     # 898 stock_master entries may include never-listed/renamed delistings.
     # This is a capacity scenario, not proof that all known dates traded.
     remaining_source_dates=source_stats["incomplete_anchor_days"]
-    scenario_raw_add_bytes=remaining_source_dates*850*price_b
+    # Capacity planning must include the derived rows for FUTURE market dates,
+    # not merely current missing derived rows. A full-market day could contain
+    # nearly all 898 currently registered TPEx symbols; 900 is a stated
+    # scenario assumption, NOT a proven listing-date/upper-bound guarantee.
+    scenario_stocks_per_day=900
+    scenario_new_raw_rows=remaining_source_dates*scenario_stocks_per_day
+    scenario_raw_add_bytes=scenario_new_raw_rows*price_b
+    scenario_future_derived_bytes=scenario_new_raw_rows*sum(derived_b.values())
+    future_all_features_projection=(
+        projected_full_derived+scenario_raw_add_bytes+
+        scenario_future_derived_bytes
+    )
     selected=[]
     selected_price_rows=0
     for r in cohort:
@@ -170,13 +181,16 @@ def formulate_plan(db_bytes,tables,source_stats,cohort):
        "estimated_unfilled_derived_row_counts":missing,
        "estimated_full_derived_catchup_extra_bytes":estimated_factor_bytes,
        "estimated_database_after_full_derived":projected_full_derived,
-       "full_history_derivatives_fit_free_safety_budget_estimate":
+       "current_missing_derived_only_fits_free_safety_budget_estimate":
          projected_full_derived+MIN_RECOMPUTE_FREE_BYTES<SAFETY_STOP_BYTES,
+       "full_history_derivatives_fit_free_safety_budget_estimate":
+         future_all_features_projection+MIN_RECOMPUTE_FREE_BYTES<SAFETY_STOP_BYTES,
        "scenario_missing_market_days":remaining_source_dates,
-       "scenario_assumed_new_market_quotes_per_day":850,
+       "scenario_assumed_new_market_quotes_per_day":scenario_stocks_per_day,
+       "scenario_unverified_future_raw_price_rows":scenario_new_raw_rows,
        "estimated_unfilled_raw_source_extra_bytes":scenario_raw_add_bytes,
-       "source_plus_full_derived_projection_bytes":
-           projected_full_derived+scenario_raw_add_bytes,
+       "estimated_future_source_derived_extra_bytes":scenario_future_derived_bytes,
+       "source_plus_full_derived_projection_bytes":future_all_features_projection,
        "selected_preview_stocks":selected,
        "selected_preview_raw_price_rows":selected_price_rows,
        "selected_estimated_rewrite_buffer_bytes":selected_estimated_write_bytes,
@@ -184,6 +198,7 @@ def formulate_plan(db_bytes,tables,source_stats,cohort):
        "manual_derived_recompute_permitted_now":False,
        "must_wait_until_source_campaign_stopped":True,
        "forecast_is_not_guaranteed":True,
+       "scenario_not_verified_listing_history":True,
        "full_five_year_per_stock_history_verified":False,
        "latest_day_scores_are_not_historical_factor_completeness":True,
        "raw_prices_modified":False,"derived_rows_modified":False,
