@@ -32,7 +32,7 @@ class TPExInsertOnlyTests(TestCase):
     def test_validates_official_month_and_skips_nontraded_not_synthesized(self):
         rows=[
             official(month="2026-07",day="01"),
-            official(month="2026-07",day="02",close=None),
+            {**official(month="2026-07",day="02"),"close":None},
         ]
         rows[1]["open"]=None
         rows[1]["high"]=None
