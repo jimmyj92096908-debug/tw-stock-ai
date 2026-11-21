@@ -1,0 +1,66 @@
+name: Official TWSE Read-Only In-Memory Technical and SMC Canary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/raw_factor_feature_bridge.py'
+      - 'scripts/twse_raw_factor_canary.py'
+      - '.github/workflows/twse-raw-factor-canary.yml'
+  pull_request:
+    paths:
+      - 'src/raw_factor_feature_bridge.py'
+      - 'scripts/twse_raw_factor_canary.py'
+      - 'tests/test_twse_raw_factor_canary.py'
+      - 'tests/test_raw_factor_feature_bridge.py'
+      - '.github/workflows/twse-raw-factor-canary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Compile and prove source market provenance, causal prefix and zero-write contract
+        run: |
+          python -m py_compile src/raw_factor_feature_bridge.py scripts/twse_raw_factor_canary.py
+          python -m unittest tests.test_raw_factor_feature_bridge tests.test_twse_raw_factor_canary -v
+
+  actual-readonly:
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    needs: offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Reconstruct five currently-listed official TWSE raw-factor snapshots in memory
+        run: |
+          test -n "$DATABASE_URL"
+          python scripts/twse_raw_factor_canary.py --report twse-raw-factor-canary.json
+      - name: Preserve honest causal but non-validated research receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twse-five-stock-raw-factor-no-storage
+          path: twse-raw-factor-canary.json
+          if-no-files-found: ignore
+          retention-days: 14
