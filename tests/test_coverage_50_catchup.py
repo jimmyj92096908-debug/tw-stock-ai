@@ -27,9 +27,10 @@ class FiftyPercentCatchUpTests(unittest.TestCase):
         self.assertIn("c.total_score IS NOT NULL", cov.COVERAGE_SQL)
 
     def test_preview_cannot_write(self):
-        with patch.object(cov, "read_snapshot", return_value=snapshot()), (
-            patch.object(cov, "batch_run", side_effect=AssertionError("write")), (
-            patch.object(cov, "calculate_all", side_effect=AssertionError("score"))
+        with (
+            patch.object(cov, "read_snapshot", return_value=snapshot()),
+            patch.object(cov, "batch_run", side_effect=AssertionError("write")),
+            patch.object(cov, "calculate_all", side_effect=AssertionError("score")),
         ):
             report = cov.run_coverage("fake")
         self.assertFalse(report["indicator_writes_attempted"])
