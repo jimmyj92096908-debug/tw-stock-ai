@@ -1,0 +1,80 @@
+name: One-Time TPEx Legacy Derived Source Unit Recalibration
+
+on:
+  workflow_run:
+    workflows:
+      - 'One-Time TPEx Last-Mile Verified Historical Completion'
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Explicitly correct legacy TPEx derived indicators and research scores? Default preview.'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Never compete with routine indicator catch-up on the same 70 stocks.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  fix-legacy-derived-only:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.name == 'One-Time TPEx Last-Mile Verified Historical Completion' &&
+         github.event.workflow_run.event == 'workflow_run' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.repository.full_name == github.repository)
+        ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.ref == 'refs/heads/main' && inputs.apply == true)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Use existing free Python dependencies
+        run: pip install -r requirements.txt
+      - name: Verify all source / derived-only safety tests
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_legacy_derived_repair.py src/build_adjusted_prices.py
+          python -m unittest tests.test_tpex_legacy_derived_repair tests.test_tpex_derived_units -v
+      - name: Preview only proven legacy TPEx source-repair cohort
+        run: python scripts/tpex_legacy_derived_repair.py --offset 0 --limit 10 --report legacy-preview.json
+      - name: Recalculate only source-provenanced legacy TPEx derived data and research scores
+        env:
+          STOCK_TPEX_LEGACY_DERIVED_REPAIR_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_LEGACY_SCORE_RECALC_ENABLED: 'yes'
+        run: |
+          set -euo pipefail
+          for offset in 0 10 20 30 40 50 60; do
+            echo "### TPEx source-provenanced legacy derived stock offset: $offset" >> "$GITHUB_STEP_SUMMARY"
+            python scripts/tpex_legacy_derived_repair.py --apply --rescore --offset "$offset" --limit 10 --report "legacy-derived-$offset.json"
+          done
+      - name: Preserve aggregate no-raw-price-mutation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-legacy-derived-only-verified
+          path: |
+            legacy-preview.json
+            legacy-derived-*.json
+          if-no-files-found: ignore
+          retention-days: 14
