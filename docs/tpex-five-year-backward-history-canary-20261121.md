@@ -34,3 +34,9 @@
 ## v2 失敗真正原因與 v3 修正
 
 [v2 工作 #44906408099](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44906408099) 預覽及測試皆成功，但 4183／6212 兩個錨點因 `psycopg.rows.dict_row` 返回**欄位字典**，舊程式使用 `for day,close in known` 把**字典的鍵名**當成交易日／價格，將實際已證明存在的比對記錄誤判為零筆。這不是證交所舊月無資料。正式 Neon 再次查核兩檔仍只有 60／61 個有效日期、原始行情 0 新增；狀態 `failed` 已合法保存並保留兩天冷卻。v3 改為 `row["trade_date"]`／`row["close"]`，使用**真實 dict_row 形狀**測試至少兩筆吻合、少於兩筆、價格不一致都拒絕。下一次獨立標記 `.github/tpex-official-long-history-two-symbol-v3-20261121.txt` 最多 2 檔×5 月請求；若因原 4183／6212 冷卻轉選其他合格股，仍要求官方獨立來源錨點，並不指名繞過冷卻。
+
+## 先關閉歷史因子缺口，再擴大官方長期行情回補
+
+PR #130 的受控工作 [#44906617360](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44906617360) 已實際成功：只新增官方缺漏日期，5520 由 65→141 日（+76），6762 由 66→130 日（+64），兩檔最早有效價日延伸至 2026-03-02，並保留原有 OHLCV。新日期總計 **140 筆**，但它們尚缺 `daily_adjusted_prices`、`daily_technicals`、`daily_smc`；正式來源審核因此短暫出現上櫃**歷史因子 877／879** 及官方月資料調整衍生單位缺漏 140 筆（原始價量沒有異常）。研究股票最近評分仍為 879／879。
+
+一次性 `scripts/tpex_two_stock_history_derived_closeout.py` 僅針對 5520/6762 重算衍生資料及必要最新研究評分、檢查所有原始上櫃股票日 K 的筆數／量額總和與新舊日期完全不變、Neon Free <800MB、最終完整歷史因子 **879／879** 及官方月資料衍生單位差異歸零。正式寫入限一個新增標記 `.github/tpex-two-stock-derived-closeout-20261121.txt`、三道獨立環境許可；手動 `workflow_dispatch` 預設唯讀。這不代表五年歷史回補完成或原模型能投資實盤。

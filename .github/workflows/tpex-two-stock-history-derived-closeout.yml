@@ -1,0 +1,83 @@
+name: TPEx Two-Stock Historical Factor Closeout After Official Price Canary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-two-stock-derived-closeout-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        type: boolean
+        required: true
+        default: false
+        description: "Restore historical factors for source-verified 5520 and 6762 only?"
+
+permissions:
+  contents: read
+
+# Serialize against current official price backfill and indicator source repair.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  exact-two-stock-derived-only:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    concurrency:
+      group: twstock-tpex-dated-official-history
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify newly committed, exact one-time release marker
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-two-stock-derived-closeout-20261121.txt"; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test scoped provenance, real source unit invariants and score freshness
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_two_stock_history_derived_closeout.py
+          python -m unittest tests.test_tpex_two_stock_history_derived_closeout tests.test_tpex_stale_factor_refresh tests.test_tpex_legacy_derived_repair -v
+      - name: Read-only exact two-stock and 140 derived-missing source provenance check
+        run: python scripts/tpex_two_stock_history_derived_closeout.py --report two-stock-closeout-preview.json
+      - name: Reconcile only verified historical technical/SMC and latest scores
+        if: >-
+          (github.event_name == 'push' && steps.release.outputs.approved == 'true') ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_TPEX_TWO_STOCK_DERIVED_CLOSEOUT_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_STALE_SCORE_WRITE_ENABLED: 'yes'
+        run: python scripts/tpex_two_stock_history_derived_closeout.py --apply --report two-stock-closeout-evidence.json
+      - name: Retain audited research-only proof with no raw OHLCV changes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-two-stock-official-history-derived-closeout
+          path: |
+            two-stock-closeout-preview.json
+            two-stock-closeout-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore
