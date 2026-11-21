@@ -1,0 +1,68 @@
+name: TPEx Five-Year Dated Market Full Free Campaign
+
+on:
+  workflow_run:
+    workflows:
+      - "TPEx Five-Year Dated Market Source Canary"
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Separate outer group prevents a different queued run from replacing a
+# pending acceptance; existing official market writer mutex is still shared.
+concurrency:
+  group: twstock-tpex-five-year-full-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verified-five-year-price-dates:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.repository.full_name == github.repository
+    concurrency:
+      group: twstock-tpex-dated-official-history
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Revalidate official provenance and finite resource budget
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_five_year_market_backfill.py
+          python -m unittest tests.test_tpex_five_year_market_backfill tests.test_tpex_dated_history tests.test_tpex_dated_bulk_canary -v
+      - name: Preview remaining anchored historical dates without writes
+        run: python scripts/tpex_five_year_market_backfill.py --max-days 1250 --report tpex-five-year-full-preview.json
+      - name: Insert only real official five-year dates with safe per-day commits
+        env:
+          STOCK_TPEX_FIVE_YEAR_SOURCE_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
+        run: python scripts/tpex_five_year_market_backfill.py --apply --max-days 1250 --pause-seconds 2 --report tpex-five-year-full-evidence.json
+      - name: Preserve exact per-date source and Neon capacity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-year-market-free-source-evidence
+          path: |
+            tpex-five-year-full-preview.json
+            tpex-five-year-full-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore
