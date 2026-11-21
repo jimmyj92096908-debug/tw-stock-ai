@@ -76,11 +76,11 @@ WITH last_market AS (
      WHERE t.market=e.market AND t.stock_id=e.stock_id) tech_days,
    (SELECT count(*) FROM public.daily_smc s
      WHERE s.market=e.market AND s.stock_id=e.stock_id) smc_days,
-   (SELECT max(a.calculated_at) FROM public.daily_adjusted_prices a
+   (SELECT min(a.calculated_at) FROM public.daily_adjusted_prices a
      WHERE a.market=e.market AND a.stock_id=e.stock_id) adjusted_at,
-   (SELECT max(t.calculated_at) FROM public.daily_technicals t
+   (SELECT min(t.calculated_at) FROM public.daily_technicals t
      WHERE t.market=e.market AND t.stock_id=e.stock_id) technical_at,
-   (SELECT max(s.calculated_at) FROM public.daily_smc s
+   (SELECT min(s.calculated_at) FROM public.daily_smc s
      WHERE s.market=e.market AND s.stock_id=e.stock_id) smc_at,
    (SELECT max(c.calculated_at) FROM public.daily_composite_scores c
      WHERE c.market=e.market AND c.stock_id=e.stock_id
