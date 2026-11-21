@@ -25,6 +25,17 @@ BASELINE={"price_rows":198000,"latest_price_date":date(2026,11,20),
 
 
 class NewEligibleFollowonTests(TestCase):
+    def test_single_auto_followon_requires_exact_completed_legacy_run(self):
+        workflow=(Path(__file__).resolve().parents[1] /
+                  ".github/workflows/new-eligible-score-once.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_run:",workflow)
+        self.assertIn("44864565316",workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'",workflow)
+        self.assertIn("github.event.workflow_run.repository.full_name == github.repository",workflow)
+        self.assertIn("github.event.workflow_run.head_branch == 'feat/new-eligible-incremental-score-20261121'",workflow)
+        self.assertIn("group: twstock-indicator-catchup",workflow)
+        self.assertNotIn("  schedule:",workflow)
+
     def test_legacy_full_rebuild_is_not_automatically_triggered_by_code_push(self):
         workflow=(Path(__file__).resolve().parents[1] /
                   ".github/workflows/build-composite-scores.yml").read_text(encoding="utf-8")
