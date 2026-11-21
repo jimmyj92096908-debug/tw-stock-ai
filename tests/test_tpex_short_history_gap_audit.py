@@ -9,13 +9,17 @@ from unittest.mock import patch
 from scripts import tpex_short_history_gap_audit as audit
 
 
-def row(band,n,first="2026-08-19",last="2026-11-18"):
-    return {
+def row(band,n,first="2026-08-19",last="2026-11-18",depth=None):
+    result={
         "band":band,"stocks":n,
         "earliest_observed_start":date.fromisoformat(first),
         "latest_observed_start":date.fromisoformat(last),
-        "latest_market_date":date(2026,11,20)
+        "latest_market_date":date(2026,11,20),
+        "at_least_120":0,"at_least_240":0,
+        "at_least_1000":0,"span_five_years_1000":0,
     }
+    result.update(depth or {})
+    return result
 
 
 class FakeConnection:
@@ -41,13 +45,21 @@ class TPExShortHistoryGapTests(unittest.TestCase):
             row("30-39",3),
             row("40-49",18),
             row("50-59",68,"2026-07-01","2026-09-03"),
-            row("60+",787,"2021-01-04","2026-08-20"),
+            row("60+",787,"2021-01-04","2026-08-20",
+                depth={"at_least_120":18,"at_least_240":18,
+                       "at_least_1000":16,"span_five_years_1000":16}),
         ]
         output=audit.check_and_aggregate(sample)
         self.assertEqual(output["currently_priced"],883)
         self.assertEqual(output["eligible_real_60_session_history"],787)
         self.assertEqual(output["below_60_session_history"],96)
         self.assertEqual(output["bands"]["50-59"],68)
+        self.assertEqual(output["observed_session_depth"]["only_60_to_119"],769)
+        self.assertEqual(output["observed_session_depth"]["at_least_120"],18)
+        self.assertEqual(output["observed_session_depth"]["at_least_240"],18)
+        self.assertEqual(output["observed_session_depth"]["at_least_1000"],16)
+        self.assertEqual(output["observed_session_depth"]["at_least_1000_with_five_year_observed_span"],16)
+        self.assertFalse(output["full_five_year_official_history_verified"])
         self.assertFalse(output["official_listing_dates_independently_verified"])
         self.assertTrue(output["new_listing_vs_missing_history_not_yet_classified"])
         self.assertFalse(output["inferred_trading_dates_inserted"])
@@ -68,6 +80,10 @@ class TPExShortHistoryGapTests(unittest.TestCase):
         self.assertIn("COUNT(*) FILTER(WHERE close>0 AND volume>=0)",
                       audit.GAPS_SQL)
         self.assertIn("today.close>0 AND today.volume>=0",audit.GAPS_SQL)
+        self.assertIn("valid_days>=120",audit.GAPS_SQL)
+        self.assertIn("valid_days>=240",audit.GAPS_SQL)
+        self.assertIn("valid_days>=1000",audit.GAPS_SQL)
+        self.assertIn("first_observed<=latest_date-INTERVAL '5 years'",audit.GAPS_SQL)
         sql=audit.GAPS_SQL.upper()
         self.assertNotIn("UPDATE PUBLIC",sql)
         self.assertNotIn("DELETE FROM",sql)
@@ -80,6 +96,11 @@ class TPExShortHistoryGapTests(unittest.TestCase):
             [row("60+",787,first="2026-11-20",last="2026-11-18")],
             [row("55-59",883)],
             [row("0-19",-1),row("60+",883)],
+            [row("60+",883,depth={"at_least_120":884})],
+            [row("60+",883,depth={"at_least_120":10,"at_least_240":11})],
+            [row("60+",883,depth={"at_least_120":20,"at_least_240":20,"at_least_1000":20,"span_five_years_1000":21})],
+            [row("0-19",2,depth={"at_least_120":1}),row("60+",881)],
+            [dict(row("60+",883),at_least_240=None)],
             [dict(row("60+",883),latest_market_date=date(2026,11,1))],
         ):
             with self.subTest(broken=broken):
