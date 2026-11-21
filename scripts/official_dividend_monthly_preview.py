@@ -172,7 +172,7 @@ def assess(groups,*,start,end,observed_at,current_stocks,existing_counts):
                 raise ValueError("Malformed official event row")
             symbol=str(_pick(item,["股票代號","證券代號","代號",
                                    "Code","SecuritiesCompanyCode"]) or "").strip()
-            if re.fullmatch(r"\\d{4}",symbol):
+            if re.fullmatch(r"\d{4}",symbol):
                 date_raw=_pick(item,["除權息日期","除權日期","恢復買賣日期",
                                     "恢復交易日期","資料日期","日期","Date"])
                 if date_raw is None:
