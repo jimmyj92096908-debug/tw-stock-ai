@@ -39,7 +39,7 @@
 `market`, `stock_id`, `as_of_date`, `total_score`,
 `technical_score`, `smc_score`, `short_term_score`, `swing_score`,
 `long_term_score`, `coverage_weight`, `adjusted_close`,
-`entry_close`, `exit_close`, `exit_date`。
+`entry_date`, `entry_close`, `exit_close`, `exit_date`。
 信號使用交易日當日已知因子；未來調整收盤資料只作**歷史標籤**。
 使用者自行提供這份核實的 JSON；目前 repo 中的彙總評估 JSON
 **不包含每日期、每檔完整標籤，不能假裝可以直接重跑回測**。
@@ -54,9 +54,26 @@ python scripts/offline_research_diagnostics.py \
 ```
 
 可選 `--benchmark verified-index-horizon-returns.json`，
-格式是 `{"YYYY-MM-DD": 0.01}`；每個鍵值是**對應研究持有期間**
-的已驗證基準淨報酬，不是任意一日指數漲跌幅。缺少任一訊號日期即標示
-基準不完整，不宣稱勝過大盤。
+格式為日期對應完整持有期間的物件，不能只提供單一數值：
+```json
+{
+  "2026-11-19": {
+    "entry_date": "2026-11-20",
+    "exit_date": "2026-11-27",
+    "net_return": 0.012
+  }
+}
+```
+研究標籤是**訊號日隔一交易日收盤進場**，並於對應後續交易日出場。
+傳入的 `entry_date`、`exit_date` 必須與該批所有股票的**真實進出日期完全相同**；
+若個股停牌導致離場日不同，必須拒絕產生單一指數比較。
+若只有舊版 `{"YYYY-MM-DD": 0.01}` 形式，也必須拒絕；
+缺任一研究持有期間僅標示基準不完整，不能聲稱勝過大盤。
+`net_return` 是使用者已按一致成本假設定義的**持有期十進位淨報酬**，
+不是某日指數變動或百分數 1.2。
+本離線工具無法自行向官方核實指數來源，輸出
+`external_benchmark_provenance_independently_verified=false`，
+僅能視為經日期對齊的**使用者提供研究資料**，不是經官方獨立驗證。
 
 可選 `--index-prices official-index-closes.json --as-of-date YYYY-MM-DD`，
 其中每筆為 `{"date":"YYYY-MM-DD","close":12345.67}` 且按日期升冪。
