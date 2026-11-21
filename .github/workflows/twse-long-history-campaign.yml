@@ -1,11 +1,9 @@
 name: One-Time TWSE Official Long-History 240-Session Research Catch-Up
 
 on:
-  workflow_run:
-    workflows:
-      - 'One-Time TPEx Legacy Derived Source Unit Recalibration'
-    types:
-      - completed
+  schedule:
+    # Independent root: 17:30 Asia/Taipei daily; never 4th workflow_run.
+    - cron: '30 9 * * *'
   workflow_dispatch:
     inputs:
       apply:
@@ -27,12 +25,7 @@ jobs:
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       (
-        (github.event_name == 'workflow_run' &&
-         github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.name == 'One-Time TPEx Legacy Derived Source Unit Recalibration' &&
-         github.event.workflow_run.event == 'workflow_run' &&
-         github.event.workflow_run.head_branch == 'main' &&
-         github.event.workflow_run.repository.full_name == github.repository)
+        (github.event_name == 'schedule' && github.ref == 'refs/heads/main')
         ||
         (github.event_name == 'workflow_dispatch' &&
          github.ref == 'refs/heads/main' && inputs.apply == true)
@@ -49,15 +42,21 @@ jobs:
           python-version: '3.11'
       - name: Use preexisting free Python dependencies
         run: pip install -r requirements.txt
+      - name: Read-only prerequisites from completed TPEx source and derived units
+        id: gate
+        run: python scripts/twse_240_release_gate.py --mode source
       - name: Verify official TWSE date/coverage parsing and fail-closed batch rules
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           test -n "$DATABASE_URL"
           python -m py_compile src/twse_dated_history.py scripts/twse_long_history_campaign.py
           python -m unittest tests.test_twse_dated_history tests.test_twse_long_history_campaign tests.test_official_market_feed -v
       - name: Preview initial TWSE source depth; no writes or API fetch
+        if: steps.gate.outputs.should_run == 'true'
         run: python scripts/twse_long_history_campaign.py --max-rounds 14 --report twse-long-preview.json
       - name: Sequentially import at most 112 independent official market days
+        if: steps.gate.outputs.should_run == 'true'
         env:
           STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED: 'yes'
           STOCK_TWSE_HISTORY_WRITE_ENABLED: 'yes'
