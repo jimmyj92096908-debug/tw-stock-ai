@@ -45,6 +45,16 @@ WHERE m.valid_days>=240 AND m.latest=l.day
 ORDER BY m.valid_days DESC,m.stock_id LIMIT 5
 """
 
+RECENT_MATURED_SQL = (
+    CANDIDATES_SQL.replace(
+        "WHERE m.valid_days>=240 AND m.latest=l.day",
+        "WHERE m.valid_days>=241 AND m.latest=l.day",
+    ).replace(
+        "ORDER BY m.valid_days DESC,m.stock_id LIMIT 5",
+        "ORDER BY m.valid_days ASC,m.stock_id LIMIT 5",
+    )
+)
+
 SOURCE_SQL="""
 SELECT market,stock_id,trade_date,open,high,low,close,volume,
        turnover,price_change,transactions,source
@@ -58,9 +68,11 @@ FROM (
 ) sorted_prices ORDER BY trade_date
 """
 
-def run(url):
+def run(url, *, cohort="deep"):
     if not url:
         raise ValueError("Protected DATABASE_URL required")
+    if cohort not in ("deep","recent"):
+        raise ValueError("Unknown official source history maturity cohort")
     with psycopg.connect(url,connect_timeout=20,row_factory=dict_row,
                          options="-c default_transaction_read_only=on") as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -70,7 +82,9 @@ def run(url):
         ).fetchone()["bytes"]
         if type(size) is not int or size<=0 or size>=MAX_DB_BYTES:
             raise RuntimeError("Neon free database read-only canary capacity gate")
-        selected=[dict(row) for row in conn.execute(CANDIDATES_SQL).fetchall()]
+        selected=[dict(row) for row in conn.execute(
+            CANDIDATES_SQL if cohort=="deep" else RECENT_MATURED_SQL
+        ).fetchall()]
         if len(selected)!=STOCK_LIMIT or len({r["stock_id"] for r in selected})!=STOCK_LIMIT:
             raise RuntimeError("Insufficient unique current official 240-session stock canary")
         proofs=[]
@@ -116,6 +130,7 @@ def run(url):
                    separators=(",",":"),allow_nan=False).encode()).hexdigest()
     return {
         "scope":"TWSE_OFFICIAL_CURRENT_ACTIVE_RAW_FACTOR_READONLY_CANARY",
+        "source_history_cohort":cohort,
         "completed_at_utc":datetime.now(timezone.utc).isoformat(),
         "real_stock_sample_count":len(proofs),
         "original_source_price_rows":sum(item["raw_sessions_used"] for item in proofs),
@@ -138,13 +153,15 @@ def run(url):
 def main():
     parser=argparse.ArgumentParser(description="Official TWSE raw factor 5-stock causal no-storage proof")
     parser.add_argument("--report",type=Path,default=Path("twse-raw-factor-canary.json"))
+    parser.add_argument("--cohort",choices=("deep","recent"),default="deep")
     args=parser.parse_args()
-    report=run(os.environ.get("DATABASE_URL",""))
+    report=run(os.environ.get("DATABASE_URL",""),cohort=args.cohort)
     args.report.parent.mkdir(parents=True,exist_ok=True)
     args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",
                            encoding="utf-8")
     print(json.dumps({
         "scope":report["scope"],
+        "cohort":report["source_history_cohort"],
         "stocks":report["real_stock_sample_count"],
         "raw_rows":report["original_source_price_rows"],
         "no_future_suffix_checks":report["verified_no_future_suffix_samples"],
