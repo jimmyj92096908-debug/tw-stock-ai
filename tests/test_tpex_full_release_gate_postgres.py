@@ -86,6 +86,25 @@ class TPExGateFullHistoryIntegration(unittest.TestCase):
             self.assertEqual(second["tpex_matched"],1)
             self.assertEqual(conn.execute("SELECT count(*) AS n FROM daily_prices").fetchone()["n"],80)
 
+            # A SINGLE older dated factor with an obsolete timestamp
+            # invalidates full history even when all historical rows and the
+            # very latest score exist and the maximum timestamp is fresh.
+            conn.execute("""UPDATE public.daily_technicals
+                 SET calculated_at='2026-11-19 01:00:00+00'
+                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                 (dates[0],))
+            conn.commit()
+            stale=conn.execute(gate.STATE_SQL).fetchone()
+            self.assertEqual(stale["tpex_matched"],1)
+            self.assertEqual(stale["tpex_historical_factors_current"],0)
+            conn.execute("""UPDATE public.daily_technicals
+                 SET calculated_at='2026-11-20 02:00:00+00'
+                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                 (dates[0],))
+            conn.commit()
+            self.assertEqual(conn.execute(gate.STATE_SQL).fetchone()[
+                "tpex_historical_factors_current"],1)
+
             # Another independently sourced OLDER date invalidates the
             # previously complete calculation even if the last-date score is there.
             conn.execute("""INSERT INTO public.daily_prices
