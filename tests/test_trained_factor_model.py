@@ -126,6 +126,8 @@ class TrainedModelContracts(unittest.TestCase):
         query = model.TRAINING_SQL
         self.assertIn("LEAD(a.close,6)", query)
         self.assertIn("LEAD(p.trade_date,6)", query)
+        self.assertIn("LEAD(p.trade_date,1)", query)
+        self.assertIn("p.entry_date", query)
         self.assertIn("p.trade_date=s.as_of_date", query)
         self.assertIn("LEFT JOIN public.daily_adjusted_prices", query)
         self.assertNotIn("INSERT INTO", query)

@@ -39,6 +39,7 @@ def history_rows(count=100):
                 "smc_score":80-3*j,"short_term_score":85-4*j,
                 "swing_score":75-2*j,"long_term_score":None,
                 "coverage_weight": .60, "adjusted_close":100.0,
+                "entry_date":(day + timedelta(days=1)).isoformat(),
                 "entry_close":100.0, "exit_close":100*(1+change),
                 "exit_date":(day + timedelta(days=5)).isoformat(),
             })
@@ -110,12 +111,17 @@ class RiskTests(unittest.TestCase):
         self.assertAlmostEqual(out["compounded_net_return"],-.032)
         self.assertFalse(out["external_benchmark_complete"])
         self.assertIsNone(out["external_benchmark_mean_net_return"])
+        self.assertIsNone(out["mean_net_advantage_over_external_benchmark"])
+        self.assertAlmostEqual(out["mean_net_advantage_over_original_score"],-.01333333)
         self.assertFalse(out["trading_approved"])
         outcomes[0]["benchmark_net_return"]=.03
         self.assertFalse(nonoverlapping_path(outcomes)["external_benchmark_complete"])
         outcomes[1]["benchmark_net_return"]=-.02
         outcomes[2]["benchmark_net_return"]=.01
-        self.assertTrue(nonoverlapping_path(outcomes)["external_benchmark_complete"])
+        aligned=nonoverlapping_path(outcomes)
+        self.assertTrue(aligned["external_benchmark_complete"])
+        self.assertAlmostEqual(aligned["mean_net_advantage_over_external_benchmark"],-.00666667)
+        self.assertEqual(aligned["model_beats_external_benchmark_fraction"],.666667)
 
     def test_same_day_overlap_unsorted_and_bad_returns_are_rejected(self):
         event={"signal_date":"2026-11-01","exit_date":"2026-11-06",
@@ -170,7 +176,7 @@ class WalkForwardTests(unittest.TestCase):
         self.assertFalse(out["pristine_future_holdout_proven"])
         self.assertFalse(out["orders_enabled"])
         self.assertFalse(out["line_trade_signals_enabled"])
-        self.assertEqual(out["benchmark_status"],"NOT_PROVIDED_OR_INCOMPLETE")
+        self.assertEqual(out["benchmark_status"],"NOT_PROVIDED")
         windows=out["tested_windows"]
         for prev,next_ in zip(windows,windows[1:]):
             self.assertLess(prev["exit_date"],next_["signal_date"])
@@ -201,13 +207,78 @@ class WalkForwardTests(unittest.TestCase):
         self.assertNotEqual(out["tested_windows"][0]["signal_date"],self.START)
         self.assertEqual(out["folds"][0]["excluded"]["skipped_dates"]["incomplete_forward"],1)
 
-    def test_only_verified_explicit_benchmark_can_be_compared(self):
+    def test_only_exact_period_aligned_user_supplied_benchmark_can_be_compared(self):
         rows=history_rows()
-        dates={(date(2026,8,1)+timedelta(days=i)).isoformat():0.0 for i in range(100)}
+        start=date(2026,8,1)
+        dates={
+            (start+timedelta(days=i)).isoformat():{
+                "entry_date":(start+timedelta(days=i+1)).isoformat(),
+                "exit_date":(start+timedelta(days=i+5)).isoformat(),
+                "net_return":0.0,
+            } for i in range(100)
+        }
         out=walk_forward_diagnostics(rows,first_test_date=self.START,max_folds=2,
                                      verified_benchmark_returns=dates)
-        self.assertEqual(out["benchmark_status"],"ALIGNED_EXTERNALLY_SUPPLIED")
+        self.assertEqual(out["benchmark_status"],"PERIOD_ALIGNED_USER_SUPPLIED")
+        self.assertFalse(out["external_benchmark_provenance_independently_verified"])
         self.assertEqual(out["nonoverlapping_risk"]["external_benchmark_mean_net_return"],0.0)
+        self.assertEqual(out["nonoverlapping_risk"]["model_beats_external_benchmark_fraction"],1.0)
+
+    def test_rejects_unaligned_benchmark_values_not_merely_signal_date(self):
+        rows=history_rows()
+        for invalid in (
+            0.01,
+            {"entry_date":(date.fromisoformat(self.START)+timedelta(days=1)).isoformat(),
+             "exit_date":"2026-12-31", "net_return":0.0},
+            {"entry_date":self.START,
+             "exit_date":(date.fromisoformat(self.START)+timedelta(days=5)).isoformat(),
+             "net_return":0.0},
+            {"entry_date":(date.fromisoformat(self.START)+timedelta(days=1)).isoformat(),
+             "exit_date":(date.fromisoformat(self.START)+timedelta(days=5)).isoformat(),
+             "net_return":float("nan")},
+        ):
+            with self.subTest(invalid=str(invalid)):
+                with self.assertRaisesRegex(ValueError,"Benchmark"):
+                    walk_forward_diagnostics(rows,first_test_date=self.START,max_folds=1,
+                                             fold_signals=1,
+                                             verified_benchmark_returns={self.START:invalid})
+
+    def test_benchmark_does_not_assume_all_securities_share_an_exit(self):
+        rows=history_rows()
+        for row in rows:
+            if row["as_of_date"]==self.START and row["stock_id"]=="1300":
+                row["exit_date"]=(date.fromisoformat(self.START)+timedelta(days=6)).isoformat()
+        record={
+            "entry_date":(date.fromisoformat(self.START)+timedelta(days=1)).isoformat(),
+            "exit_date":(date.fromisoformat(self.START)+timedelta(days=6)).isoformat(),
+            "net_return":0.0,
+        }
+        with self.assertRaisesRegex(ValueError, "differing security"):
+            walk_forward_diagnostics(rows,first_test_date=self.START,max_folds=1,
+                                     fold_signals=1,verified_benchmark_returns={self.START:record})
+
+    def test_missing_benchmark_entry_day_prevents_claimed_comparison(self):
+        rows=history_rows()
+        for row in rows:
+            if row["as_of_date"]==self.START:
+                row.pop("entry_date")
+        record={
+            "entry_date":(date.fromisoformat(self.START)+timedelta(days=1)).isoformat(),
+            "exit_date":(date.fromisoformat(self.START)+timedelta(days=5)).isoformat(),
+            "net_return":0.0,
+        }
+        with self.assertRaisesRegex(ValueError,"differing security"):
+            walk_forward_diagnostics(rows,first_test_date=self.START,max_folds=1,
+                                     fold_signals=1,verified_benchmark_returns={self.START:record})
+
+    def test_incomplete_benchmark_cannot_generate_a_complete_comparison(self):
+        out=walk_forward_diagnostics(history_rows(),first_test_date=self.START,
+                                     max_folds=1,fold_signals=2,
+                                     verified_benchmark_returns={"2025-01-01":{
+                                       "entry_date":"2025-01-02","exit_date":"2025-01-05",
+                                       "net_return":0.01}})
+        self.assertEqual(out["benchmark_status"],"PARTIAL_PERIOD_ALIGNED_USER_SUPPLIED")
+        self.assertIsNone(out["nonoverlapping_risk"]["mean_net_advantage_over_external_benchmark"])
 
     def test_short_data_and_invalid_parameters_fail_closed(self):
         out=walk_forward_diagnostics(history_rows(10),first_test_date=self.START)

@@ -14,6 +14,7 @@ from src.research_risk import nonoverlapping_path
 from src.trained_factor_model import (
     COST_BPS, MIN_TRAIN_DATES, MIN_TRAIN_ROWS, TOP_FRACTION,
     _baseline_order, _model_order, fit_development, groups_from_rows, iso_day,
+    number,
 )
 
 
@@ -35,7 +36,28 @@ def _evaluate(date_str: str, members: list[dict], artifact: dict,
               "excess_vs_universe": round(model_ret-universe, 10),
               "baseline_net_return": round(original_ret, 10)}
     if verified_benchmark_returns is not None and date_str in verified_benchmark_returns:
-        result["benchmark_net_return"] = verified_benchmark_returns[date_str]
+        # A signal-date-only scalar is insufficient: the model enters at
+        # next-session close, NOT at the signal-date close. Halt comparison
+        # unless each constituent has the same actual entry and exit dates.
+        benchmark = verified_benchmark_returns[date_str]
+        if not isinstance(benchmark, dict):
+            raise ValueError("Benchmark must have exact entry_date, exit_date and net_return")
+        entry_dates = {m.get("entry_date") for m in members}
+        exit_dates = {m["exit_date"] for m in members}
+        if len(entry_dates) != 1 or None in entry_dates or len(exit_dates) != 1:
+            raise ValueError("Cannot align a benchmark to differing security entry or exit dates")
+        entry_date = next(iter(entry_dates))
+        exit_date_exact = next(iter(exit_dates))
+        if (benchmark.get("entry_date") != entry_date or
+                benchmark.get("exit_date") != exit_date_exact):
+            raise ValueError("Benchmark entry/exit dates do not match the research holding window")
+        bench_value = benchmark.get("net_return")
+        bench_return = number(bench_value)
+        if isinstance(bench_value, bool) or bench_return is None or bench_return < -1:
+            raise ValueError("Benchmark net_return must be a finite decimal >= -1")
+        result["benchmark_net_return"] = bench_return
+        result["benchmark_entry_date"] = entry_date
+        result["benchmark_exit_date"] = exit_date_exact
     return result
 
 
@@ -109,14 +131,20 @@ def walk_forward_diagnostics(rows: list[dict], *, first_test_date: str,
         "tested_windows": outcomes,
         "nonoverlapping_risk": risk,
         "skipped_insufficient_training_dates": skipped,
-        "benchmark_status": ("ALIGNED_EXTERNALLY_SUPPLIED" if risk["external_benchmark_complete"]
-                             else "NOT_PROVIDED_OR_INCOMPLETE"),
+        "benchmark_status": (
+            "PERIOD_ALIGNED_USER_SUPPLIED" if risk["external_benchmark_complete"]
+            else "PARTIAL_PERIOD_ALIGNED_USER_SUPPLIED"
+            if verified_benchmark_returns else "NOT_PROVIDED"
+        ),
+        "external_benchmark_provenance_independently_verified": False,
         "pristine_future_holdout_proven": False,
         "transaction_cost_bps_per_round_trip": COST_BPS,
         "caveats": [
             "Historic fold reuse does not establish an untouched future holdout",
             "Frozen design only; model changes require entirely new untouched test dates",
             "Equal-weight cohort is not the Taiwan Weighted Index",
+            "External benchmark data are user supplied and not independently source-verified by this offline tool",
+            "Benchmark windows must match actual next-session entry and each member's exit date",
             "Missing future adjusted labels exclude whole date cohorts",
             "Delisted stock, liquidity, slippage and corporate action biases remain",
         ],
