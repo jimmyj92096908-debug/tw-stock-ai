@@ -29,7 +29,6 @@ jobs:
           python -m py_compile src/tpex_dated_bulk_canary.py tests/test_tpex_dated_bulk_canary.py
           python -m unittest tests.test_tpex_dated_bulk_canary -v
       - name: Probe two historical TPEx sessions without database access
-        continue-on-error: true
         run: |
           python src/tpex_dated_bulk_canary.py --date 2026-11-18 --date 2026-11-19
           echo "This was a read-only source probe; never approved for production writes." >> "$GITHUB_STEP_SUMMARY"
