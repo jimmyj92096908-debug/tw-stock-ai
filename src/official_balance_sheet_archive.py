@@ -5,6 +5,7 @@ filing times or complete point-in-time historical archives. Research-only.
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -119,7 +120,7 @@ def asof_balance(records, *, market, stock_id, signal_cutoff):
         if record.get("market") != market or record.get("stock_id") != stock_id:
             continue
         captured = aware(record["first_observed_at"])
-        period = __import__("datetime").date.fromisoformat(record["period_end"])
+        period = date.fromisoformat(record["period_end"])
         if period > captured.date():
             raise ValueError("Stored balance sheet's period exceeds its first observation")
         if captured <= cutoff:
