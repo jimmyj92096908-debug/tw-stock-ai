@@ -1,0 +1,1 @@
+One-off actual source-backed TPEx raw research bridge + offline purged model and as-of QA; no database writes, no AI model deployment, 2026-11-21.\n
