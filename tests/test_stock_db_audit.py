@@ -1,6 +1,7 @@
 """Offline tests for the read-only stock data coverage audit."""
 import unittest
 from datetime import date
+from pathlib import Path
 
 from src.stock_db_audit import (
     COVERAGE_SQL, GLOBAL_DATES_SQL, SCORE_MATCH_SQL, SAMPLES_SQL,
@@ -188,6 +189,36 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("p.close>0",COHORT_INTERSECTION_SQL)
         for command in ("INSERT ","UPDATE ","DELETE ","DROP "):
             self.assertNotIn(command,COHORT_INTERSECTION_SQL)
+
+    def test_exact_daily_monitor_is_existing_job_without_extra_paid_scheduler(self):
+        root=Path(__file__).resolve().parents[1]
+        wf=(root/".github/workflows/twstock-data-quality-monitor.yml").read_text(encoding="utf-8")
+        self.assertIn("cohort=audit[\"matched_cohort_coverage\"]",wf)
+        self.assertIn("cohort['complete']",wf)
+        self.assertIn("cohort['eligible']",wf)
+        self.assertIn("cohort['coverage_fraction_master']",wf)
+        self.assertIn("No candidate stocks",wf)
+        self.assertIn("twstock-readonly-quality-monitor",wf)
+        self.assertIn("0 20 * * 1-5",wf)
+        self.assertEqual(wf.count("    - cron:"),1)
+        self.assertNotIn("curl ",wf)
+        self.assertNotIn("LINE_CHANNEL",wf)
+        source=(root/"src/stock_db_audit.py").read_text(encoding="utf-8")
+        self.assertIn("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",source)
+        self.assertIn("SET LOCAL statement_timeout = '30000ms'",source)
+
+    def test_empty_eligible_cohort_cannot_pass_100pct(self):
+        only_missing=[
+            {"market":"tpex","master":4,"no_valid_price":2,"short_history":2,
+             "research_excluded":0,"stale_sufficient_history":0,"eligible":0,
+             "tech_current":0,"smc_current":0,"indicator_current":0,
+             "score_current":0,"matched_current":0}
+        ]
+        out=validate_cohort_intersection(only_missing)
+        self.assertIsNone(out["coverage_fraction_eligible"])
+        self.assertEqual(out["coverage_fraction_master"],0)
+        self.assertFalse(out["all_eligible_current_complete"])
+        self.assertFalse(out["all_master_current_complete"])
 
     def test_latest_valid_close_coverage_requires_exact_day_and_non_null_score(self):
         self.assertIn("close > 0", LATEST_VALID_DAY_COVERAGE_SQL)
