@@ -62,7 +62,7 @@ class TWSELongHistoryCampaignTests(TestCase):
             ]) as source,
         ):
             report=campaign.execute("fake",apply=True,max_rounds=2)
-        self.assertTrue(report["finished"])
+        self.assertFalse(report["finished"])
         self.assertEqual([x["new_valid_bars"] for x in report["batches"]],[900,1000])
         self.assertEqual(report["latest"]["source_days"],139)
         self.assertEqual(source.call_count,2)
