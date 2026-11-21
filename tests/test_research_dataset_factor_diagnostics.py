@@ -70,10 +70,10 @@ class DatasetTests(unittest.TestCase):
         self.assertNotIn("2026-08-01",{r["as_of_date"] for r in out["rows"]})
 
     def test_missing_mature_label_and_unequal_horizons_exclude_whole_day(self):
-        immature=prepared(cutoff="2026-08-19")
-        self.assertEqual(immature["manifest"]["included_dates"],14)
+        immature=prepared(cutoff="2026-08-22")
+        self.assertEqual(immature["manifest"]["included_dates"],17)
         self.assertEqual(immature["manifest"]["excluded_dates_by_reason"]
-                         ["incomplete_or_unmatured_forward_labels"],8)
+                         ["incomplete_or_unmatured_forward_labels"],5)
         rows=sample()
         rows[0]["exit_date"]="2026-08-07"
         unequal=prepared(rows)
