@@ -15,3 +15,16 @@ CREATE TABLE IF NOT EXISTS public.research_forward_frozen_cohorts (
   CHECK (jsonb_array_length(roster)=universe_count),
   CHECK ((frozen_at AT TIME ZONE 'Asia/Taipei')::date >= signal_date)
 );
+
+-- Defense in depth: the writer SQL already uses INSERT/DO NOTHING, but
+-- database-side triggers also refuse UPDATE and DELETE of every sealed date.
+-- A future human review can still inspect the exact original roster.
+CREATE OR REPLACE FUNCTION public.block_frozen_research_rewrite()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Prospective model cohort is immutable; UPDATE/DELETE denied';
+END;
+$$;
+CREATE OR REPLACE TRIGGER block_frozen_research_update_delete
+BEFORE UPDATE OR DELETE ON public.research_forward_frozen_cohorts
+FOR EACH ROW EXECUTE FUNCTION public.block_frozen_research_rewrite();
