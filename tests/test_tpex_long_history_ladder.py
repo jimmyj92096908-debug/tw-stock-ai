@@ -145,7 +145,7 @@ class TPExBackwardHistoryCanaryTests(TestCase):
     def test_candidate_source_and_storage_safety(self):
         sql=m.CANDIDATES_SQL.upper()
         self.assertIn("H.VALID_DAYS BETWEEN 60 AND 999",sql)
-        self.assertIn("H.FIRST_OBSERVED>LM.DAY-INTERVAL '5 YEARS'",sql)
+        self.assertIn("H.FIRST_OBSERVED>LM.LATEST_DATE-INTERVAL '5 YEARS'",sql)
         self.assertIn("ST.LAST_ATTEMPT_AT",sql)
         self.assertIn("LIMIT %S",sql)
         self.assertEqual(m.MAX_STOCKS,2)
