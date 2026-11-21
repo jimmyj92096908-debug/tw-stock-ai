@@ -1,0 +1,61 @@
+name: TWSE 240 Independent Schedule and Historical Factor Safety
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_240_release_gate.py'
+      - 'scripts/twse_240_research_catchup.py'
+      - 'tests/test_twse_240_release_gate.py'
+      - 'tests/test_twse_240_full_history_postgres.py'
+      - '.github/workflows/twse-long-history-campaign.yml'
+      - '.github/workflows/twse-240-research-followon.yml'
+      - '.github/workflows/twse-independent-release-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - name: Test independent scheduling and full factor history
+        run: |
+          python -m py_compile scripts/twse_240_release_gate.py scripts/twse_240_research_catchup.py
+          python -m unittest tests.test_twse_240_release_gate tests.test_twse_240_research_catchup -v
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: stock_ci_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d stock_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: .:src
+      STOCK_CI_POSTGRES_URL: postgresql://test:test@127.0.0.1:5432/stock_ci_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - name: Prove latest-only indicators fail 240-day historical completeness
+        run: python -m unittest tests.test_twse_240_full_history_postgres -v

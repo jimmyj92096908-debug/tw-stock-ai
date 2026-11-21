@@ -1,11 +1,9 @@
 name: One-Time TWSE 240-Session Research Indicators and Scores
 
 on:
-  workflow_run:
-    workflows:
-      - 'One-Time TWSE Official Long-History 240-Session Research Catch-Up'
-    types:
-      - completed
+  schedule:
+    # Independent root, 19:30 Asia/Taipei: source campaign has 2-hour lead.
+    - cron: '30 11 * * *'
   workflow_dispatch:
     inputs:
       apply:
@@ -24,15 +22,15 @@ concurrency:
 
 jobs:
   twse-240-research-only:
+    # Acquire the dated-TWSE writer lock as well as the indicator mutex;
+    # no raw historical source write may race long-factor recalculation.
+    concurrency:
+      group: twstock-dated-twse-history
+      cancel-in-progress: false
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       (
-        (github.event_name == 'workflow_run' &&
-         github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.name == 'One-Time TWSE Official Long-History 240-Session Research Catch-Up' &&
-         github.event.workflow_run.event == 'workflow_run' &&
-         github.event.workflow_run.head_branch == 'main' &&
-         github.event.workflow_run.repository.full_name == github.repository)
+        (github.event_name == 'schedule' && github.ref == 'refs/heads/main')
         ||
         (github.event_name == 'workflow_dispatch' &&
          github.ref == 'refs/heads/main' && inputs.apply == true)
@@ -49,15 +47,21 @@ jobs:
           python-version: '3.11'
       - name: Install existing free research dependencies
         run: pip install -r requirements.txt
+      - name: Read-only 240-day source and research history prerequisite
+        id: gate
+        run: python scripts/twse_240_release_gate.py --mode research
       - name: Verify 240-day specific indicator and score gates
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           test -n "$DATABASE_URL"
           python -m py_compile scripts/twse_240_research_catchup.py src/batch_indicator_catchup.py
           python -m unittest tests.test_twse_240_research_catchup tests.test_batch_indicator_catchup tests.test_composite_score -v
       - name: Read-only TWSE 240-session cohort preflight
+        if: steps.gate.outputs.should_run == 'true'
         run: python scripts/twse_240_research_catchup.py --report twse-240-preview.json
       - name: Rebuild source-qualified research indicators then exact-cohort latest scores
+        if: steps.gate.outputs.should_run == 'true'
         env:
           STOCK_TWSE_240_RESEARCH_WRITE_ENABLED: 'yes'
           STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
