@@ -1,0 +1,12 @@
+2026-11-21 third unique one-time verified TPEx official ten-stock history
+source-to-score batch explicitly owner authorized with zero additional payment.
+Process at most 10 short-history TPEx symbols, 5 official months/symbol,
+<=50 official monthly GET requests with existing rate limits.
+Only INSERT missing (market,stock_id,trade_date) primary keys;
+ON CONFLICT DO NOTHING; never rewrite old prices.
+Two subsequent new-eligible indicator+SMC+composite insert-only batches,
+at most five stocks each, under the existing indicator concurrency mutex.
+Fail closed on unverified sources, no actual market data growth,
+800MB Neon Free stop line, or unmatched latest eligible score coverage.
+Do not alter LINE, webhook, AI production model weights or broker orders.
+This exact marker must never be changed or recommitted.
