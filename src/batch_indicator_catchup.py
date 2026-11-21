@@ -90,15 +90,18 @@ SELECT
     AND s.trade_date=v.latest_valid_close_date) AS smc_has_latest
 """
 
-def select_candidates(conn,market,limit):
-    if market not in ("twse","tpex") or not 1<=limit<=MAX_PER_MARKET:
-        raise ValueError("Unsafe market or indicator catch-up batch")
+def select_candidates(conn,market,limit,minimum_days=MIN_VERIFIED_PRICE_DAYS):
+    if (market not in ("twse","tpex") or not 1<=limit<=MAX_PER_MARKET
+            or type(minimum_days) is not int
+            or not MIN_VERIFIED_PRICE_DAYS<=minimum_days<=240):
+        raise ValueError("Unsafe market, verified history depth or indicator batch")
     with conn.cursor() as cur:
-        cur.execute(CANDIDATES_SQL,(market,MIN_VERIFIED_PRICE_DAYS,limit))
+        cur.execute(CANDIDATES_SQL,(market,minimum_days,limit))
         return [dict(row) for row in cur.fetchall()]
 
 
-def run(database_url: str, *, apply=False, per_market=12, markets=("twse", "tpex")) -> list[dict]:
+def run(database_url: str, *, apply=False, per_market=12, markets=("twse", "tpex"),
+        min_verified_price_days=MIN_VERIFIED_PRICE_DAYS) -> list[dict]:
     if not database_url:
         raise ValueError("DATABASE_URL required")
     if not 1<=per_market<=MAX_PER_MARKET:
@@ -106,12 +109,15 @@ def run(database_url: str, *, apply=False, per_market=12, markets=("twse", "tpex
     if (not isinstance(markets, (tuple, list)) or not 1 <= len(markets) <= 2 or
         len(set(markets)) != len(markets) or any(m not in ("twse", "tpex") for m in markets)):
         raise ValueError("markets must be a unique subset of twse and tpex")
+    if (type(min_verified_price_days) is not int or
+            not MIN_VERIFIED_PRICE_DAYS <= min_verified_price_days <= 240):
+        raise ValueError("Invalid verified history minimum")
     if apply and os.environ.get("STOCK_INDICATOR_CATCHUP_WRITE_ENABLED")!="yes":
         raise ValueError("Indicator calculation writes require explicit opt-in")
     results=[]
     with psycopg.connect(database_url,row_factory=dict_row,connect_timeout=20) as conn:
         for market in markets:
-            selected=select_candidates(conn,market,per_market)
+            selected=select_candidates(conn,market,per_market,min_verified_price_days)
             for stock in selected:
                 item={"market":market,"stock_id":stock["stock_id"],
                       "price_days":stock["close_days"],
@@ -130,7 +136,7 @@ def run(database_url: str, *, apply=False, per_market=12, markets=("twse", "tpex
                             with conn.cursor() as cur:
                                 cur.execute(VERIFY_SQL,(market,stock["stock_id"],stock["latest_close"]))
                                 verification=cur.fetchone()
-                            if min(adjusted,technical,smc)<MIN_VERIFIED_PRICE_DAYS:
+                            if min(adjusted,technical,smc)<min_verified_price_days:
                                 raise RuntimeError("Insufficient indicators from verified history")
                             if (verification["adjusted_rows"]<stock["close_days"] or
                                 verification["technical_rows"]<stock["close_days"] or
