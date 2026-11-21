@@ -23,6 +23,54 @@ class AppendOnlyHistoryTests(unittest.TestCase):
 
 
 
+    def test_source_and_date_validation_precedes_all_db_activity(self):
+        import csv
+        base = {
+            "stock_id": "6488", "trade_date": "2026-11-19",
+            "open": "100", "high": "110", "low": "90", "close": "100",
+            "volume": "10", "turnover": "1000", "change": "0",
+            "transactions": "20", "source": "TPEX_TRADING_STOCK",
+        }
+        cases = [
+            ({"source": "UNKNOWN"}, "source"),
+            ({"source": "TPEX_DAILY_CLOSE_OPENAPI"}, "source"),
+            ({"trade_date": "2027-01-01"}, "future"),
+            ({"trade_date": "not-a-date"}, "date"),
+            ({"volume": "-1"}, "Invalid raw TPEx volume"),
+            ({"stock_id": "INVALID"}, "stock code"),
+        ]
+        with TemporaryDirectory() as directory:
+            filepath = Path(directory) / "6488.csv"
+            for changes, reason in cases:
+                row = {**base, **changes}
+                with filepath.open("w", encoding="utf-8", newline="") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=list(base))
+                    writer.writeheader()
+                    writer.writerow(row)
+                with self.subTest(changes=changes):
+                    with self.assertRaisesRegex(ValueError, reason):
+                        db_storage.read_history_csv(filepath, "tpex")
+
+    def test_tpex_csv_normalization_is_exact(self):
+        import csv
+        row = {
+            "stock_id": "6488", "trade_date": "2026-11-19",
+            "open": "100", "high": "110", "low": "90", "close": "100",
+            "volume": "1,234.5", "turnover": "90,123.456", "change": "0",
+            "transactions": "20", "source": "TPEX_TRADING_STOCK",
+        }
+        with TemporaryDirectory() as directory:
+            filepath = Path(directory) / "6488.csv"
+            with filepath.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(row))
+                writer.writeheader()
+                writer.writerow(row)
+            imported = db_storage.read_history_csv(filepath, "tpex")
+        self.assertEqual(len(imported), 1)
+        self.assertEqual(imported[0]["volume"], 1234500)
+        self.assertEqual(imported[0]["turnover"], 90123456)
+        self.assertEqual(imported[0]["source"], "TPEX_TRADING_STOCK_NORMALIZED")
+
     def test_tpex_monthly_thousands_normalized_only_once(self):
         raw = {"market": "tpex", "source": "TPEX_TRADING_STOCK",
                "volume": "1,234.5", "turnover": "90,123.456"}
