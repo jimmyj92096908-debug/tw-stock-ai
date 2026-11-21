@@ -45,18 +45,22 @@ WITH last_market AS (
  LEFT JOIN public.daily_adjusted_prices a USING(market,stock_id,trade_date)
  WHERE p.market='tpex' AND p.source='TPEX_TRADING_STOCK'
 ), prices AS (
- SELECT p.market,p.stock_id,count(*) FILTER(WHERE close>0 AND volume>=0)::int days,
-        max(trade_date) FILTER(WHERE close>0 AND volume>=0) latest_close
+ SELECT p.market,p.stock_id,count(*)::int all_price_rows,
+        count(*) FILTER(WHERE close>0 AND volume>=0)::int days,
+        max(trade_date) FILTER(WHERE close>0 AND volume>=0) latest_close,
+        max(retrieved_at) FILTER(WHERE source='TPEX_DATED_OTC_EW') latest_official_ingest
  FROM public.daily_prices p
  WHERE p.stock_id<>'1808'
  GROUP BY p.market,p.stock_id
 ), eligible AS (
- SELECT p.market,p.stock_id,p.days,p.latest_close FROM prices p,last_market l
+ SELECT p.market,p.stock_id,p.all_price_rows,p.days,p.latest_close,
+        p.latest_official_ingest FROM prices p,last_market l
  WHERE p.latest_close>=l.latest-interval '7 days'
    AND ((p.market='tpex' AND p.days>=60) OR
         (p.market='twse' AND p.days>=240))
 ), coverage AS (
- SELECT e.market,e.stock_id,e.days,e.latest_close,
+ SELECT e.market,e.stock_id,e.days,e.all_price_rows,
+        e.latest_close,e.latest_official_ingest,
    EXISTS(SELECT 1 FROM public.daily_technicals t
      WHERE t.market=e.market AND t.stock_id=e.stock_id
        AND t.trade_date=e.latest_close) tech_latest,
@@ -72,6 +76,26 @@ WITH last_market AS (
      WHERE t.market=e.market AND t.stock_id=e.stock_id) tech_days,
    (SELECT count(*) FROM public.daily_smc s
      WHERE s.market=e.market AND s.stock_id=e.stock_id) smc_days,
+   (SELECT max(a.calculated_at) FROM public.daily_adjusted_prices a
+     WHERE a.market=e.market AND a.stock_id=e.stock_id) adjusted_at,
+   (SELECT max(t.calculated_at) FROM public.daily_technicals t
+     WHERE t.market=e.market AND t.stock_id=e.stock_id) technical_at,
+   (SELECT max(s.calculated_at) FROM public.daily_smc s
+     WHERE s.market=e.market AND s.stock_id=e.stock_id) smc_at,
+   (SELECT max(c.calculated_at) FROM public.daily_composite_scores c
+     WHERE c.market=e.market AND c.stock_id=e.stock_id
+       AND c.as_of_date=e.latest_close AND c.total_score IS NOT NULL) score_at,
+   EXISTS(
+     SELECT 1 FROM public.daily_prices p
+     LEFT JOIN public.daily_adjusted_prices a
+       ON a.market=p.market AND a.stock_id=p.stock_id AND a.trade_date=p.trade_date
+     LEFT JOIN public.daily_technicals t
+       ON t.market=p.market AND t.stock_id=p.stock_id AND t.trade_date=p.trade_date
+     LEFT JOIN public.daily_smc s
+       ON s.market=p.market AND s.stock_id=p.stock_id AND s.trade_date=p.trade_date
+     WHERE p.market=e.market AND p.stock_id=e.stock_id
+       AND (a.trade_date IS NULL OR t.trade_date IS NULL OR s.trade_date IS NULL)
+   ) missing_historical_derived_date,
    EXISTS(SELECT 1 FROM public.daily_technicals t
      WHERE t.market=e.market AND t.stock_id=e.stock_id
        AND t.trade_date=e.latest_close AND t.ma240 IS NOT NULL) has_ma240
@@ -83,6 +107,18 @@ SELECT s.tpex_source_days,s.twse_source_days,
        count(*) FILTER(WHERE c.market='tpex')::int tpex_eligible,
        count(*) FILTER(WHERE c.market='tpex' AND c.tech_latest
          AND c.smc_latest AND c.scored)::int tpex_matched,
+       count(*) FILTER(WHERE c.market='tpex' AND c.tech_latest
+         AND c.smc_latest AND c.scored
+         AND c.all_price_rows<=c.adjusted_days
+         AND c.all_price_rows<=c.tech_days
+         AND c.all_price_rows<=c.smc_days
+         AND NOT c.missing_historical_derived_date
+         AND c.latest_official_ingest IS NOT NULL
+         AND c.adjusted_at>=c.latest_official_ingest
+         AND c.technical_at>=c.latest_official_ingest
+         AND c.smc_at>=c.latest_official_ingest
+         AND c.score_at>=GREATEST(c.adjusted_at,c.technical_at,c.smc_at)
+       )::int tpex_historical_factors_current,
        count(*) FILTER(WHERE c.market='twse')::int twse_240_eligible,
        count(*) FILTER(WHERE c.market='twse' AND c.tech_latest
          AND c.smc_latest AND c.has_ma240
@@ -107,15 +143,17 @@ def snapshot(url):
     for key in (
         "tpex_source_days","twse_source_days","legacy_rows",
         "bad_legacy_volume","bad_legacy_turnover","database_bytes",
-        "tpex_eligible","tpex_matched","twse_240_eligible",
+        "tpex_eligible","tpex_matched","tpex_historical_factors_current",
+        "twse_240_eligible",
         "twse_full_indicators","twse_complete_scores"
     ):
         if type(result.get(key)) is not int or result[key]<0:
             raise RuntimeError("Invalid read-only source/score prerequisite")
     if result["database_bytes"]>=MAX_DATABASE_BYTES:
         raise RuntimeError("Free Neon database storage limit guard")
-    if result["tpex_matched"]>result["tpex_eligible"]:
-        raise RuntimeError("Invalid TPEx score scope")
+    if not (result["tpex_historical_factors_current"]<=result["tpex_matched"]
+            <=result["tpex_eligible"]):
+        raise RuntimeError("Invalid TPEx historical factor/score scope")
     if not (result["twse_complete_scores"]<=result["twse_full_indicators"]
             <=result["twse_240_eligible"]):
         raise RuntimeError("Invalid TWSE long-horizon coverage")
@@ -130,6 +168,9 @@ def decide(mode,state):
             state["tpex_source_days"]>=MIN_TPEX_SOURCE_DAYS and
             state["tpex_eligible"]>=MIN_TPEX_ELIGIBLE and
             state["tpex_matched"]==state["tpex_eligible"] and
+            # A latest-day score is NOT enough after adding older price days.
+            # Requires per-day factor coverage and score newer than source.
+            state["tpex_historical_factors_current"]==state["tpex_eligible"] and
             state["legacy_rows"]>=1000 and
             state["bad_legacy_volume"]==0 and
             state["bad_legacy_turnover"]==0 and
