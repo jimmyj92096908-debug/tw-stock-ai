@@ -40,7 +40,7 @@ def decimal_value(value):
     return result
 
 
-def parse_day(payload: dict, requested: date) -> dict:
+def parse_day(payload: dict, requested: date, *, include_bars: bool = False) -> dict:
     """Parse names, not positions; reject incomplete or anomalous snapshots."""
     if not isinstance(payload, dict) or payload.get("stat", "").lower() != "ok":
         raise ValueError("No valid TPEx session status")
@@ -48,6 +48,7 @@ def parse_day(payload: dict, requested: date) -> dict:
     if not isinstance(tables, list) or not tables:
         raise ValueError("Missing TPEx data tables")
     selected = []
+    validated_bars = []
     invalid_numeric = 0
     seen = set()
     for table in tables:
@@ -91,6 +92,19 @@ def parse_day(payload: dict, requested: date) -> dict:
                 raise ValueError("Invalid official trading totals")
             if values["成交股數"] != values["成交股數"].to_integral_value():
                 raise ValueError("Non-integral official share count")
+            if values["成交筆數"] != values["成交筆數"].to_integral_value():
+                raise ValueError("Non-integral official transaction count")
+            validated_bars.append({
+                "market": "tpex", "stock_id": stock_id, "trade_date": requested,
+                "open": op, "high": hi, "low": lo, "close": close,
+                "volume": int(values["成交股數"]),
+                "turnover": values["成交金額(元)"],
+                "transactions": int(values["成交筆數"]),
+                # The change field may contain corporate-action text; never
+                # infer a signed daily difference from unparsed characters.
+                "price_change": None,
+                "source": "TPEX_DATED_OTC_EW"
+            })
             selected.append((stock_id, close, int(values["成交股數"])))
         break
     if invalid_numeric > max(25, len(seen) // 10):
@@ -100,7 +114,7 @@ def parse_day(payload: dict, requested: date) -> dict:
     # This official page is requested by date and may lack per-row dates.
     # It is therefore deliberately NEVER an approved source for INSERT until
     # an independent date-anchored sample proves it returns the requested date.
-    return {
+    summary = {
         "requested_date": requested.isoformat(),
         "valid_four_digit_codes": len(selected),
         "skipped_invalid_numeric": invalid_numeric,
@@ -112,6 +126,9 @@ def parse_day(payload: dict, requested: date) -> dict:
         "date_independently_verified": False,
         "write_approved": False,
     }
+    if include_bars:
+        summary["bars"] = validated_bars
+    return summary
 
 
 def probe(days: list[date], session=None) -> list[dict]:
