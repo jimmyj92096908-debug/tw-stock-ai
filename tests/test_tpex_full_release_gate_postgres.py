@@ -105,6 +105,23 @@ class TPExGateFullHistoryIntegration(unittest.TestCase):
             self.assertEqual(conn.execute(gate.STATE_SQL).fetchone()[
                 "tpex_historical_factors_current"],1)
 
+            # A single NULL historical calculated_at cannot be hidden by
+            # PostgreSQL MIN aggregate ignoring NULL observations.
+            conn.execute("""UPDATE public.daily_adjusted_prices
+                 SET calculated_at=NULL
+                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                 (dates[0],))
+            conn.commit()
+            self.assertEqual(conn.execute(gate.STATE_SQL).fetchone()[
+                "tpex_historical_factors_current"],0)
+            conn.execute("""UPDATE public.daily_adjusted_prices
+                 SET calculated_at='2026-11-20 02:00:00+00'
+                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                 (dates[0],))
+            conn.commit()
+            self.assertEqual(conn.execute(gate.STATE_SQL).fetchone()[
+                "tpex_historical_factors_current"],1)
+
             # Another independently sourced OLDER date invalidates the
             # previously complete calculation even if the last-date score is there.
             conn.execute("""INSERT INTO public.daily_prices
