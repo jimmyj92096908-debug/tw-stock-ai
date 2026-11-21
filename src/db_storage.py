@@ -119,7 +119,7 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
             }
             if parsed["source"] not in allowed_sources[market]:
                 raise ValueError("Unknown or incompatible historical CSV source")
-            if not re.fullmatch(r"\\d{4,6}", parsed["stock_id"]):
+            if not re.fullmatch(r"\d{4,6}", parsed["stock_id"]):
                 raise ValueError("Invalid historical stock code")
             try:
                 trading_day = date.fromisoformat(parsed["trade_date"])
