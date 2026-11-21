@@ -193,9 +193,12 @@ class OfficialDividendResearchTests(TestCase):
           "official_current_issuer_snapshot.py",
           "official_dividend_monthly_preview.py",
           "STOCK_OFFICIAL_ISSUER_EVIDENCE_WRITE",
-          "sql/official_issuer_weekly_snapshots.sql",
           ".github/official-current-issuer-dividend-one-shot-20261121.txt"):
             self.assertIn(name,wf)
+        self.assertIn("sql/official_issuer_weekly_snapshots.sql",
+                      (ROOT/"scripts/official_current_issuer_snapshot.py").read_text())
+        self.assertIn("BEFORE UPDATE OR DELETE",
+                      (ROOT/"sql/official_issuer_weekly_snapshots.sql").read_text())
         self.assertNotIn("  schedule:",wf)
         self.assertNotIn("STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED",wf)
         self.assertNotIn("LINE_CHANNEL_ACCESS_TOKEN",wf)
