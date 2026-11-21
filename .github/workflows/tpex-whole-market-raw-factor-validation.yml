@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/tpex-whole-market-raw-factor-one-shot-20261121.txt"
+      - ".github/tpex-whole-market-raw-quote-filter-v2-20261121.txt"
   workflow_dispatch:
   workflow_run:
     workflows:
@@ -45,7 +46,7 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ] &&
              git diff --name-only --diff-filter=A HEAD^ HEAD |
-               grep -Fxq ".github/tpex-whole-market-raw-factor-one-shot-20261121.txt"; then
+               grep -Fxq ".github/tpex-whole-market-raw-quote-filter-v2-20261121.txt"; then
             echo "new=true" >> "$GITHUB_OUTPUT"
           else
             echo "new=false" >> "$GITHUB_OUTPUT"

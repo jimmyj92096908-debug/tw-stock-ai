@@ -40,7 +40,9 @@ STOCK_COUNTS_SQL="""WITH raw AS (
   'TPEX_DATED_OTC_EW','TPEX_DAILY_CLOSE_OPENAPI',
   'TPEX_TRADING_STOCK','TPEX_TRADING_STOCK_NORMALIZED'))::int AS invalid_source_tags,
  MAX(trade_date) FILTER(WHERE close>0 AND volume>=0) AS last_source_day,
- COUNT(*) FILTER(WHERE source='TPEX_TRADING_STOCK')::int AS legacy_monthly_rows
+ COUNT(*) FILTER(WHERE source='TPEX_TRADING_STOCK')::int AS legacy_monthly_rows,
+ COUNT(*) FILTER(WHERE close IS NULL OR close<=0 OR volume IS NULL
+  OR volume<0)::int AS source_nonquoted_rows
  FROM public.daily_prices WHERE market='tpex' AND trade_date<=%s
  GROUP BY stock_id
 ),tech AS(
@@ -58,6 +60,7 @@ SELECT m.stock_id,
  COALESCE(raw.invalid_source_tags,0)::int AS invalid_source_tags,
  raw.last_source_day,
  COALESCE(raw.legacy_monthly_rows,0)::int AS legacy_monthly_rows,
+ COALESCE(raw.source_nonquoted_rows,0)::int AS source_nonquoted_rows,
  COALESCE(tech.n,0)::int AS persisted_technical_rows,
  COALESCE(smc.n,0)::int AS persisted_smc_rows,
  COALESCE(adjusted.n,0)::int AS persisted_adjusted_rows
@@ -77,6 +80,7 @@ CROSS JOIN LATERAL (
  FROM public.daily_prices p
  WHERE p.market='tpex' AND p.stock_id=m.stock_id
  AND p.trade_date<=%s
+ AND p.close>0 AND p.volume>=0
  ORDER BY p.trade_date DESC LIMIT %s
 ) b
 WHERE m.market='tpex' AND m.stock_id=ANY(%s)
@@ -99,11 +103,14 @@ def classify(master,*,market_last):
             len(sid)!=4 or not sid.isdigit() or sid in names or
             any(type(row.get(k)) is not int or row[k]<0 for k in (
                 "valid_source_days","invalid_source_tags","legacy_monthly_rows",
+                "source_nonquoted_rows",
                 "persisted_technical_rows","persisted_smc_rows",
                 "persisted_adjusted_rows")) or (latest is not None and type(latest) is not date)
             or (n>0 and latest is None) or (latest is not None and latest>market_last)):
             raise ValueError("Invalid official stock-master or price-source maturity rows")
         names.add(sid)
+        buckets["nonquoted_original_price_rows_excluded_not_imputed"]+=row[
+            "source_nonquoted_rows"]
         if n<MIN_WARMUP_SESSIONS:
             buckets["below_240_valid_days"]+=1
             continue
@@ -196,6 +203,7 @@ def summarize(*,market_last,db_bytes,master,candidates,buckets,results,failed,pr
         "raw_factor_failed_stock_count":len(failed),
         "stocks_with_latest_market_day_feature":computed_current,
         "historical_factor_reconstruction_is_on_demand":True,
+        "no_trade_or_null_close_rows_never_invented_or_forward_filled":True,
         "persists_no_adjusted_technical_smc_daily_rows":True,
         "latest_day_stored_factors_still_may_be_stale":True,
         "source_maturity_breakdown":buckets,
