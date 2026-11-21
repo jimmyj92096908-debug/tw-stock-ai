@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/tpex-free-on-demand-pit-audit-20261121.txt"
+      - ".github/tpex-free-on-demand-pit-audit-v2-20261121.txt"
   workflow_run:
     workflows:
       - "Official Monthly Revenue First-Seen Archive (Research Only)"
@@ -44,7 +45,7 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ] &&
             git diff --name-only --diff-filter=A HEAD^ HEAD |
-              grep -Fxq ".github/tpex-free-on-demand-pit-audit-20261121.txt"; then
+              grep -Fxq ".github/tpex-free-on-demand-pit-audit-v2-20261121.txt"; then
             echo "new=true" >> "$GITHUB_OUTPUT"
           else
             echo "new=false" >> "$GITHUB_OUTPUT"
@@ -62,11 +63,34 @@ jobs:
           python -m unittest tests.test_tpex_free_on_demand_pit tests.test_technical_indicators tests.test_smc_indicators tests.test_official_fundamental_pit_coverage -v
       - name: Recompute existing TPEx research factors in memory only, no materialization
         if: github.event_name == 'workflow_run' || steps.marker.outputs.new == 'true'
+        shell: bash
         run: |
-          python scripts/tpex_on_demand_research.py --stock-id 5520 --as-of 2026-11-20 --limit 2 --report tpex-on-demand-research-proof.json
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python scripts/tpex_on_demand_research.py --stock-id 5520 --as-of 2026-11-20 --limit 2 --report tpex-on-demand-research-proof.json; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Read-only on-demand analysis failed after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
       - name: Verify actual archived financial first-seen time is not backdated into old market signals
         if: github.event_name == 'workflow_run' || steps.marker.outputs.new == 'true'
-        run: python scripts/official_fundamental_temporal_witness.py --report official-pit-temporal-proof.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python scripts/official_fundamental_temporal_witness.py --report official-pit-temporal-proof.json; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Official first-observed PIT audit failed after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
       - name: Preserve bounded read-only proof; no historical alpha or trading claims
         if: always()
         uses: actions/upload-artifact@v4
