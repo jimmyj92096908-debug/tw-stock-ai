@@ -28,7 +28,12 @@ class TWSEDateBackfillPGTests(unittest.TestCase):
                 market text NOT NULL,stock_id text NOT NULL,
                 PRIMARY KEY (market,stock_id)
             )""")
-            conn.execute("""CREATE TABLE IF NOT EXISTS public.model_stock_exclusions (\n                market text NOT NULL, stock_id text NOT NULL, reason text NOT NULL,\n                excluded_at timestamptz NOT NULL DEFAULT now(),\n                PRIMARY KEY (market,stock_id)\n            )""")\n            conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_prices (
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.model_stock_exclusions (
+                market text NOT NULL, stock_id text NOT NULL, reason text NOT NULL,
+                excluded_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (market,stock_id)
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_prices (
                 market text NOT NULL,stock_id text NOT NULL,trade_date date NOT NULL,
                 open numeric,high numeric,low numeric,close numeric,
                 volume bigint,turnover numeric,price_change numeric,
