@@ -1,0 +1,120 @@
+name: TPEx Historical Factors Final 100 Percent Acceptance
+
+on:
+  # A single main-branch push creates the safe follow-on and queues behind
+  # the first five-batch wave on the SAME writer mutex. No recurring cron,
+  # no dependence on a more-than-three-deep workflow_run chain.
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/tpex-final-historical-factors.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Explicitly authorize a bounded <=300-stock final TPEx factor acceptance wave'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  final-source-verified-factors:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+      )
+    concurrency:
+      group: twstock-tpex-dated-official-history
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install only existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check source and per-batch safety before production research writes
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_factor_bounded_campaign.py scripts/tpex_stale_factor_refresh.py
+          python -m unittest tests.test_tpex_factor_bounded_campaign tests.test_tpex_stale_factor_refresh -v
+          python scripts/tpex_factor_bounded_campaign.py --max-batches 3 --report tpex-final-preview.json
+      - name: Reconcile up to 3 sequential 100-stock source-verified historical batches
+        env:
+          STOCK_TPEX_FACTOR_CAMPAIGN_ENABLED: 'yes'
+          STOCK_TPEX_STALE_FACTOR_WRITE_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_STALE_SCORE_WRITE_ENABLED: 'yes'
+        run: |
+          python scripts/tpex_factor_bounded_campaign.py --apply --max-batches 3 --report tpex-final-evidence.json
+      - name: Strict independent Neon full-history 100 percent research acceptance
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          from scripts.twse_240_release_gate import snapshot
+          state=snapshot(os.environ['DATABASE_URL'])
+          research={
+              'source_verified_sessions':state['tpex_source_days'],
+              'eligible_recent_tpex_symbols':state['tpex_eligible'],
+              'same_date_latest_scores':state['tpex_matched'],
+              'all_historical_factor_dates_and_scores':state['tpex_historical_factors_current'],
+              'legacy_volume_unit_errors':state['bad_legacy_volume'],
+              'legacy_turnover_unit_errors':state['bad_legacy_turnover'],
+              'neon_database_bytes':state['database_bytes'],
+              'full_100_percent_historical_acceptance':False,
+              'original_prices_modified':False,
+              'LINE_trade_signals_sent':False,
+              'live_trading_enabled':False,
+          }
+          research['full_100_percent_historical_acceptance']=bool(
+              state['tpex_source_days']>=80
+              and state['tpex_eligible']>=700
+              and state['tpex_matched']==state['tpex_eligible']
+              and state['tpex_historical_factors_current']==state['tpex_eligible']
+              and state['bad_legacy_volume']==0
+              and state['bad_legacy_turnover']==0
+              and state['database_bytes']<800_000_000
+          )
+          Path('tpex-final-acceptance.json').write_text(
+              json.dumps(research,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(research))
+          summary=os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary,'a',encoding='utf-8') as f:
+                  f.write('### TPEx full historical factor acceptance\n')
+                  f.write(str(research['all_historical_factor_dates_and_scores'])+
+                          '/'+str(research['eligible_recent_tpex_symbols'])+
+                          ' source-fresh after research recalc\n')
+                  f.write('No raw prices changed, no LINE trade messages or orders.\n')
+          if not research['full_100_percent_historical_acceptance']:
+              raise SystemExit('FAIL CLOSED: TPEx complete historical factor acceptance is NOT 100%')
+          PY
+      - name: Preserve official source and research-only proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-final-source-factors-acceptance
+          path: |
+            tpex-final-preview.json
+            tpex-final-evidence.json
+            tpex-factor-source-batch-*.json
+            tpex-final-acceptance.json
+          if-no-files-found: ignore
+          retention-days: 14
