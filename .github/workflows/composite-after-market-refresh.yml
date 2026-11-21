@@ -77,11 +77,27 @@ jobs:
         run: |
           python -m unittest tests.test_research_forward_freeze -v
           python scripts/freeze_prospective_research.py --apply --report prospective-research-freeze-evidence.json
+      - name: Weekly read-only audit of previously frozen model holding periods
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name == 'Official Taiwan Market Daily Snapshot (Authorized)'
+        env:
+          PYTHONPATH: src
+        run: |
+          # Reuses an existing approved free Action, no extra daily scheduler.
+          if [ "$(TZ=Asia/Taipei date +%u)" != "1" ]; then
+            echo "Research outcome progress audit is weekly, not daily"
+            exit 0
+          fi
+          python -m unittest tests.test_frozen_cohort_progress -v
+          python scripts/audit_recent_frozen_cohorts.py --limit 12 --out prospective-frozen-progress-evidence.json
       - name: Retain aggregate-only prospective research precommit proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: research-only-forward-precommit-evidence
-          path: prospective-research-freeze-evidence.json
+          path: |
+            prospective-research-freeze-evidence.json
+            prospective-frozen-progress-evidence.json
           retention-days: 14
           if-no-files-found: ignore
