@@ -32,6 +32,8 @@ WITH priced AS (
         MAX(p.trade_date) FILTER (WHERE p.close IS NOT NULL) AS latest_close
  FROM public.daily_prices p
  WHERE p.market=%s AND p.stock_id<>'1808'
+   AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                   WHERE x.market=p.market AND x.stock_id=p.stock_id)
  GROUP BY p.market,p.stock_id
  HAVING COUNT(*) FILTER (WHERE p.close IS NOT NULL)>=%s
 ), analysis AS (
