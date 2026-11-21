@@ -121,10 +121,18 @@ class TPExAfterHistoryCatchupTests(unittest.TestCase):
         self.assertNotIn("UPDATE public.daily_prices", task.STATE_SQL.upper())
         self.assertIn("source='TPEX_DATED_OTC_EW'", task.STATE_SQL)
         self.assertIn("NOT EXISTS", task.MISSING_SCORE_SQL)
-        with self.assertRaisesRegex(RuntimeError, "free database"):
-            with patch.object(task.psycopg, "connect"):
-                task.assert_safe(snap(), snap(database_bytes=801_000_000,
-                                             raw_price_rows=250001))
+        class FakeConnection:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def execute(self, *_):
+                return self
+            def fetchone(self):
+                return snap(database_bytes=801_000_000)
+        with patch.object(task.psycopg, "connect", return_value=FakeConnection()):
+            with self.assertRaisesRegex(RuntimeError, "free database"):
+                task.capture("postgresql://disposable")
 
 
 if __name__ == "__main__":
