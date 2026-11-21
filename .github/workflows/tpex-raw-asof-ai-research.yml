@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/tpex-raw-asof-ai-research-20261121.txt"
+      - ".github/tpex-raw-ai-release-blocker-audit-20261121.txt"
   workflow_dispatch:
   workflow_run:
     workflows:
@@ -45,7 +46,7 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ] &&
              git diff --name-only --diff-filter=A HEAD^ HEAD |
-               grep -Fxq ".github/tpex-raw-asof-ai-research-20261121.txt"; then
+               grep -Fxq ".github/tpex-raw-ai-release-blocker-audit-20261121.txt"; then
             echo "approved=true" >> "$GITHUB_OUTPUT"
           else
             echo "approved=false" >> "$GITHUB_OUTPUT"
@@ -67,6 +68,17 @@ jobs:
       - name: Build experimental frozen whole-cohort features and purged raw-price backtest (never live)
         if: github.event_name != 'push' || steps.once.outputs.approved == 'true'
         run: python scripts/tpex_raw_model_readonly_experiment.py --label-cutoff 2026-11-20 --test-start 2026-10-30 --max-signal-days 50 --output-dir tpex-raw-factor-experiment
+      - name: Independently verify prototype and stored negative Ridge release gates
+        if: github.event_name != 'push' || steps.once.outputs.approved == 'true'
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_tpex_raw_prototype_release_audit -v
+          python scripts/tpex_raw_prototype_release_audit.py \
+            --raw-report tpex-raw-factor-experiment/research-source-gates.json \
+            --prototype tpex-raw-factor-experiment/retrospective-ridge-prototype.json \
+            --saved-model models/tw-factor-ridge-1-evaluation.json \
+            --json-out tpex-raw-factor-experiment/research-release-blockers.json \
+            --md-out tpex-raw-factor-experiment/research-release-blockers.md
       - name: Preserve bounded evidence, never trade rankings
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,5 +88,7 @@ jobs:
             tpex-raw-source-feature-proof.json
             tpex-raw-factor-experiment/research-source-gates.json
             tpex-raw-factor-experiment/retrospective-ridge-prototype.json
+            tpex-raw-factor-experiment/research-release-blockers.json
+            tpex-raw-factor-experiment/research-release-blockers.md
           retention-days: 14
           if-no-files-found: ignore
