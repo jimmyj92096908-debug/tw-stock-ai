@@ -1,19 +1,20 @@
 name: TPEx Historical Factors Final 100 Percent Acceptance
 
-# Exact path main-merge retrigger for official per-stock TPEx provenance
-# correction. Only verified tradingStock monthly and official daily OpenAPI
-# stock records join dated EW in PER-STOCK factor freshness checks. Global
-# TPEX_DATED_OTC_EW 80-day release threshold remains independent and unchanged.
+# The first free five-batch source-verified factor campaign must finish before
+# this final follow-on is launched. A shared workflow-level pending concurrency
+# group can silently cancel the queued final acceptance when a TWSE job arrives.
+# Keep the existing per-job dated-source writer lock, but trigger after wave end.
+# Verified per-stock TPEx provenance, 80-day market-wide EW source threshold,
+# original price safeguards, and the strict 100% gate remain unchanged.
 
 on:
-  # A single main-branch push creates the safe follow-on and queues behind
-  # the first five-batch wave on the SAME writer mutex. No recurring cron,
-  # no dependence on a more-than-three-deep workflow_run chain.
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/tpex-final-historical-factors.yml'
+  # One-hop from the main-branch push-triggered five-batch wave; never wait as
+  # another pending run in the shared workflow-level writer queue.
+  workflow_run:
+    workflows:
+      - "One-Time Free TPEx Five-Batch Historical Factor Campaign"
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       apply:
@@ -25,8 +26,11 @@ on:
 permissions:
   contents: read
 
+# Isolation at workflow level prevents unrelated pending writer jobs from
+# canceling this distinct final acceptance; actual DB writer serialization
+# remains enforced by the existing per-job group below.
 concurrency:
-  group: twstock-indicator-catchup
+  group: twstock-tpex-final-acceptance-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -35,7 +39,12 @@ jobs:
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
       (
-        github.event_name == 'push' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.repository.full_name == github.repository
+        ) ||
         (github.event_name == 'workflow_dispatch' && inputs.apply == true)
       )
     concurrency:

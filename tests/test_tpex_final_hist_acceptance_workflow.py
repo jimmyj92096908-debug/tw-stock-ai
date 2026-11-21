@@ -7,21 +7,26 @@ WORKFLOW=ROOT/".github/workflows/tpex-final-historical-factors.yml"
 
 
 class TPExFinalHistoricalFactorsWorkflowTests(unittest.TestCase):
-    def test_one_exact_file_on_main_and_default_manual_preview(self):
+    def test_exact_successful_main_wave_handoff_and_default_manual_preview(self):
         data=WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("  push:\n    branches:\n      - main\n",data)
-        self.assertIn("'.github/workflows/tpex-final-historical-factors.yml'",data)
+        self.assertIn("  workflow_run:\n",data)
+        self.assertIn('"One-Time Free TPEx Five-Batch Historical Factor Campaign"',data)
+        self.assertIn("    types:\n      - completed",data)
+        self.assertNotIn("  push:",data)
         self.assertNotIn("  schedule:",data)
-        self.assertNotIn("  workflow_run:",data)
         self.assertIn("github.ref == 'refs/heads/main'",data)
-        self.assertIn("github.event_name == 'push'",data)
+        self.assertIn("github.event_name == 'workflow_run'",data)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'",data)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'",data)
+        self.assertIn("github.event.workflow_run.repository.full_name == github.repository",data)
         self.assertIn("github.event_name == 'workflow_dispatch'",data)
         self.assertIn("inputs.apply == true",data)
         self.assertIn("default: false",data)
 
     def test_writer_serialization_free_plan_and_cap(self):
         data=WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("group: twstock-indicator-catchup",data)
+        self.assertIn("group: twstock-tpex-final-acceptance-${{ github.run_id }}",data)
+        self.assertNotIn("group: twstock-indicator-catchup",data)
         self.assertIn("group: twstock-tpex-dated-official-history",data)
         self.assertIn("cancel-in-progress: false",data)
         self.assertIn("scripts/tpex_factor_bounded_campaign.py --apply --max-batches 3",data)
