@@ -190,7 +190,7 @@ def run(url: str, *, apply=False, limit=2, months=5,
                         existing._size_guard(conn)
                         growth=after["days"]-before["days"]
                         existing._state(conn,stock["stock_id"],
-                                        "long-history-success" if growth else "long-history-no-growth",
+                                        "success" if growth else "failed",
                                         stock["last_observed"],len(raw),
                                         None if growth else "NO_EARLIER_OFFICIAL_BARS")
                     record.update({"status":"new_official_history" if growth else "no_growth",
@@ -201,7 +201,7 @@ def run(url: str, *, apply=False, limit=2, months=5,
                     # Do not mark the entire stock cohort verified. A refused
                     # stock is safe to retry after the existing two-day cooldown.
                     with conn.transaction():
-                        existing._state(conn,stock["stock_id"],"long-history-failed",
+                        existing._state(conn,stock["stock_id"],"failed",
                                         stock["last_observed"],0,type(exc).__name__)
                     record.update({"status":"failed","error_type":type(exc).__name__})
             records.append(record)
