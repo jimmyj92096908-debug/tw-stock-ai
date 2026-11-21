@@ -1,0 +1,15 @@
+2026-11-21 ONE TIME owner-approved official listed+TPEx general-industry
+balance sheet first-observed capture. Source endpoints only:
+https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci
+https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap07_O_ci
+Two capped official HTTPS GET requests, each <=8MB; source must include
+verifiable real ROC fiscal year/quarter, assets, liabilities and equity.
+Archive first_observed_at ONLY after completed HTTP response. Do not infer
+the original individual company's historical published_at. Preserve known
+ticker source amount and original content fingerprint with append-only
+insert missing primary keys, and reject UPDATE/DELETE via DB trigger.
+Accounting identity mismatches must not qualify as safe research ratios.
+Use existing Neon Free and 800MB stop threshold, no paid services, no
+price/score/model rewrites, no fabricated cashflow, ROE or past revisions,
+no LINE signals/webhooks and no broker orders. One run only.
+Never modify, remove or recommit this unique authorization marker.
