@@ -169,7 +169,7 @@ class LabelReadinessTests(unittest.TestCase):
                 audit.main()
             result=json.loads(out.read_text(encoding="utf-8"))
             self.assertFalse(result["eligible_for_exploratory_outcome_research"])
-            self.assertIn("不能",md.read_text(encoding="utf-8"))
+            self.assertIn("不是新模型回測績效",md.read_text(encoding="utf-8"))
 
 
 if __name__=="__main__":
