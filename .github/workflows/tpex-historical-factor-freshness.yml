@@ -1,6 +1,14 @@
 name: TPEx Backfilled Historical Factor Freshness (Research Only)
 
 on:
+  # Bootstrap the first 100-stock, source-verified repair on main merge.
+  # Only this workflow's changes initiate a push run; all other rounds use
+  # the existing twice-daily free schedule.
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/tpex-historical-factor-freshness.yml'
   schedule:
     # Two small bounded source-verified windows per day (Asia/Taipei 10:40,22:40).
     - cron: '40 2,14 * * *'
@@ -27,6 +35,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (
         github.event_name == 'schedule' ||
+        github.event_name == 'push' ||
         (github.event_name == 'workflow_dispatch' && inputs.apply == true)
       )
     # Job-level lock prevents price-history writers running during factor
