@@ -1,6 +1,7 @@
 import unittest
 from src.composite_score import (technical_score, smc_score, combine_scores,
-    horizon_technical_score, horizon_smc_score, HORIZONS)
+    horizon_technical_score, horizon_smc_score, HORIZONS,
+    SCORABLE_STOCKS_SQL, LATEST_VALID_TECH_SQL)
 
 class CompositeScoreTests(unittest.TestCase):
     def setUp(self):
@@ -27,6 +28,14 @@ class CompositeScoreTests(unittest.TestCase):
     def test_full_coverage(self):
         score,cov=combine_scores({"technical":70,"smc":60,"chip":80})
         self.assertIsNotNone(score); self.assertEqual(cov,1.0)
+    def test_composite_does_not_fall_back_to_outdated_indicators(self):
+        self.assertIn("p.trade_date = (", LATEST_VALID_TECH_SQL)
+        self.assertIn("SELECT MAX(p2.trade_date)", LATEST_VALID_TECH_SQL)
+        self.assertIn("p2.close > 0", LATEST_VALID_TECH_SQL)
+        self.assertIn("p.close > 0", LATEST_VALID_TECH_SQL)
+        self.assertNotIn("ORDER BY p.trade_date DESC", LATEST_VALID_TECH_SQL)
+        self.assertIn("WHERE p.close > 0", SCORABLE_STOCKS_SQL)
+
     def test_horizon_ma_sets_are_distinct(self):
         self.assertEqual(HORIZONS["short"],("ma5","ma10","ma13","ma20"))
         self.assertEqual(HORIZONS["long"],("ma60","ma120","ma240"))
