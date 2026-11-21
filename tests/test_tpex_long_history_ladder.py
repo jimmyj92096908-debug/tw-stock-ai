@@ -53,13 +53,19 @@ class TPExBackwardHistoryCanaryTests(TestCase):
         cur=conn.cursor.return_value.__enter__.return_value
         rows=[official("2026-07-16"),official("2026-07-17")]
         cur.fetchall.return_value=[
-            (date(2026,7,16),100),(date(2026,7,17),100)]
+            {"trade_date":date(2026,7,16),"close":100},
+            {"trade_date":date(2026,7,17),"close":100}]
         self.assertEqual(m.verify_existing_anchor(conn,"1234",date(2026,7,1),rows),2)
-        cur.fetchall.return_value=[(date(2026,7,16),100)]
+        # Regression: the live dict_row rows must match by date KEY, not dict iteration.
+        self.assertNotIn("for day,close in known",
+                         __import__("inspect").getsource(m.verify_existing_anchor))
+        cur.fetchall.return_value=[
+            {"trade_date":date(2026,7,16),"close":100}]
         with self.assertRaisesRegex(ValueError,"Insufficient"):
             m.verify_existing_anchor(conn,"1234",date(2026,7,1),rows)
         cur.fetchall.return_value=[
-            (date(2026,7,16),101),(date(2026,7,17),100)]
+            {"trade_date":date(2026,7,16),"close":101},
+            {"trade_date":date(2026,7,17),"close":100}]
         with self.assertRaisesRegex(ValueError,"mismatch"):
             m.verify_existing_anchor(conn,"1234",date(2026,7,1),rows)
 
