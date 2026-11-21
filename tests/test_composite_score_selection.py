@@ -69,11 +69,13 @@ class FakeDB:
 class CompositeSelectionTests(unittest.TestCase):
     def test_query_is_data_driven_and_no_hardcoded_four_tickers(self):
         self.assertIn("JOIN daily_prices p",SCORABLE_STOCKS_SQL)
-        self.assertIn("p.close IS NOT NULL",SCORABLE_STOCKS_SQL)
+        self.assertIn("p.close > 0",SCORABLE_STOCKS_SQL)
         self.assertNotIn("6213",SCORABLE_STOCKS_SQL)
         self.assertNotIn("7827",SCORABLE_STOCKS_SQL)
         self.assertIn("JOIN daily_technicals t",LATEST_VALID_TECH_SQL)
-        self.assertIn("p.trade_date DESC",LATEST_VALID_TECH_SQL)
+        self.assertIn("p.trade_date = (",LATEST_VALID_TECH_SQL)
+        self.assertIn("SELECT MAX(p2.trade_date)",LATEST_VALID_TECH_SQL)
+        self.assertIn("p2.close > 0",LATEST_VALID_TECH_SQL)
 
     def test_2330_and_6488_are_scored_when_indicators_exist(self):
         fake=FakeDB()
