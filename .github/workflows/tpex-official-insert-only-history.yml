@@ -20,9 +20,11 @@ on:
 permissions:
   contents: read
 
-# Never overlap with existing bounded official history writes.
+# A one-shot marker canary must wait behind the eligible-100 indicator/score
+# writer, because that writer fails closed if raw prices change mid-run.
+# Regular schedule continues using the existing bounded-history concurrency lock.
 concurrency:
-  group: twstock-daily-bounded-history-enrichment
+  group: ${{ github.event_name == 'push' && 'twstock-indicator-catchup' || 'twstock-daily-bounded-history-enrichment' }}
   cancel-in-progress: false
 
 jobs:
