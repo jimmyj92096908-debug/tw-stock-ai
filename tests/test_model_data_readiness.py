@@ -5,10 +5,19 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from model_data_readiness import build_report, historical_cutoff, release_reasons
+from model_data_readiness import HISTORY_SQL, build_report, historical_cutoff, release_reasons
 
 
 class ReadinessAuditTests(unittest.TestCase):
+    def test_official_current_listing_is_required_for_live_audit(self):
+        self.assertIn("official_current_listed m", HISTORY_SQL)
+        self.assertIn("14 days", HISTORY_SQL)
+        self.assertNotIn("FROM stock_master m", HISTORY_SQL)
+
+    def test_offline_status_never_claims_verified_live_roster(self):
+        report = build_report({"holdout": {}}, date(2026, 11, 22))
+        self.assertFalse(report["current_listing_status_independently_verified"])
+
     def test_historical_cutoff_leap_day(self):
         self.assertEqual(historical_cutoff(date(2024, 2, 29)), date(2019, 2, 28))
 
