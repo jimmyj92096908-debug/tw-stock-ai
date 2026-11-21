@@ -1,0 +1,1 @@
+2026-11-21 one-time FULL current TPEx stock-master raw OHLCV-to-technical/SMC in-memory source proof. 320 actual trading bars per 240+ day stock, batch 20, zero DB writes, no existing model deployment, no paid service.\n
