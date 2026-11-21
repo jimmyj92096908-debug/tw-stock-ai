@@ -1,14 +1,14 @@
 name: Build Corporate-Action Adjusted Prices
+# Writing adjusted/technical bars on a source-code push can race an
+# independent per-stock production indicator campaign. Manual opt-in only.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "sql/corporate_actions_schema.sql"
-      - "src/adjusted_prices.py"
-      - "src/build_adjusted_prices.py"
-      - "tests/test_adjusted_prices.py"
-      - ".github/workflows/build-adjusted-prices.yml"
   workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Rebuild the four specified adjusted/technical/SMC stocks on production main? Default is preview only.'
+        type: boolean
+        required: true
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -16,6 +16,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.apply == true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
