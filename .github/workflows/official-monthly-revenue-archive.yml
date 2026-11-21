@@ -11,6 +11,7 @@ on:
       - ".github/official-revenue-archive-authorized-canary-v2-20261121.txt"
       - ".github/official-revenue-archive-authorized-canary-v3-20261121.txt"
       - ".github/quarterly-income-first-seen-authorized-20261121.txt"
+      - ".github/official-balance-first-seen-authorized-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -62,6 +63,17 @@ jobs:
           else
             echo "apply=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Allow only actually newly added official balance capture marker
+        id: balance_gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+               grep -Fxq ".github/official-balance-first-seen-authorized-20261121.txt"; then
+            echo "apply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -73,6 +85,8 @@ jobs:
           python -m unittest tests.test_revenue_snapshot_archive tests.test_offline_research_hardening -v
           python -m unittest tests.test_quarterly_income_archive -v
           python -m py_compile src/official_quarterly_income_archive.py scripts/capture_official_quarterly_income.py
+          python -m unittest tests.test_official_balance_sheet_archive -v
+          python -m py_compile src/official_balance_sheet_archive.py scripts/capture_official_balance_sheet.py
       - name: Capture only actual exchange snapshots from the time first observed
         if: >-
           github.event_name == 'schedule' ||
@@ -93,6 +107,16 @@ jobs:
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL unavailable"; exit 1; fi
           python scripts/capture_official_quarterly_income.py --apply --report quarterly-income-first-seen-evidence.json
+      - name: Append official general-industry balance-sheet first-seen values only
+        if: >-
+          github.event_name == 'schedule' ||
+          steps.balance_gate.outputs.apply == 'true' ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_OFFICIAL_BALANCE_WRITE: "yes"
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL unavailable"; exit 1; fi
+          python scripts/capture_official_balance_sheet.py --apply --report balance-sheet-first-seen-evidence.json
       - name: Keep only aggregated proof, never expose issuer records or secrets
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,5 +125,6 @@ jobs:
           path: |
             official-revenue-archive-evidence.json
             quarterly-income-first-seen-evidence.json
+            balance-sheet-first-seen-evidence.json
           retention-days: 14
           if-no-files-found: ignore
