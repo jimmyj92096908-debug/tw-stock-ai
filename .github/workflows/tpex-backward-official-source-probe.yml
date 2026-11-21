@@ -1,0 +1,59 @@
+name: TPEx Historical Monthly Anchor Read-Only Source Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-long-history-source-probe-20261121.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-long-history-source-readonly-probe
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Confirm exact newly added source diagnostic marker
+        id: marker
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-long-history-source-probe-20261121.txt"; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check read-only source probe and existing no-overwrite canary
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_backward_source_probe.py scripts/tpex_long_history_ladder.py
+          python -m unittest tests.test_tpex_backward_source_probe tests.test_tpex_long_history_ladder -v
+      - name: Compare four official monthly responses with stored dates READ ONLY
+        if: github.event_name == 'workflow_dispatch' || steps.marker.outputs.new == 'true'
+        run: python scripts/tpex_backward_source_probe.py --report tpex-backward-source-probe.json
+      - name: Preserve source comparison counts without OHLC values
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-backward-monthly-source-readonly
+          path: tpex-backward-source-probe.json
+          retention-days: 14
+          if-no-files-found: ignore
