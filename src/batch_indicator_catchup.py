@@ -73,10 +73,10 @@ LIMIT %s
 CANDIDATES_240_ACTIVE_SQL = (
     CURRENT_OFFICIAL_LISTED_CTE
     + CANDIDATES_SQL.replace("WITH priced AS (", ", priced AS (", 1).replace(
-        " FROM public.daily_prices p\\n WHERE p.market=%s",
-        " FROM public.daily_prices p\\n"
-        " INNER JOIN official_current_listed active\\n"
-        "   ON active.market=p.market AND active.stock_id=p.stock_id\\n"
+        " FROM public.daily_prices p\n WHERE p.market=%s",
+        " FROM public.daily_prices p\n"
+        " INNER JOIN official_current_listed active\n"
+        "   ON active.market=p.market AND active.stock_id=p.stock_id\n"
         " WHERE p.market=%s", 1
     )
 )
