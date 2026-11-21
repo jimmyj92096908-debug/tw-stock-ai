@@ -25,6 +25,8 @@ from composite_score import calculate_all
 
 MIN_240_COHORT=500
 MIN_VERIFIED_DAYS=240
+MIN_FIVE_YEAR_SOURCE_DAYS=1000
+MAX_FACTOR_START_BYTES=650_000_000
 MAX_ROUNDS=60
 MAX_SCORE_BATCHES=120
 SCORE_BATCH_SIZE=10
@@ -72,6 +74,17 @@ SELECT (SELECT count(*)::bigint FROM public.daily_prices WHERE market='twse')
         WHERE market='twse' AND source='TWSE_MI_INDEX_ALLBUT0999')
       AS verified_source_days,
        (SELECT pg_database_size(current_database())::bigint) database_bytes,
+       (SELECT count(*)::int FROM generate_series(
+          ((now() AT TIME ZONE 'Asia/Taipei')::date-INTERVAL '5 years')::date,
+          ((now() AT TIME ZONE 'Asia/Taipei')::date-INTERVAL '1 day')::date,
+          INTERVAL '1 day'
+        ) d(day_date)
+        WHERE extract(isodow FROM d.day_date) BETWEEN 1 AND 5
+          AND NOT EXISTS (
+            SELECT 1 FROM public.twse_history_day_progress progress
+            WHERE progress.trade_date=d.day_date::date
+              AND progress.status IN ('imported','closed')
+          )) missing_five_year_weekdays,
        count(*)::int eligible,
        count(*) FILTER(WHERE tech AND smc)::int current_indicators,
        count(*) FILTER(WHERE tech AND smc AND score)::int current_scores
@@ -109,7 +122,8 @@ def capture(url):
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         data=dict(conn.execute(STATE_SQL).fetchone())
     for k in ("raw_twse_rows","verified_source_days","database_bytes",
-              "eligible","current_indicators","current_scores"):
+              "eligible","current_indicators","current_scores",
+              "missing_five_year_weekdays"):
         if type(data.get(k)) is not int or data[k]<0:
             raise RuntimeError("Invalid TWSE long-history indicator evidence")
     if data["database_bytes"]>=MAX_DATABASE_BYTES:
@@ -178,6 +192,12 @@ def execute(url,*,apply=False,max_rounds=MAX_ROUNDS,
     if (before["verified_source_days"]<MIN_VERIFIED_DAYS or
         before["eligible"]<MIN_240_COHORT):
         raise RuntimeError("Official TWSE 240-day cohort not independently verified")
+    if (before["verified_source_days"]<MIN_FIVE_YEAR_SOURCE_DAYS
+        or before["missing_five_year_weekdays"]!=0
+        or before["database_bytes"]>=MAX_FACTOR_START_BYTES):
+        raise RuntimeError(
+            "TWSE five-year source backlog or free storage prevents factor materialization"
+        )
 
     current=before
     for i in range(max_rounds):
