@@ -32,7 +32,11 @@ class TWSEIndependentReleaseGateTests(TestCase):
         self.assertIn("c.latest_official_ingest",gate.STATE_SQL)
         for t in ("a","t","s"):
             self.assertIn(f"min({t}.calculated_at)",gate.STATE_SQL)
-        self.assertNotIn("max(t.calculated_at)",gate.STATE_SQL)
+        # MIN checks source freshness; MAX checks score version ordering.
+        for t in ("a","t","s"):
+            self.assertIn(f"max({t}.calculated_at)",gate.STATE_SQL)
+            field={"a":"adjusted","t":"technical","s":"smc"}[t]
+            self.assertIn(f"c.{field}_latest_at",gate.STATE_SQL)
         for t in ("a", "t", "s"):
             self.assertIn(f"{t}.calculated_at IS NULL",gate.STATE_SQL)
         self.assertIn("e.latest_official_ingest",gate.STATE_SQL)
