@@ -20,10 +20,8 @@ from psycopg.rows import dict_row
 
 SAFETY_STOP_BYTES = 800_000_000
 MIN_RECOMPUTE_FREE_BYTES = 40_000_000
-FIVE_YEAR_TARGET_MARKET_DAYS = 1212  # informational only; dynamically sourced below
 MAX_CANDIDATE_STOCKS = 5
 MAX_RECOMPUTE_PRICE_ROWS = 5000
-MAX_MODEL_ESTIMATE_FRACTION = 2.0
 
 TABLE_SQL = """
 SELECT 'daily_prices' AS tbl, count(*)::bigint AS rows,
@@ -68,9 +66,9 @@ MISSING_SQL = """
 WITH per_stock AS (
  SELECT p.stock_id,
  COUNT(*)::int AS price_rows,
- COUNT(a.trade_date) FILTER (WHERE a.trade_date IS NULL)::int AS missing_adjusted,
- COUNT(t.trade_date) FILTER (WHERE t.trade_date IS NULL)::int AS missing_technical,
- COUNT(s.trade_date) FILTER (WHERE s.trade_date IS NULL)::int AS missing_smc,
+ COUNT(*) FILTER (WHERE a.trade_date IS NULL)::int AS missing_adjusted,
+ COUNT(*) FILTER (WHERE t.trade_date IS NULL)::int AS missing_technical,
+ COUNT(*) FILTER (WHERE s.trade_date IS NULL)::int AS missing_smc,
  COUNT(*) FILTER (WHERE p.close>0 AND p.volume>=0)::int AS valid_days,
  MAX(p.trade_date) FILTER (WHERE p.close>0 AND p.volume>=0) AS latest_valid
  FROM public.daily_prices p
