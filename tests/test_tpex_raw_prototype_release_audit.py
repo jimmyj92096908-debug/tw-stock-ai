@@ -54,7 +54,7 @@ class RawPrototypeNoReleaseTests(TestCase):
         self.assertEqual(out["saved_model_version"],"tw-factor-ridge-1")
         self.assertEqual(out["saved_model_release_decision"],"BLOCKED")
         self.assertLess(out["saved_model_holdout_mean_net_excess"],0)
-        self.assertEqual(out["new_raw_prototype_release_decision"],"BLOCKED")
+        self.assertEqual(out["new_prototype_release_decision"],"BLOCKED")
         self.assertEqual(out["new_raw_nonoverlap_windows"],2)
         self.assertIn("FEWER_THAN_TEN_UNSEEN_NONOVERLAPPING_TEST_WINDOWS",
                       out["blocking_reasons"])
