@@ -61,7 +61,7 @@ def normalize_tpex_monthly_units(parsed: dict[str, Any]) -> dict[str, Any]:
         if value is None:
             continue
         try:
-            scaled = Decimal(str(value)) * 1000
+            scaled = Decimal(str(value).strip().replace(",", "")) * 1000
         except InvalidOperation as exc:
             raise ValueError(f"Invalid raw TPEx {key}") from exc
         if not scaled.is_finite() or scaled < 0:
@@ -102,8 +102,10 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
                 "high": optional_number(row.get("high")),
                 "low": optional_number(row.get("low")),
                 "close": optional_number(row.get("close")),
-                "volume": optional_number(row.get("volume")),
-                "turnover": optional_number(row.get("turnover")),
+                "volume": (row.get("volume") if market == "tpex" and row.get("source") == "TPEX_TRADING_STOCK"
+                           else optional_number(row.get("volume"))),
+                "turnover": (row.get("turnover") if market == "tpex" and row.get("source") == "TPEX_TRADING_STOCK"
+                             else optional_number(row.get("turnover"))),
                 "change": optional_number(row.get("change")),
                 "transactions": optional_number(row.get("transactions")),
                 "source": row.get("source") or market.upper(),
