@@ -69,6 +69,20 @@ class TWSELongHistoryCampaignTests(TestCase):
         source.assert_any_call("fake",apply=True,batch_days=8,
                                lookback_days=1830,pause_seconds=2)
 
+    def test_stops_before_fetch_when_free_storage_reserve_insufficient(self):
+        near=state(bytes_=745_000_000)
+        with (
+            patch.dict(os.environ,{
+                "STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED":"yes",
+                "STOCK_TWSE_HISTORY_WRITE_ENABLED":"yes",
+            }),
+            patch.object(campaign,"snapshot",return_value=near),
+            patch.object(campaign,"source_run",side_effect=AssertionError("unsafe fetch")) as run,
+        ):
+            with self.assertRaisesRegex(RuntimeError,"maintenance reserve"):
+                campaign.execute("fake",apply=True,max_rounds=1)
+        run.assert_not_called()
+
     def test_duplicate_source_date_refused(self):
         with self.assertRaisesRegex(RuntimeError,"Unverified"):
             campaign.inspect_batch([bar("2026-05-04"),bar("2026-05-04")],

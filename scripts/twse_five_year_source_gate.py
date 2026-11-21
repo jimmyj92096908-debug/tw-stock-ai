@@ -15,6 +15,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+from twse_dated_history import has_source_write_budget, MAX_DAYS_PER_RUN
 
 MAX_DATABASE_BYTES = 800_000_000
 MIN_SOURCE_DAYS = 100
@@ -22,8 +23,12 @@ MIN_ACTIVE_TWSE = 700
 
 STATE_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
 SELECT pg_database_size(current_database())::bigint AS database_bytes,
-       (SELECT count(*)::int FROM official_current_listed
-        WHERE market='twse') AS active_twse,
+       (SELECT count(*)::int FROM official_current_listed o
+        WHERE o.market='twse'
+          AND NOT EXISTS (
+            SELECT 1 FROM public.model_stock_exclusions x
+            WHERE x.market=o.market AND x.stock_id=o.stock_id
+          )) AS active_twse,
        (SELECT count(DISTINCT trade_date)::int FROM public.daily_prices
         WHERE market='twse'
           AND source='TWSE_MI_INDEX_ALLBUT0999') AS verified_source_days,
@@ -57,7 +62,7 @@ def snapshot(url):
 
 def decide(evidence):
     return (
-        evidence["database_bytes"] < MAX_DATABASE_BYTES
+        has_source_write_budget(evidence["database_bytes"],days=MAX_DAYS_PER_RUN)
         and evidence["verified_source_days"] >= MIN_SOURCE_DAYS
         and evidence["active_twse"] >= MIN_ACTIVE_TWSE
         and evidence["missing_weekdays"] > 0

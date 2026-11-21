@@ -20,12 +20,15 @@ class TWSEFiveYearSourceGateTests(TestCase):
         self.assertTrue(gate.decide(evidence()))
         for changes in (
             {"database_bytes": 800_000_000},
+            {"database_bytes": 745_000_000},
             {"active_twse": 699},
             {"verified_source_days": 99},
             {"missing_weekdays": 0},
         ):
             self.assertFalse(gate.decide(evidence(**changes)))
+        self.assertTrue(gate.decide(evidence(database_bytes=610_377_728)))
         self.assertIn("official_current_listed", gate.STATE_SQL)
+        self.assertIn("public.model_stock_exclusions", gate.STATE_SQL)
         self.assertIn("14 days", gate.STATE_SQL)
         self.assertIn("twse_history_day_progress", gate.STATE_SQL)
         self.assertIn("AT TIME ZONE 'Asia/Taipei'", gate.STATE_SQL)

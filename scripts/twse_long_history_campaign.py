@@ -19,7 +19,7 @@ from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from twse_dated_history import run as source_run
+from twse_dated_history import run as source_run, has_source_write_budget
 
 MAX_ROUNDS = 14
 MAX_DAYS_PER_ROUND = 8
@@ -102,7 +102,7 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
         "baseline":initial,"latest":initial,"batches":[],
         "raw_prices_overwritten":False,"line_messages_sent":False,
         "trading_enabled":False,"paid_upgrade_requested":False,
-        "finished":False,
+        "finished":False,"capacity_guard_blocked":False,
     }
     save(report_path,report)
     if not apply:
@@ -114,6 +114,11 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
     seen=set()
     empty_batches=0
     for number in range(1,max_rounds+1):
+        if not has_source_write_budget(previous["database_bytes"], days=MAX_DAYS_PER_ROUND):
+            report["capacity_guard_blocked"]=True
+            report["finished"]=False
+            save(report_path,report)
+            raise RuntimeError("TWSE source campaign blocked by Neon Free maintenance reserve")
         result=source_run(url,apply=True,batch_days=MAX_DAYS_PER_ROUND,
                           lookback_days=LOOKBACK_DAYS,pause_seconds=2)
         if not result:

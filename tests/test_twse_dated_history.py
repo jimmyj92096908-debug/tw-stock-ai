@@ -137,6 +137,7 @@ class DateHistoryTests(unittest.TestCase):
             patch.object(history,"fetch_official_day",side_effect=[prices,None]),
             patch.object(history,"write_missing",return_value=799) as write,
             patch.object(history,"_record_day",side_effect=lambda *x: calls.append(x)),
+            patch.object(history,"verify_source_write_budget") as storage,
         ):
             results=history.run("postgresql://fake",apply=True,
                                 today=date(2026,11,20),batch_days=2,
@@ -147,6 +148,33 @@ class DateHistoryTests(unittest.TestCase):
         self.assertEqual(calls[0][2:],("imported",800,799))
         self.assertEqual(calls[1][2:],("closed",0,0))
         self.assertTrue(any("CREATE TABLE" in s for s,_ in fake.cur.statements))
+        self.assertEqual(storage.call_count,2)
+
+    def test_realistic_source_budget_and_fail_closed_validation(self):
+        self.assertTrue(history.has_source_write_budget(610_377_728,days=8))
+        self.assertFalse(history.has_source_write_budget(745_000_000,days=8))
+        self.assertFalse(history.has_source_write_budget(749_500_000,days=1))
+        for bad in (-1,True,1.5,None):
+            with self.assertRaises(ValueError):
+                history.has_source_write_budget(bad,days=1)
+        for days in (0,9,True):
+            with self.assertRaises(ValueError):
+                history.has_source_write_budget(500_000_000,days=days)
+
+    def test_blocked_storage_does_not_fetch_or_insert(self):
+        fake=FakeConnection()
+        allowed={("twse",str(i)) for i in range(1000,1800)}
+        with (
+            patch.dict(os.environ,{"STOCK_TWSE_HISTORY_WRITE_ENABLED":"yes"}),
+            patch.object(history.psycopg,"connect",return_value=fake),
+            patch.object(history,"load_current_twse_allowed",return_value=allowed),
+            patch.object(history,"verify_source_write_budget",side_effect=RuntimeError("storage reserve")),
+            patch.object(history,"fetch_official_day",side_effect=AssertionError("unsafe fetch")),
+            patch.object(history,"write_missing",side_effect=AssertionError("unsafe insert")),
+        ):
+            with self.assertRaisesRegex(RuntimeError,"storage reserve"):
+                history.run("postgresql://fake",apply=True,today=date(2026,11,20),
+                            batch_days=1,lookback_days=7,pause_seconds=0)
 
     def test_no_partial_or_stale_source_coverage_is_imported(self):
         fake=FakeConnection()
