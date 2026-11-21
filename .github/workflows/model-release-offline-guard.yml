@@ -1,0 +1,62 @@
+name: AI Research Release Gate (Offline - No Trading)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "models/tw-factor-ridge-1-evaluation.json"
+      - "src/model_release_acceptance.py"
+      - "scripts/research_model_release_audit.py"
+      - "tests/test_model_release_acceptance.py"
+  pull_request:
+    paths:
+      - "models/tw-factor-ridge-1-evaluation.json"
+      - "src/model_release_acceptance.py"
+      - "scripts/research_model_release_audit.py"
+      - "tests/test_model_release_acceptance.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-research:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fail-closed offline validation tests
+        run: |
+          python -m py_compile src/model_release_acceptance.py scripts/research_model_release_audit.py
+          python -m unittest tests.test_model_release_acceptance -v
+      - name: Verify persisted model is not misleadingly promoted
+        run: |
+          python scripts/research_model_release_audit.py --out research-release-status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("research-release-status.json").read_text())
+          assert x["model_version"]=="tw-factor-ridge-1"
+          assert x["decision"]=="BLOCKED"
+          assert "NEGATIVE_OR_ZERO_SAVED_NET_EXCESS" in x["blocking_reasons"]
+          assert x["line_signal_delivery_approved"] is False
+          assert x["live_trading_approved"] is False
+          print("Persisted non-pristine negative holdout correctly remains blocked")
+          PY
+      - name: Append evidence to reviewable CI summary
+        if: always()
+        run: |
+          echo "### Research-only model release gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "Persisted holdout has negative net excess and is not independent; release remains BLOCKED." >> "$GITHUB_STEP_SUMMARY"
+          echo "No DB writes, LINE messages, or trade orders were sent." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: persisted-ridge-research-release-blockers
+          path: research-release-status.json
+          retention-days: 14
+          if-no-files-found: ignore
