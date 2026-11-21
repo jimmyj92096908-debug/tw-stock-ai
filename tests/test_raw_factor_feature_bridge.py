@@ -73,7 +73,7 @@ class CausalRawFactorBridgeTests(TestCase):
     def test_missing_sessions_excluded_not_imputed(self):
         data=bars()
         report=build_research_features(data,stock_id="5520",cutoff=data[-1]["trade_date"],
-                 signal_dates=[data[200]["trade_date"],date(2025,12,31)])
+                 signal_dates=[data[200]["trade_date"],date(2025,1,1)])
         self.assertEqual(report["included_signals"],0)
         self.assertEqual(len(report["excluded_signal_days"]),2)
         self.assertEqual(
