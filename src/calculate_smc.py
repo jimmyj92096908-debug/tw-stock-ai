@@ -38,7 +38,10 @@ ON CONFLICT (market, stock_id, trade_date) DO UPDATE SET
 def calculate_stock(conn, market: str, stock_id: str) -> int:
     with conn.cursor() as cur:
         cur.execute("""SELECT market, stock_id, trade_date, open, high, low, close
-                       FROM daily_adjusted_prices WHERE market=%s AND stock_id=%s ORDER BY trade_date""",
+                       FROM daily_adjusted_prices WHERE market=%s AND stock_id=%s
+                         AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                          WHERE x.market=daily_adjusted_prices.market AND x.stock_id=daily_adjusted_prices.stock_id)
+                       ORDER BY trade_date""",
                     (market, stock_id))
         rows = cur.fetchall()
     if not rows:
@@ -68,14 +71,16 @@ def main():
         with conn.cursor() as cur:
             if args.stock_id:
                 cur.execute("""SELECT DISTINCT market, stock_id FROM daily_adjusted_prices
-                               WHERE market=ANY(%s) AND stock_id=%s ORDER BY market,stock_id""",
+                               WHERE market=ANY(%s) AND stock_id=%s
+                                 AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x WHERE x.market=daily_adjusted_prices.market AND x.stock_id=daily_adjusted_prices.stock_id)
+                               ORDER BY market,stock_id""",
                             (list(markets), args.stock_id))
                 stocks = cur.fetchall()
             else:
                 stocks = []
                 for market in markets:
                     cur.execute("""SELECT DISTINCT market, stock_id FROM daily_adjusted_prices
-                                   WHERE market=%s ORDER BY stock_id OFFSET %s LIMIT %s""",
+                                   WHERE market=%s AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x WHERE x.market=daily_adjusted_prices.market AND x.stock_id=daily_adjusted_prices.stock_id) ORDER BY stock_id OFFSET %s LIMIT %s""",
                                 (market,args.offset,args.limit))
                     stocks.extend(cur.fetchall())
         if not stocks:
