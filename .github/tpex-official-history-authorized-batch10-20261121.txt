@@ -1,0 +1,13 @@
+Owner-authorized ONE-TIME free-tier official TPEx batch: 2026-11-21.
+Scope: at most 10 short-history TPEx stocks, at most five official
+monthly source requests per stock, never over 50 official requests.
+Use only existing protected Neon Free + GitHub Actions resources.
+INSERT ONLY missing (market,stock_id,trade_date) raw price keys:
+ON CONFLICT DO NOTHING. Do not replace or synthesize raw prices.
+Under the indicator writer mutex, complete at most two rounds of
+five newly eligible same-day adjusted/technical/SMC/composite
+insert-only scores, then verify exact eligible intersection.
+Stop at the existing 800 MB database guard or any failed official
+validation; no unlimited retry and NO paid plan/API upgrades.
+Never send LINE or activate orders/live model trading.
+Do not edit or recommit this unique authorization marker.
