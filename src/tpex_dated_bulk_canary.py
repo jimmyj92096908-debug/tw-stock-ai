@@ -48,6 +48,7 @@ def parse_day(payload: dict, requested: date) -> dict:
     if not isinstance(tables, list) or not tables:
         raise ValueError("Missing TPEx data tables")
     selected = []
+    invalid_numeric = 0
     for table in tables:
         if not isinstance(table, dict):
             continue
@@ -74,7 +75,10 @@ def parse_day(payload: dict, requested: date) -> dict:
                 values = {key: decimal_value(row[index]) for key, index in idx.items()
                           if key != "代號"}
             except ValueError:
-                raise ValueError("Invalid numeric value in official stock row")
+                # Some four-digit securities have special/no-trade textual
+                # fields. Skip individually, but reject a degraded whole day.
+                invalid_numeric += 1
+                continue
             lo, hi, close, op = (values[k] for k in ("最低", "最高", "收盤", "開盤"))
             if close is None or close <= 0:
                 continue
@@ -89,6 +93,8 @@ def parse_day(payload: dict, requested: date) -> dict:
                 raise ValueError("Non-integral official share count")
             selected.append((stock_id, close, int(values["成交股數"])))
         break
+    if invalid_numeric > max(25, len(seen) // 10):
+        raise ValueError("Too many malformed four-digit security rows")
     if len(selected) < MIN_STOCKS:
         raise ValueError("Too few valid four-digit securities")
     # This official page is requested by date and may lack per-row dates.
@@ -97,6 +103,7 @@ def parse_day(payload: dict, requested: date) -> dict:
     return {
         "requested_date": requested.isoformat(),
         "valid_four_digit_codes": len(selected),
+        "skipped_invalid_numeric": invalid_numeric,
         "close_checksum": str(sum(v for _, v, _ in selected)),
         "total_round_lot_shares": sum(v for _, _, v in selected),
         "samples": {code: {"close": str(close), "round_lot_volume_shares": volume}
