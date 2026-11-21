@@ -31,7 +31,7 @@ def dataset():
     roster=input_roster()
     return frozen_unadjusted_dataset(roster,
         signal_dates=sigs(next(iter(roster.values()))),
-        label_cutoff=date(2026,5,1))
+        label_cutoff=date(2026,6,30))
 
 class RawFactorOfflineWalkforwardTests(TestCase):
     def test_whole_roster_full_price_labels_and_no_release(self):
@@ -51,7 +51,7 @@ class RawFactorOfflineWalkforwardTests(TestCase):
         stock=input_roster()
         before=frozen_unadjusted_dataset(stock,signal_dates=[
             next(iter(stock.values()))[270]["trade_date"]],
-            label_cutoff=date(2026,5,1))
+            label_cutoff=date(2026,6,30))
         replacement=input_roster()
         for p in replacement["1700"][271:]:
             p["close"]*=1.05
@@ -60,7 +60,7 @@ class RawFactorOfflineWalkforwardTests(TestCase):
             p["low"]*=1.05
         after=frozen_unadjusted_dataset(replacement,signal_dates=[
             next(iter(stock.values()))[270]["trade_date"]],
-            label_cutoff=date(2026,5,1))
+            label_cutoff=date(2026,6,30))
         a=next(x for x in before["rows"] if x["stock_id"]=="1700")
         b=next(x for x in after["rows"] if x["stock_id"]=="1700")
         self.assertEqual(a["feature_vector"],b["feature_vector"])
@@ -71,11 +71,11 @@ class RawFactorOfflineWalkforwardTests(TestCase):
         stock=input_roster()
         signal=stock["1700"][300]["trade_date"]
         original=frozen_unadjusted_dataset(stock,signal_dates=[signal],
-                                          label_cutoff=date(2026,5,1))
+                                          label_cutoff=date(2026,6,30))
         self.assertEqual(original["accepted_whole_cohort_days"],1)
         stock["1702"].pop(306)
         damaged=frozen_unadjusted_dataset(stock,signal_dates=[signal],
-                                         label_cutoff=date(2026,5,1))
+                                         label_cutoff=date(2026,6,30))
         self.assertEqual(damaged["accepted_whole_cohort_days"],0)
         self.assertEqual(damaged["rows"],[])
         self.assertEqual(damaged["excluded_whole_cohort_days"],
@@ -83,7 +83,7 @@ class RawFactorOfflineWalkforwardTests(TestCase):
         stock=input_roster()
         stock["1703"]=stock["1703"][:304]
         failed=frozen_unadjusted_dataset(stock,signal_dates=[signal],
-                                         label_cutoff=date(2026,5,1))
+                                         label_cutoff=date(2026,6,30))
         self.assertEqual(failed["rows"],[])
         self.assertEqual(failed["excluded_whole_cohort_days"],
                          {"unmatured_next_session_to_exit_label":1})
@@ -130,7 +130,7 @@ class RawFactorOfflineWalkforwardTests(TestCase):
             purged_ridge_prototype(d,test_start=date(2026,1,1))
         small=frozen_unadjusted_dataset(input_roster(),signal_dates=[
             input_roster()["1700"][280]["trade_date"]],
-            label_cutoff=date(2026,5,1))
+            label_cutoff=date(2026,6,30))
         result=purged_ridge_prototype(small,
                 test_start=input_roster()["1700"][280]["trade_date"])
         self.assertEqual(result["status"],"INSUFFICIENT_MATURE_RAW_SOURCE_RESEARCH")
@@ -139,4 +139,4 @@ class RawFactorOfflineWalkforwardTests(TestCase):
             purged_ridge_prototype(small,test_start=date(2030,1,1))
         with self.assertRaises(ValueError):
             frozen_unadjusted_dataset(input_roster(),signal_dates=[
-                date(2030,1,1)],label_cutoff=date(2026,5,1))
+                date(2030,1,1)],label_cutoff=date(2026,6,30))
