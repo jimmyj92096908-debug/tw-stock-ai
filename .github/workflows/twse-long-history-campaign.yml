@@ -65,6 +65,9 @@ jobs:
           STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED: 'yes'
           STOCK_TWSE_HISTORY_WRITE_ENABLED: 'yes'
         run: python scripts/twse_long_history_campaign.py --apply --max-rounds 14 --report twse-long-evidence.json
+      - name: Audit currently listed stock maturity and remaining source scope (read only)
+        if: steps.gate.outputs.should_run == 'true' && success()
+        run: python scripts/twse_five_year_maturity_audit.py --report twse-five-year-maturity.json
       - name: Preserve official source and no-overwrite accounting evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,5 +76,6 @@ jobs:
           path: |
             twse-long-preview.json
             twse-long-evidence.json
+            twse-five-year-maturity.json
           retention-days: 14
           if-no-files-found: ignore
