@@ -118,7 +118,10 @@ def verify_existing_anchor(conn, stock_id: str, month: date, bars: list[dict]):
     with conn.cursor() as cur:
         cur.execute(ANCHOR_SQL,(stock_id,month,future))
         known=cur.fetchall()
-    overlap=[(day,close) for day,close in known if day in by_day]
+    # The live connection uses psycopg.rows.dict_row, not positional tuples.
+    # Reading dict keys as tuple values silently produced zero date overlaps.
+    overlap=[(row["trade_date"],row["close"]) for row in known
+             if row["trade_date"] in by_day]
     if len(overlap)<MIN_ANCHOR_MATCHES:
         raise ValueError("Insufficient independently stored TPEx anchor closes")
     if any(Decimal(str(close))!=by_day[day] for day,close in overlap):
