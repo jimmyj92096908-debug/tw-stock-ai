@@ -499,7 +499,8 @@ def main() -> None:
     with psycopg.connect(url, connect_timeout=20, row_factory=dict_row) as conn:
         # All SQL statements are SELECT; read-only transaction blocks writes.
         with conn.transaction():
-            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            conn.execute("SET LOCAL statement_timeout = '30000ms'")
             audit = collect_audit(conn)
     if args.json:
         print(json.dumps(audit, ensure_ascii=False, indent=2))
