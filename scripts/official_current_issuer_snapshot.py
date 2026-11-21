@@ -24,7 +24,7 @@ STORAGE_STOP_BYTES=650_000_000
 REQUIRED_SOURCE_HOSTS={"openapi.twse.com.tw","www.tpex.org.tw"}
 LISTING_KEYS={
     "twse":("上市日期","上市年月日","ListingDate","SecuritiesListingDate"),
-    "tpex":("上櫃日期","上櫃年月日","ListingDate","SecuritiesListingDate"),
+    "tpex":("DateOfListing","上櫃日期","上櫃年月日","ListingDate","SecuritiesListingDate"),
 }
 MASTER_SQL="""SELECT market,stock_id FROM public.stock_master
 WHERE market IN ('twse','tpex')"""
