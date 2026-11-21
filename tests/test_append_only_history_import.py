@@ -21,6 +21,54 @@ class AppendOnlyHistoryTests(unittest.TestCase):
         self.assertIn("(inserted, run_id)", source)
         self.assertIn("return inserted", source)
 
+
+    def test_duplicate_rows_are_not_reported_as_inserted(self):
+        """Exercise importer with mocked PostgreSQL insert effects."""
+        import csv
+        from contextlib import nullcontext
+
+        class Cursor:
+            rowcount = -1
+            sql_calls = []
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def execute(self, statement, params=None):
+                self.sql_calls.append((statement, params))
+            def executemany(self, statement, rows):
+                assert "DO NOTHING" in statement
+                self.rowcount = 0
+            def fetchone(self):
+                return {"run_id": 123}
+
+        class Connection:
+            def __init__(self):
+                self.cur = Cursor()
+            def transaction(self):
+                return nullcontext()
+            def cursor(self):
+                return self.cur
+
+        record = {
+            "stock_id": "6488", "trade_date": "2026-11-19",
+            "open": "500", "high": "510", "low": "480", "close": "490",
+            "volume": "1000", "turnover": "500000", "change": "-10",
+            "transactions": "50", "source": "TPEX_TRADING_STOCK",
+        }
+        with TemporaryDirectory() as directory:
+            filepath = Path(directory) / "6488.csv"
+            with filepath.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(record))
+                writer.writeheader()
+                writer.writerow(record)
+            conn = Connection()
+            self.assertEqual(db_storage.upsert_csv(conn, filepath, "tpex"), 0)
+            updates = [(sql, params) for sql, params in conn.cur.sql_calls
+                       if "UPDATE import_runs" in sql]
+            self.assertEqual(len(updates), 1)
+            self.assertEqual(updates[0][1], (0, 123))
+
     def test_unsafe_source_units_are_not_silently_claimed_normalized(self):
         # Source-specific conversion must be independently verified before
         # a normalization change is made. A source string alone is insufficient.
