@@ -1,0 +1,76 @@
+name: One-Time TWSE 240-Session Research Indicators and Scores
+
+on:
+  workflow_run:
+    workflows:
+      - 'One-Time TWSE Official Long-History 240-Session Research Catch-Up'
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Explicitly recompute verified TWSE 240-day indicators and scores?'
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+# Reuse the existing one-writer mutex for technical, SMC and composite data.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  twse-240-research-only:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.name == 'One-Time TWSE Official Long-History 240-Session Research Catch-Up' &&
+         github.event.workflow_run.event == 'workflow_run' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.repository.full_name == github.repository)
+        ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.ref == 'refs/heads/main' && inputs.apply == true)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free research dependencies
+        run: pip install -r requirements.txt
+      - name: Verify 240-day specific indicator and score gates
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/twse_240_research_catchup.py src/batch_indicator_catchup.py
+          python -m unittest tests.test_twse_240_research_catchup tests.test_batch_indicator_catchup tests.test_composite_score -v
+      - name: Read-only TWSE 240-session cohort preflight
+        run: python scripts/twse_240_research_catchup.py --report twse-240-preview.json
+      - name: Rebuild source-qualified research indicators then exact-cohort latest scores
+        env:
+          STOCK_TWSE_240_RESEARCH_WRITE_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TWSE_240_SCORE_RECALC_ENABLED: 'yes'
+        run: |
+          python scripts/twse_240_research_catchup.py --apply --max-rounds 60 --max-score-batches 120 --report twse-240-research-evidence.json
+      - name: Preserve research coverage and no-raw-price-change acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twse-240-research-acceptance
+          path: |
+            twse-240-preview.json
+            twse-240-research-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore

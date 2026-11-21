@@ -75,6 +75,18 @@ class IndicatorCatchupTests(unittest.TestCase):
             ind.select_candidates(Connection(),"not-listed",2)
         self.assertIn("MIN_VERIFIED_PRICE_DAYS",dir(ind))
 
+    def test_opt_in_240_session_history_gate_keeps_normal_default(self):
+        conn=Connection()
+        with patch.object(ind.psycopg,"connect",return_value=conn):
+            result=ind.run("fake",per_market=2,markets=("twse",),
+                           min_verified_price_days=240)
+        self.assertEqual(len(result),1)
+        self.assertEqual(conn.cur.calls[0][1],("twse",240,2))
+        for value in (59,241,0,True):
+            with self.assertRaisesRegex(ValueError,"verified history"):
+                ind.run("fake",min_verified_price_days=value)
+        self.assertEqual(ind.MIN_VERIFIED_PRICE_DAYS,60)
+
     def test_market_subset_avoids_unrequested_twse_calculations(self):
         conn=Connection()
         with patch.object(ind.psycopg,"connect",return_value=conn):
