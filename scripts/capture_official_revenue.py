@@ -40,7 +40,7 @@ ON CONFLICT (market,stock_id,period_end,payload_sha256) DO NOTHING
 COUNT_SQL="SELECT COUNT(*)::bigint AS n FROM public.official_revenue_observations"
 
 
-def fetch_market(market,*,observed_at,session=None):
+def fetch_market(market,*,observed_at=None,session=None):
     if market not in SOURCES:
         raise ValueError("Unknown official source")
     session=session or requests
@@ -58,7 +58,9 @@ def fetch_market(market,*,observed_at,session=None):
         raw=res.json()
     except ValueError as e:
         raise RuntimeError("Official endpoint did not return JSON") from e
-    return parse_snapshot(market,raw,observed_at=observed_at)
+    # Never label a source value as observed before the response is received.
+    captured=datetime.now(ZoneInfo('Asia/Taipei')) if observed_at is None else observed_at
+    return parse_snapshot(market,raw,observed_at=captured)
 
 
 def _size(conn):
@@ -82,12 +84,8 @@ def capture(url,*,apply=False,observed_at=None,report_path=None,session=None):
         rows={market:fetch_market(market,observed_at=timestamp,session=session)
               for market in SOURCES}
     else:
-        # Fetch each market, assign the timestamp immediately AFTER HTTP returns.
-        rows={}
-        for market in SOURCES:
-            rows[market]=fetch_market(
-                market,observed_at=datetime.now(ZoneInfo("Asia/Taipei")),
-                session=session)
+        # fetch_market assigns capture time after the official HTTP response.
+        rows={market:fetch_market(market,session=session) for market in SOURCES}
     count=sum(len(items) for items in rows.values())
     if count>MAX_ROWS*len(SOURCES):
         raise RuntimeError("Official source row count exceeds bounded monthly snapshot")
