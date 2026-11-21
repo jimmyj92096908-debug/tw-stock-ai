@@ -1,0 +1,74 @@
+name: TPEx Five-Year Real Stock and Year Source Maturity (Read Only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-five-year-stock-maturity-readonly-20261121.txt"
+  workflow_run:
+    workflows:
+      - "TPEx Five-Year Dated Market Full Free Campaign"
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-per-stock-five-year-readonly-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  real-stock-year-provenance:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check once-only audit release marker
+        id: once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+             grep -Fxq ".github/tpex-five-year-stock-maturity-readonly-20261121.txt"; then
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Regress current master stock history and market-source year limits
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_five_year_stock_maturity_audit.py
+          python -m unittest tests.test_tpex_five_year_stock_maturity -v
+      - name: Audit actual stock-days and yearly official source coverage without writes
+        if: github.event_name != 'push' || steps.once.outputs.verified == 'true'
+        run: python scripts/tpex_five_year_stock_maturity_audit.py --report tpex-five-year-stock-maturity-proof.json
+      - name: Preserve aggregate market and current-stock depth only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-year-stock-year-depth-readonly
+          path: tpex-five-year-stock-maturity-proof.json
+          retention-days: 14
+          if-no-files-found: ignore
