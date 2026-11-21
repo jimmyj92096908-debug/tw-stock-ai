@@ -1,6 +1,10 @@
 name: TPEx Dated Official Historical Backfill
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/daily-tpex-dated-history.yml'
   schedule:
     # 02:30 Asia/Taipei Tue-Sat after the official daily market close.
     - cron: '30 18 * * 1-5'
@@ -46,10 +50,17 @@ jobs:
       - name: Add at most four verified TPEx historical dates
         if: >-
           github.event_name == 'schedule' ||
+          github.event_name == 'push' ||
           (github.event_name == 'workflow_dispatch' && inputs.apply == true)
         env:
           STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
-        run: python src/tpex_dated_history.py --apply --batch-days 4 --lookback-days 90
+        run: |
+          if [ "${{ github.event_name }}" = 'push' ]; then
+            # Initial release canary touches a single validated historical date.
+            python src/tpex_dated_history.py --apply --batch-days 1 --lookback-days 90
+          else
+            python src/tpex_dated_history.py --apply --batch-days 4 --lookback-days 90
+          fi
       - name: Confirm manual preview never wrote data
         if: github.event_name == 'workflow_dispatch' && inputs.apply != true
         run: echo 'Only read-only dry run occurred; production prices unchanged.'
