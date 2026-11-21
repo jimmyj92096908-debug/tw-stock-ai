@@ -1,0 +1,77 @@
+name: TPEx Five-Year Dated Market Source Canary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-five-year-market-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply up to 10 verified historical market dates? Manual default is read-only."
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-dated-official-history
+  cancel-in-progress: false
+
+jobs:
+  ten-official-days:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify exactly one newly added official five-year source marker
+        id: release
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-five-year-market-20261121.txt"; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify source parser and insert-only campaign
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_five_year_market_backfill.py
+          python -m unittest tests.test_tpex_five_year_market_backfill tests.test_tpex_dated_history tests.test_tpex_dated_bulk_canary -v
+      - name: Preview historical source dates without HTTP or writes
+        run: python scripts/tpex_five_year_market_backfill.py --max-days 10 --report tpex-five-year-preview.json
+      - name: Import at most 10 verified official market dates
+        if: >-
+          (github.event_name == 'push' && steps.release.outputs.approved == 'true') ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_TPEX_FIVE_YEAR_SOURCE_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
+        run: python scripts/tpex_five_year_market_backfill.py --apply --max-days 10 --pause-seconds 2 --report tpex-five-year-canary.json
+      - name: Preserve official source and capacity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-year-market-dated-canary
+          path: |
+            tpex-five-year-preview.json
+            tpex-five-year-canary.json
+          retention-days: 14
+          if-no-files-found: ignore
