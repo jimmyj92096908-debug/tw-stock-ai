@@ -52,15 +52,18 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r requirements.txt
-      - name: Reconstruct five currently-listed official TWSE raw-factor snapshots in memory
+      - name: Reconstruct five deep-history and five newly-matured TWSE factor snapshots in memory
         run: |
           test -n "$DATABASE_URL"
-          python scripts/twse_raw_factor_canary.py --report twse-raw-factor-canary.json
+          python scripts/twse_raw_factor_canary.py --cohort deep --report twse-raw-factor-canary.json
+          python scripts/twse_raw_factor_canary.py --cohort recent --report twse-recent-factor-canary.json
       - name: Preserve honest causal but non-validated research receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: twse-five-stock-raw-factor-no-storage
-          path: twse-raw-factor-canary.json
+          path: |
+            twse-raw-factor-canary.json
+            twse-recent-factor-canary.json
           if-no-files-found: ignore
           retention-days: 14
