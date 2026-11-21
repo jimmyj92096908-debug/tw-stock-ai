@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from twse_dated_history import run as source_run, has_source_write_budget
 
-MAX_ROUNDS = 14
+MAX_ROUNDS = 20
 MAX_DAYS_PER_ROUND = 8
 MAX_DATABASE_BYTES = 800_000_000
 LOOKBACK_DAYS = 1830
