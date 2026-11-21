@@ -5,6 +5,10 @@ on:
     paths:
       - 'scripts/twse_240_release_gate.py'
       - 'scripts/twse_240_research_catchup.py'
+      - 'src/batch_indicator_catchup.py'
+      - 'src/current_official_listing.py'
+      - 'tests/test_batch_indicator_catchup.py'
+      - 'tests/test_twse_240_research_catchup.py'
       - 'tests/test_twse_240_release_gate.py'
       - 'tests/test_twse_240_full_history_postgres.py'
       - '.github/workflows/twse-long-history-campaign.yml'
@@ -29,7 +33,7 @@ jobs:
       - name: Test independent scheduling and full factor history
         run: |
           python -m py_compile scripts/twse_240_release_gate.py scripts/twse_240_research_catchup.py
-          python -m unittest tests.test_twse_240_release_gate tests.test_twse_240_research_catchup -v
+          python -m unittest tests.test_twse_240_release_gate tests.test_twse_240_research_catchup tests.test_batch_indicator_catchup -v
 
   postgres-integration:
     runs-on: ubuntu-latest
