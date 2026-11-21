@@ -13,6 +13,8 @@ import logging
 import os
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
+from datetime import date
+import re
 from typing import Any
 
 import psycopg
@@ -110,7 +112,29 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
                 "transactions": optional_number(row.get("transactions")),
                 "source": row.get("source") or market.upper(),
             }
+            # Unknown CSV tags are ambiguous about volume/turnover units.
+            allowed_sources = {
+                "twse": {"TWSE_STOCK_DAY"},
+                "tpex": {"TPEX_TRADING_STOCK", "TPEX_TRADING_STOCK_NORMALIZED"},
+            }
+            if parsed["source"] not in allowed_sources[market]:
+                raise ValueError("Unknown or incompatible historical CSV source")
+            if not re.fullmatch(r"\\d{4,6}", parsed["stock_id"]):
+                raise ValueError("Invalid historical stock code")
+            try:
+                trading_day = date.fromisoformat(parsed["trade_date"])
+            except ValueError as exc:
+                raise ValueError("Invalid historical trading date") from exc
+            if trading_day > date.today():
+                raise ValueError("Historical CSV contains a future trading date")
             parsed = normalize_tpex_monthly_units(parsed)
+            if parsed["close"] is None or parsed["close"] <= 0:
+                # Zero-activity daily entries are not evidence of valid closes.
+                continue
+            if parsed["volume"] is None or parsed["turnover"] is None:
+                raise ValueError("Historical close lacks volume/turnover provenance")
+            if parsed["volume"] < 0 or parsed["turnover"] < 0:
+                raise ValueError("Negative historical volume/turnover")
             prices = [parsed[key] for key in ("open", "high", "low", "close") if parsed[key] is not None]
             high, low = parsed["high"], parsed["low"]
             if prices and (
