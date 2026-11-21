@@ -34,7 +34,7 @@ MAX_DB_BYTES = existing.MAX_DATABASE_BYTES
 
 CANDIDATES_SQL = """
 WITH latest_market AS (
- SELECT MAX(trade_date) day FROM public.daily_prices WHERE close>0
+ SELECT MAX(trade_date) AS latest_date FROM public.daily_prices WHERE close>0
 ), stock_history AS (
  SELECT sm.market, sm.stock_id,
         COUNT(p.trade_date) FILTER(WHERE p.close>0 AND p.volume>=0)::int valid_days,
@@ -50,8 +50,8 @@ FROM stock_history h CROSS JOIN latest_market lm
 LEFT JOIN public.market_data_refresh_state st
  ON st.market=h.market AND st.stock_id=h.stock_id
 WHERE h.valid_days BETWEEN 60 AND 999
- AND h.last_observed>=lm.day-INTERVAL '7 days'
- AND h.first_observed>lm.day-INTERVAL '5 years'
+ AND h.last_observed>=lm.latest_date-INTERVAL '7 days'
+ AND h.first_observed>lm.latest_date-INTERVAL '5 years'
  AND (st.last_attempt_at IS NULL OR st.last_attempt_at<NOW()-INTERVAL '2 days')
 ORDER BY h.valid_days ASC,st.last_attempt_at ASC NULLS FIRST,h.stock_id
 LIMIT %s
