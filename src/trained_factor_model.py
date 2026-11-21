@@ -37,6 +37,7 @@ WITH sessions AS (
  SELECT p.market,p.stock_id,p.trade_date,p.close AS raw_close,
         a.close AS adjusted_close,
         LEAD(p.trade_date,6) OVER w AS exit_date,
+        LEAD(p.trade_date,1) OVER w AS entry_date,
         LEAD(a.close,1) OVER w AS entry_close,
         LEAD(a.close,6) OVER w AS exit_close
  FROM public.daily_prices p
@@ -49,7 +50,7 @@ WITH sessions AS (
 SELECT s.market,s.stock_id,s.as_of_date,s.total_score,
        s.technical_score,s.smc_score,s.short_term_score,s.swing_score,
        s.long_term_score,s.coverage_weight,
-       p.adjusted_close,p.entry_close,p.exit_close,p.exit_date
+       p.adjusted_close,p.entry_date,p.entry_close,p.exit_close,p.exit_date
 FROM public.daily_composite_scores s
 JOIN sessions p
  ON p.market=s.market AND p.stock_id=s.stock_id
@@ -152,12 +153,15 @@ def groups_from_rows(rows, *, holdout_start):
         exit_ = number(raw.get("exit_close"))
         try:
             exit_date = iso_day(raw.get("exit_date")) if raw.get("exit_date") is not None else None
+            entry_date = iso_day(raw.get("entry_date")) if raw.get("entry_date") is not None else None
         except (ValueError, TypeError):
             exit_date = None
+            entry_date = None
         candidates[day].append({
             "market": market, "stock_id": stock_id,
             "features": features, "raw_score": float(raw["total_score"]),
             "entry": entry, "exit": exit_, "exit_date": exit_date,
+            "entry_date": entry_date,
         })
     sets = {"development": [], "holdout": []}
     skipped = {"small_universe": 0, "incomplete_forward": 0, "split_embargo": 0}
