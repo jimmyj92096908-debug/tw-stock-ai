@@ -149,6 +149,51 @@ WHERE p.market=%s AND p.stock_id=%s AND p.close > 0
 LIMIT 1
 """
 
+# An unchanged scoring result must not create a new PostgreSQL heap version,
+# update calculated_at, or consume index/WAL space. Recompute on real changes
+# (including newly available chip data) without masking missing indicators.
+# This leaves the existing full scoring formula, eligibility and call sites
+# identical, and preserves the separate missing-only insert mode.
+COMPOSITE_UPSERT_SQL = """INSERT INTO daily_composite_scores
+    (market,stock_id,as_of_date,total_score,coverage_weight,technical_score,smc_score,chip_score,
+     short_term_score,swing_score,long_term_score,short_coverage,swing_coverage,long_coverage,
+     component_status,calculated_at)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,now())
+    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET
+    total_score=EXCLUDED.total_score,coverage_weight=EXCLUDED.coverage_weight,
+    technical_score=EXCLUDED.technical_score,smc_score=EXCLUDED.smc_score,chip_score=EXCLUDED.chip_score,
+    short_term_score=EXCLUDED.short_term_score,swing_score=EXCLUDED.swing_score,long_term_score=EXCLUDED.long_term_score,
+    short_coverage=EXCLUDED.short_coverage,swing_coverage=EXCLUDED.swing_coverage,long_coverage=EXCLUDED.long_coverage,
+    component_status=EXCLUDED.component_status,calculated_at=now()
+    WHERE (
+      daily_composite_scores.total_score,
+      daily_composite_scores.coverage_weight,
+      daily_composite_scores.technical_score,
+      daily_composite_scores.smc_score,
+      daily_composite_scores.chip_score,
+      daily_composite_scores.short_term_score,
+      daily_composite_scores.swing_score,
+      daily_composite_scores.long_term_score,
+      daily_composite_scores.short_coverage,
+      daily_composite_scores.swing_coverage,
+      daily_composite_scores.long_coverage,
+      daily_composite_scores.component_status
+    ) IS DISTINCT FROM (
+      EXCLUDED.total_score,
+      EXCLUDED.coverage_weight,
+      EXCLUDED.technical_score,
+      EXCLUDED.smc_score,
+      EXCLUDED.chip_score,
+      EXCLUDED.short_term_score,
+      EXCLUDED.swing_score,
+      EXCLUDED.long_term_score,
+      EXCLUDED.short_coverage,
+      EXCLUDED.swing_coverage,
+      EXCLUDED.long_coverage,
+      EXCLUDED.component_status
+    )"""
+
+
 def calculate_all(database_url, *, stocks=None, missing_only=False):
     """Build all scores normally, or insert ONLY explicit missing latest scores.
 
@@ -175,17 +220,9 @@ def calculate_all(database_url, *, stocks=None, missing_only=False):
             raise ValueError("Duplicate explicit score cohort")
         stocks = sorted(clean)
 
-    upsert = """INSERT INTO daily_composite_scores
-    (market,stock_id,as_of_date,total_score,coverage_weight,technical_score,smc_score,chip_score,
-     short_term_score,swing_score,long_term_score,short_coverage,swing_coverage,long_coverage,
-     component_status,calculated_at)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,now())
-    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET
-    total_score=EXCLUDED.total_score,coverage_weight=EXCLUDED.coverage_weight,
-    technical_score=EXCLUDED.technical_score,smc_score=EXCLUDED.smc_score,chip_score=EXCLUDED.chip_score,
-    short_term_score=EXCLUDED.short_term_score,swing_score=EXCLUDED.swing_score,long_term_score=EXCLUDED.long_term_score,
-    short_coverage=EXCLUDED.short_coverage,swing_coverage=EXCLUDED.swing_coverage,long_coverage=EXCLUDED.long_coverage,
-    component_status=EXCLUDED.component_status,calculated_at=now()"""
+    upsert = COMPOSITE_UPSERT_SQL
+    if missing_only:
+        upsert = upsert[:upsert.index("    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET")]
     if missing_only:
         upsert = upsert[:upsert.index("    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET")] + (
             "    ON CONFLICT (market,stock_id,as_of_date) DO NOTHING RETURNING stock_id"
