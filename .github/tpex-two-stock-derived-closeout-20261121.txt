@@ -1,0 +1,1 @@
+One-time source-specific 5520 and 6762 TPEx derived-only 879/879 historical quality restoration, protected three write gates, zero raw OHLCV changes, 2026-11-21.\n
