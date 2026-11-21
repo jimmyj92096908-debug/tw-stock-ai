@@ -115,6 +115,10 @@ class TPExShortHistoryGapTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("python scripts/tpex_short_history_gap_audit.py",workflow)
         self.assertIn("tpex-short-history-gap-evidence.json",workflow)
+        self.assertIn('depth=x["observed_session_depth"]',workflow)
+        self.assertIn('depth["only_60_to_119"]+depth["at_least_120"]',workflow)
+        self.assertIn('x["full_five_year_official_history_verified"] is False',workflow)
+        self.assertIn("An observed >=5-year span does NOT verify full official 5-year history.",workflow)
         self.assertIn("  schedule:",workflow)
         self.assertNotIn("LINE_CHANNEL",workflow)
 

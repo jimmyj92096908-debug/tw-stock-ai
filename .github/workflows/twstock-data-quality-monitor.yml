@@ -95,12 +95,28 @@ jobs:
           from pathlib import Path
           x=json.loads(Path("tpex-short-history-gap-evidence.json").read_text(encoding="utf-8"))
           b=x["bands"]
+          depth=x["observed_session_depth"]
+          if not (
+              depth["at_least_60"]==x["eligible_real_60_session_history"]
+              and depth["only_60_to_119"]+depth["at_least_120"]==depth["at_least_60"]
+              and 0<=depth["at_least_1000_with_five_year_observed_span"]
+              <=depth["at_least_1000"]<=depth["at_least_240"]
+              <=depth["at_least_120"]<=depth["at_least_60"]
+              <=x["currently_priced"]
+              and x["full_five_year_official_history_verified"] is False
+          ):
+              raise SystemExit("Impossible TPEx history maturity or unverified five-year claim")
           summary=(
               "### TPEx source-backed short-history audit (READ ONLY)\n"
               f"- Actual latest price day: {x['price_date']}\n"
               f"- Valid >=60-session TPEx: {x['eligible_real_60_session_history']}/{x['currently_priced']}\n"
               f"- Short history 50–59/40–49/30–39/20–29/0–19: "
               f"{b['50-59']}/{b['40-49']}/{b['30-39']}/{b['20-29']}/{b['0-19']}\n"
+              f"- TPEx actual 60–119-session stocks: {depth['only_60_to_119']}\n"
+              f"- TPEx >=120 / >=240 valid sessions: {depth['at_least_120']}/{depth['at_least_240']}\n"
+              f"- TPEx >=1000 valid sessions: {depth['at_least_1000']}; "
+              f">=1000 and >=5-year observed span: {depth['at_least_1000_with_five_year_observed_span']}\n"
+              "- An observed >=5-year span does NOT verify full official 5-year history.\n"
               "- First observed price date is NOT independently verified official listing date.\n"
               "- No fictitious trading days, price updates, LINE trade messages or orders.\n"
           )
