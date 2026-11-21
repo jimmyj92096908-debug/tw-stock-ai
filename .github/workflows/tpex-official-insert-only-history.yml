@@ -52,7 +52,7 @@ jobs:
       - name: Prove official input and no-overwrite tests before production actions
         run: |
           python -m py_compile scripts/tpex_official_history_insert_only.py
-          python -m unittest tests.test_tpex_official_history_insert_only tests.test_tpex_market_data -v
+          python -m unittest tests.test_tpex_official_history_insert_only tests.test_tpex_market_data tests.test_new_eligible_score_followon -v
           python - <<'PY'
           from scripts.tpex_official_history_insert_only import PRICE_INSERT_ONLY_SQL
           assert "ON CONFLICT (market,stock_id,trade_date) DO NOTHING" in PRICE_INSERT_ONLY_SQL
