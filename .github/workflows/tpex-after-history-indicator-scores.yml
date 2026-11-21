@@ -1,0 +1,80 @@
+name: One-Time TPEx After Verified 60-Day History - Indicators and Scores
+
+on:
+  workflow_run:
+    workflows:
+      - 'TPEx Dated Official Historical Backfill'
+    types:
+      - completed
+  push:
+    branches: [main]
+    paths:
+      - '.github/tpex-after-history-trigger-20261121.txt'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Opt in to bounded TPEx 60-session indicators and missing-only scores?'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  tpex-after-history:
+    # Match the single authorized 60-day history campaign commit; do not
+    # rescore automatically after routine daily schedules.
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.head_sha == 'e50e769769c723b4370f0d71bd6232603bfac932' &&
+         github.event.workflow_run.repository.full_name == github.repository)
+        ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.ref == 'refs/heads/main' && inputs.apply == true)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies
+        run: pip install -r requirements.txt
+      - name: Validate isolated TPEx-only indicators and missing-only score gates
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing protected DATABASE_URL"; exit 1; fi
+          python -m py_compile src/batch_indicator_catchup.py scripts/tpex_after_history_catchup.py
+          python -m unittest tests.test_tpex_after_history_catchup tests.test_batch_indicator_catchup tests.test_composite_score -v
+      - name: Preview verified TPEx 60-session eligibility (read only)
+        run: python scripts/tpex_after_history_catchup.py --max-rounds 45 --report tpex-post-history-preview.json
+      - name: Compute TPEx-only indicators and missing-only research scores
+        env:
+          STOCK_TPEX_INDICATOR_CAMPAIGN_WRITE_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+        run: python scripts/tpex_after_history_catchup.py --apply --max-rounds 45 --report tpex-post-history-evidence.json
+      - name: Preserve aggregate acceptance even if an individual cohort fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-post-history-research-acceptance
+          path: |
+            tpex-post-history-preview.json
+            tpex-post-history-evidence.json
+          if-no-files-found: ignore
+          retention-days: 14

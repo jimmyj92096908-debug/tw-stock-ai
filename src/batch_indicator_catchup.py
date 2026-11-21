@@ -98,16 +98,19 @@ def select_candidates(conn,market,limit):
         return [dict(row) for row in cur.fetchall()]
 
 
-def run(database_url: str, *, apply=False, per_market=12) -> list[dict]:
+def run(database_url: str, *, apply=False, per_market=12, markets=("twse", "tpex")) -> list[dict]:
     if not database_url:
         raise ValueError("DATABASE_URL required")
     if not 1<=per_market<=MAX_PER_MARKET:
         raise ValueError("per_market must be 1..20")
+    if (not isinstance(markets, (tuple, list)) or not 1 <= len(markets) <= 2 or
+        len(set(markets)) != len(markets) or any(m not in ("twse", "tpex") for m in markets)):
+        raise ValueError("markets must be a unique subset of twse and tpex")
     if apply and os.environ.get("STOCK_INDICATOR_CATCHUP_WRITE_ENABLED")!="yes":
         raise ValueError("Indicator calculation writes require explicit opt-in")
     results=[]
     with psycopg.connect(database_url,row_factory=dict_row,connect_timeout=20) as conn:
-        for market in ("twse","tpex"):
+        for market in markets:
             selected=select_candidates(conn,market,per_market)
             for stock in selected:
                 item={"market":market,"stock_id":stock["stock_id"],
