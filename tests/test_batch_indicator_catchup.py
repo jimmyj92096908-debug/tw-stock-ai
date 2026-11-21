@@ -75,6 +75,17 @@ class IndicatorCatchupTests(unittest.TestCase):
             ind.select_candidates(Connection(),"not-listed",2)
         self.assertIn("MIN_VERIFIED_PRICE_DAYS",dir(ind))
 
+    def test_market_subset_avoids_unrequested_twse_calculations(self):
+        conn=Connection()
+        with patch.object(ind.psycopg,"connect",return_value=conn):
+            rows=ind.run("fake",per_market=1,markets=("tpex",))
+        self.assertEqual([x["market"] for x in rows],["tpex"])
+        self.assertEqual(len(conn.cur.calls),1)
+        self.assertEqual(conn.cur.calls[0][1],("tpex",60,1))
+        for markets in ((),("tpex","tpex"),("unknown",),("twse","tpex","extra")):
+            with self.assertRaisesRegex(ValueError,"markets"):
+                ind.run("fake",markets=markets)
+
     def test_dry_run_does_not_recalculate_or_write(self):
         conn=Connection()
         with (
