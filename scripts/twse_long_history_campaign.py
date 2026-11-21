@@ -1,4 +1,4 @@
-"""Guarded one-time TWSE long-horizon date backfill toward 240-session research.
+"""Guarded one-time TWSE long-horizon date backfill toward five-year source and 240-session research.
 
 Uses existing independently dated official MI_INDEX importer and tracked
 progress. Only missing price PKs are inserted, never updates raw prices,
@@ -24,7 +24,7 @@ from twse_dated_history import run as source_run
 MAX_ROUNDS = 14
 MAX_DAYS_PER_ROUND = 8
 MAX_DATABASE_BYTES = 800_000_000
-LOOKBACK_DAYS = 366
+LOOKBACK_DAYS = 1830
 
 STATE_SQL = """
 SELECT count(*)::bigint AS raw_twse_rows,
@@ -143,7 +143,9 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
             raise RuntimeError("Repeated zero-insert TWSE source days; investigate official session")
         previous=current
     else:
-        report["finished"]=True
+        # The capped batch is exhausted, not the rolling five-year backlog.
+        # Only an empty source selection proves every eligible date was examined.
+        report["finished"]=False
     save(report_path,report)
     return report
 

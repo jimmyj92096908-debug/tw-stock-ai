@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'scripts/twse_long_history_campaign.py'
+      - 'scripts/twse_five_year_source_gate.py'
+      - 'src/twse_dated_history.py'
+      - 'src/current_official_listing.py'
+      - 'tests/test_twse_five_year_source_gate.py'
       - 'tests/test_twse_long_history_campaign.py'
       - '.github/workflows/twse-long-history-campaign.yml'
       - '.github/workflows/twse-long-history-tests.yml'
@@ -26,7 +30,7 @@ jobs:
       - name: Verify no-overwrite and official date-source batch accounting
         run: |
           python -m py_compile scripts/twse_long_history_campaign.py src/twse_dated_history.py
-          python -m unittest tests.test_twse_long_history_campaign tests.test_twse_dated_history tests.test_official_market_feed -v
+          python -m unittest tests.test_twse_long_history_campaign tests.test_twse_dated_history tests.test_twse_five_year_source_gate tests.test_official_market_feed -v
 
   postgres-source-integration:
     runs-on: ubuntu-latest

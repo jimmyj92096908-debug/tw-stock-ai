@@ -22,14 +22,30 @@ import psycopg
 from official_market_feed import (
     HEADERS, TWSE_URL, _parse_twse, select_candidates,
 )
-from official_snapshot_ingest import load_allowed, write_missing
+from official_snapshot_ingest import write_missing
+from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 LOGGER = logging.getLogger(__name__)
 MAX_DAYS_PER_RUN = 8
-MAX_LOOKBACK_DAYS = 366
+MAX_LOOKBACK_DAYS = 1830
 MIN_COVERAGE_SHARE = 0.60
 # Only a recognized exchange "no matching data" response is an off-session.
 NO_DATA_MARKERS = ("沒有符合條件的資料", "無符合條件", "無資料")
+
+ACTIVE_ALLOWED_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
+SELECT m.market,m.stock_id FROM public.stock_master m
+INNER JOIN official_current_listed o
+  ON o.market=m.market AND o.stock_id=m.stock_id
+WHERE m.market='twse'
+"""
+
+
+def load_current_twse_allowed(conn) -> set[tuple[str,str]]:
+    """Fail closed unless a fresh official current listing includes the issuer."""
+    with conn.cursor() as cur:
+        cur.execute(ACTIVE_ALLOWED_SQL)
+        return {(str(m),str(stock_id)) for m,stock_id in cur.fetchall()}
+
 
 CREATE_PROGRESS = """
 CREATE TABLE IF NOT EXISTS public.twse_history_day_progress (
@@ -61,10 +77,16 @@ def schedule_dates(*, today: date, already: set[date], batch_days: int = 6,
     if not 1 <= batch_days <= MAX_DAYS_PER_RUN:
         raise ValueError("batch_days must be 1..8")
     if not 7 <= lookback_days <= MAX_LOOKBACK_DAYS:
-        raise ValueError("lookback_days must be 7..366")
+        raise ValueError(f"lookback_days must be 7..{MAX_LOOKBACK_DAYS}")
     result: list[date] = []
+    try:
+        five_year_start = today.replace(year=today.year-5)
+    except ValueError:  # 29 February -> 28 February in non-leap target year.
+        five_year_start = today.replace(year=today.year-5,day=28)
     for days_ago in range(1, lookback_days + 1):
         candidate = today - timedelta(days=days_ago)
+        if candidate < five_year_start:
+            break
         if candidate.weekday() >= 5 or candidate in already:
             continue
         result.append(candidate)
@@ -130,12 +152,11 @@ def run(database_url: str, *, apply: bool = False,
     if not 1 <= batch_days <= MAX_DAYS_PER_RUN:
         raise ValueError("batch_days must be 1..8")
     if not 7 <= lookback_days <= MAX_LOOKBACK_DAYS:
-        raise ValueError("lookback_days must be 7..366")
+        raise ValueError(f"lookback_days must be 7..{MAX_LOOKBACK_DAYS}")
     today = today or datetime.now(ZoneInfo("Asia/Taipei")).date()
     report: list[dict] = []
     with psycopg.connect(database_url, connect_timeout=20) as conn:
-        allowed = {(market, stock_id) for market, stock_id in load_allowed(conn)
-                   if market == "twse"}
+        allowed = load_current_twse_allowed(conn)
         if len(allowed) < 700:
             raise ValueError("TWSE candidate list too small for whole-market import")
         processed = _processed_days(conn)

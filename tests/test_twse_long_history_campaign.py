@@ -41,7 +41,7 @@ class TWSELongHistoryCampaignTests(TestCase):
             campaign.execute("fake",apply=True,max_rounds=0)
         self.assertEqual(campaign.MAX_ROUNDS,14)
         self.assertEqual(campaign.MAX_DAYS_PER_ROUND,8)
-        self.assertEqual(campaign.LOOKBACK_DAYS,366)
+        self.assertEqual(campaign.LOOKBACK_DAYS,1830)
         self.assertIn("TWSE_MI_INDEX_ALLBUT0999",campaign.STATE_SQL)
 
     def test_two_validated_rounds_reconcile_actual_rows(self):
@@ -62,12 +62,12 @@ class TWSELongHistoryCampaignTests(TestCase):
             ]) as source,
         ):
             report=campaign.execute("fake",apply=True,max_rounds=2)
-        self.assertTrue(report["finished"])
+        self.assertFalse(report["finished"])
         self.assertEqual([x["new_valid_bars"] for x in report["batches"]],[900,1000])
         self.assertEqual(report["latest"]["source_days"],139)
         self.assertEqual(source.call_count,2)
         source.assert_any_call("fake",apply=True,batch_days=8,
-                               lookback_days=366,pause_seconds=2)
+                               lookback_days=1830,pause_seconds=2)
 
     def test_duplicate_source_date_refused(self):
         with self.assertRaisesRegex(RuntimeError,"Unverified"):

@@ -81,7 +81,10 @@ class TWSEIndependentReleaseGateTests(TestCase):
                 content=(ROOT/name).read_text(encoding="utf-8")
                 self.assertIn("  schedule:",content)
                 self.assertIn("github.event_name == 'schedule'",content)
-                self.assertIn("python scripts/twse_240_release_gate.py --mode",content)
+                if 'twse-long-history-campaign' in name:
+                    self.assertIn('python scripts/twse_five_year_source_gate.py',content)
+                else:
+                    self.assertIn('python scripts/twse_240_release_gate.py --mode',content)
                 self.assertIn("steps.gate.outputs.should_run == 'true'",content)
                 self.assertNotIn("  workflow_run:",content)
                 self.assertIn("default: false",content)
