@@ -87,18 +87,22 @@ class TPExCapacityPlannerTests(TestCase):
     def test_inspect_runs_in_neon_readonly_repeatable_read(self):
         conn=MagicMock()
         conn.__enter__.return_value=conn
-        row=MagicMock()
-        row.fetchall.side_effect=[
-           [{"tbl":key,**val} for key,val in tables().items()],
-           [dict(x) for x in cohort(1)]
-        ]
-        row.fetchone.return_value={
-            "known_anchor_days":1212,"full_market_source_days":250,
-            "incomplete_anchor_days":962
-        }
-        db=MagicMock()
-        db.fetchone.return_value={"size_bytes":330_000_000}
-        conn.execute.side_effect=[db,row,row,row]
+        def run_sql(sql,*args):
+            result=MagicMock()
+            if sql==m.DB_SIZE_SQL:
+                result.fetchone.return_value={"size_bytes":330_000_000}
+            elif sql==m.TABLE_SQL:
+                result.fetchall.return_value=[
+                    {"tbl":key,**val} for key,val in tables().items()]
+            elif sql==m.SOURCE_DAYS_SQL:
+                result.fetchone.return_value={
+                    "known_anchor_days":1212,"full_market_source_days":250,
+                    "incomplete_anchor_days":962
+                }
+            elif sql==m.MISSING_SQL:
+                result.fetchall.return_value=[dict(x) for x in cohort(1)]
+            return result
+        conn.execute.side_effect=run_sql
         with patch.object(m.psycopg,"connect",return_value=conn) as connect:
             value=m.inspect("existing-secret-url")
         self.assertEqual(value["scope"],
