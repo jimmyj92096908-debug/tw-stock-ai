@@ -82,7 +82,9 @@ class LabelReadinessTests(unittest.TestCase):
         self.assertFalse(out["eligible_for_exploratory_outcome_research"])
         days=[date(2026,9,1)+timedelta(days=x*7) for x in range(10)]
         rows=[cohort(d.isoformat(),exit_days=5) for d in days]
-        out=report(rows)
+        # The 10th independent observation is Nov 3, so explicitly extend
+        # the signal window rather than leaking a date outside its bounds.
+        out=report(rows,end="2026-11-10")
         self.assertEqual(out["nonoverlapping_actual_holding_windows"],10)
         self.assertTrue(out["eligible_for_exploratory_outcome_research"])
         self.assertFalse(out["model_alpha_approved"])
