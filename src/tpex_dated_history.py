@@ -1,7 +1,7 @@
 """Bounded official TPEx dated whole-market historical price backfill.
 
 Default mode is read-only: no HTTP, no writes. Applying requires BOTH --apply
-and STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED=yes, reviews at most four dates,
+and STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED=yes, reviews at most ten dates per invocation,
 checks known same-day closes against independent existing DB records, limits
 requests, and INSERTs missing keys only. Never updates existing OHLCV or LINE.
 """
@@ -20,7 +20,7 @@ import requests
 from official_snapshot_ingest import load_allowed, select_candidates, write_missing
 from tpex_dated_bulk_canary import ENDPOINT, parse_day
 
-MAX_DATES = 4
+MAX_DATES = 10
 MAX_LOOKBACK = 366
 MIN_EXISTING_COMPARISONS = 10
 MIN_CLOSE_MATCH_FRACTION = Decimal("0.98")
