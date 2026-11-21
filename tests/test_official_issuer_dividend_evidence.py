@@ -65,6 +65,54 @@ class IssuerEvidenceTests(TestCase):
         self.assertEqual(len(snap["payload_sha256"]),64)
         self.assertLess(len(str(snap).encode()),issuer.MAX_REPORT_BYTES)
 
+
+    def test_actual_TPEx_official_english_listing_field_is_captured(self):
+        raw=issuers("tpex")
+        for row in raw:
+            row["DateOfListing"]=row.pop("上櫃日期").replace("/","")
+        value=issuer.build_snapshot(issuers("twse"),raw,
+                                    captured_at=CAPTURE,master_pairs=pairs())
+        self.assertEqual(value["market_counts"]["tpex"][
+            "company_rows_with_official_listing_date"],800)
+        self.assertEqual(value["market_counts"]["tpex"][
+            "rows_missing_original_listing_date"],0)
+        self.assertTrue(any(r["market"]=="tpex" and
+              r["current_api_listing_date"]=="2023-02-03"
+              for r in value["records"]))
+        self.assertFalse(value["historical_delisted_issuer_population_complete"])
+
+    def test_different_same_week_source_is_append_only_correction_not_update(self):
+        snap=issuer.build_snapshot(issuers("twse"),issuers("tpex"),
+                                   captured_at=CAPTURE,master_pairs=pairs())
+        conn=MagicMock();conn.__enter__.return_value=conn
+        oldsha="f"*64
+        def sql(q,*args):
+            cursor=MagicMock()
+            if q==issuer.SIZE_SQL:cursor.fetchone.return_value={"bytes":490000000}
+            if q==issuer.INSERT_SQL:cursor.fetchone.return_value=None
+            if q==issuer.READ_SQL:
+                cursor.fetchone.return_value={"payload_sha256":oldsha}
+            if q==issuer.CORRECTION_COUNT_SQL:
+                cursor.fetchone.return_value={"n":0}
+            if q==issuer.INSERT_CORRECTION_SQL:
+                cursor.fetchone.return_value={"payload_sha256":snap["payload_sha256"]}
+            if q==issuer.READ_CORRECTION_SQL:
+                cursor.fetchone.return_value={
+                    "payload_sha256":snap["payload_sha256"],
+                    "supersedes_sha256":oldsha
+                }
+            return cursor
+        conn.execute.side_effect=sql
+        with patch.dict(os.environ,{"STOCK_OFFICIAL_ISSUER_EVIDENCE_WRITE":"yes"}),\
+             patch.object(issuer.psycopg,"connect",return_value=conn):
+            result=issuer.freeze_weekly("protected",snap,apply=True)
+        self.assertEqual(result["database_writes"],1)
+        self.assertTrue(result["immutable_original_corrected_by_new_receipt"])
+        self.assertEqual(result["original_week_hash_sha256"],oldsha)
+        called=[x.args[0] for x in conn.execute.call_args_list]
+        self.assertIn(issuer.INSERT_CORRECTION_SQL,called)
+        self.assertNotIn("UPDATE public.official_issuer_weekly_snapshots",str(called))
+
     def test_duplicate_unverifiable_or_oversized_current_issuer_fails(self):
         with self.assertRaises(ValueError):
             issuer.build_snapshot(issuers("twse")[:20],issuers("tpex"),
@@ -146,6 +194,23 @@ class OfficialDividendResearchTests(TestCase):
         self.assertTrue(report["no_historical_issuer_publication_vintages_in_feed"])
         self.assertEqual(report["permanent_adjusted_price_rows_created"],0)
         self.assertEqual(report["database_writes"],0)
+
+
+    def test_official_endpoint_ignoring_query_dates_excludes_old_rows_visibly(self):
+        g=groups()
+        g[("tpex","ex",dividends.TPEX_EX_URL)].append(
+           ex_row(stock="2250",d="115/10/07"))
+        result=dividends.assess(g,start=date(2026,11,1),
+            end=date(2026,11,20),observed_at=CAPTURE,
+            current_stocks=pairs(),existing_counts=[])
+        self.assertEqual(result["raw_four_digit_source_events"],4)
+        self.assertEqual(result["distinct_candidate_economic_events"],3)
+        tpex=next(x for x in result["source_evidence"]
+                  if x["market"]=="tpex" and x["kind"]=="ex")
+        self.assertEqual(tpex["received_rows"],2)
+        self.assertEqual(tpex["four_digit_candidates"],1)
+        self.assertEqual(tpex["excluded_outside_requested_date_range"],1)
+        self.assertFalse(result["verified_total_return_labels"])
 
     def test_cash_zero_and_missing_still_never_certify_return(self):
         g=groups()
