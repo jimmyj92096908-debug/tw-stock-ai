@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install requests "psycopg[binary]>=3.2,<4"
+        run: pip install -r requirements.txt
       - name: Unit-test score logic and guard
         run: |
           python -m unittest tests.test_composite_score tests.test_score_after_refresh -v
@@ -64,3 +64,24 @@ jobs:
           fi
       - name: Recompute existing composite score table
         run: python scripts/score_after_refresh.py
+      # Only the scheduled same-day 23:00 official source job starts this
+      # prospective freeze. The next-morning indicator catchup may revise
+      # the existing score day, so it must not retroactively change a frozen
+      # precommitted signal cohort.
+      - name: Freeze real prospective full-research roster after official same-day score
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name == 'Official Taiwan Market Daily Snapshot (Authorized)'
+        env:
+          STOCK_FORWARD_RESEARCH_FREEZE_WRITE: "yes"
+        run: |
+          python -m unittest tests.test_research_forward_freeze -v
+          python scripts/freeze_prospective_research.py --apply --report prospective-research-freeze-evidence.json
+      - name: Retain aggregate-only prospective research precommit proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-only-forward-precommit-evidence
+          path: prospective-research-freeze-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore
