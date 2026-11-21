@@ -129,6 +129,8 @@ SELECT DISTINCT t.market,t.stock_id
 FROM daily_technicals t
 JOIN daily_prices p USING (market,stock_id,trade_date)
 WHERE p.close > 0
+  AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+     WHERE x.market=t.market AND x.stock_id=t.stock_id)
 ORDER BY t.market,t.stock_id
 """
 
@@ -142,6 +144,8 @@ SELECT p.trade_date,p.close,t.ma5,t.ma10,t.ma13,t.ma20,
 FROM daily_prices p
 JOIN daily_technicals t USING (market,stock_id,trade_date)
 WHERE p.market=%s AND p.stock_id=%s AND p.close > 0
+  AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+     WHERE x.market=p.market AND x.stock_id=p.stock_id)
   AND p.trade_date = (
     SELECT MAX(p2.trade_date) FROM daily_prices p2
     WHERE p2.market=p.market AND p2.stock_id=p.stock_id AND p2.close > 0
