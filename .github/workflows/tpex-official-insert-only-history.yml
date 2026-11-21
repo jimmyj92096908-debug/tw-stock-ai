@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - ".github/tpex-official-history-authorized-canary-20261121.txt"
+      - ".github/tpex-official-history-authorized-batch10-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -20,9 +21,10 @@ on:
 permissions:
   contents: read
 
-# A one-shot marker canary must wait behind the eligible-100 indicator/score
-# writer, because that writer fails closed if raw prices change mid-run.
-# Regular schedule continues using the existing bounded-history concurrency lock.
+# Owner-authorized marker pushes (two-stock canary / one-time ten-stock
+# extension) wait behind the indicator/score mutex. The ten-stock extension
+# completes each newly-eligible ticker under that same lock.
+# Regular schedule keeps the original bounded-history mutex and frequency.
 concurrency:
   group: ${{ github.event_name == 'push' && 'twstock-indicator-catchup' || 'twstock-daily-bounded-history-enrichment' }}
   cancel-in-progress: false
@@ -50,7 +52,7 @@ jobs:
       - name: Prove official input and no-overwrite tests before production actions
         run: |
           python -m py_compile scripts/tpex_official_history_insert_only.py
-          python -m unittest tests.test_tpex_official_history_insert_only tests.test_tpex_market_data -v
+          python -m unittest tests.test_tpex_official_history_insert_only tests.test_tpex_market_data tests.test_new_eligible_score_followon -v
           python - <<'PY'
           from scripts.tpex_official_history_insert_only import PRICE_INSERT_ONLY_SQL
           assert "ON CONFLICT (market,stock_id,trade_date) DO NOTHING" in PRICE_INSERT_ONLY_SQL
@@ -63,17 +65,46 @@ jobs:
         env:
           STOCK_TPEX_INSERT_ONLY_HISTORY_ENABLED: "yes"
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ contains(github.event.head_commit.added, '.github/tpex-official-history-authorized-batch10-20261121.txt') }}" = "true" ]; then
             limit=10
           else
             limit=2
           fi
           python scripts/tpex_official_history_insert_only.py --apply --limit "$limit" --months 5 --report tpex-official-insert-only-evidence.json
+      - name: One-time close only newly eligible latest indicators and composites
+        if: >-
+          github.event_name == 'push' &&
+          contains(github.event.head_commit.added, '.github/tpex-official-history-authorized-batch10-20261121.txt')
+        env:
+          STOCK_NEW_ELIGIBLE_SCORE_WRITE_ENABLED: "yes"
+        run: |
+          python scripts/new_eligible_score_followon.py --apply --limit 5 --report tpex-new-eligible-followon-first.json
+          python scripts/new_eligible_score_followon.py --apply --limit 5 --report tpex-new-eligible-followon-second.json
+      - name: Verify completed 60-session research cohort without claims of model alpha
+        if: >-
+          github.event_name == 'push' &&
+          contains(github.event.head_commit.added, '.github/tpex-official-history-authorized-batch10-20261121.txt')
+        run: |
+          python - <<'PY'
+          import os,sys
+          sys.path.insert(0,".")
+          from scripts.eligible_100_catchup import snapshot
+          cohort=snapshot(os.environ["DATABASE_URL"])
+          ready=cohort["matched_current"]==cohort["eligible"]
+          print("Eligible exact same-day tech+SMC+composite:",cohort["matched_current"],"/",cohort["eligible"])
+          print("All-stock master research coverage is NOT established by this acceptance check")
+          print("Historical model alpha, LINE and trading remain disabled")
+          if not ready:
+              raise SystemExit("New eligible stock research coverage not fully matched")
+          PY
       - name: Retain nonsecret evidence even if a stock failed validation
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tpex-official-insert-only-evidence
-          path: tpex-official-insert-only-evidence.json
+          path: |
+            tpex-official-insert-only-evidence.json
+            tpex-new-eligible-followon-first.json
+            tpex-new-eligible-followon-second.json
           retention-days: 14
           if-no-files-found: ignore
