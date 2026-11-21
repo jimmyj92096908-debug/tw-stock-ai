@@ -3,6 +3,9 @@ name: TPEx Historical Factors Final 100 Percent Acceptance
 # The first free five-batch source-verified factor campaign must finish before
 # this final follow-on is launched. A shared workflow-level pending concurrency
 # group can silently cancel the queued final acceptance when a TWSE job arrives.
+# A strict 105-minute cap can also stop the first wave after making safe,
+# committed per-stock progress. Only an explicitly timed_out wave may resume
+# with bounded follow-on repairs; ordinary failure/cancel remains fail-closed.
 # Keep the existing per-job dated-source writer lock, but trigger after wave end.
 # Verified per-stock TPEx provenance, 80-day market-wide EW source threshold,
 # original price safeguards, and the strict 100% gate remain unchanged.
@@ -15,6 +18,8 @@ on:
       - "One-Time Free TPEx Five-Batch Historical Factor Campaign"
     types:
       - completed
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       apply:
@@ -41,7 +46,10 @@ jobs:
       (
         (
           github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
+          (
+            github.event.workflow_run.conclusion == 'success' ||
+            github.event.workflow_run.conclusion == 'timed_out'
+          ) &&
           github.event.workflow_run.head_branch == 'main' &&
           github.event.workflow_run.repository.full_name == github.repository
         ) ||
@@ -80,6 +88,8 @@ jobs:
               assert source in CANDIDATES_SQL
               assert source in CHECK_STOCK_SQL
           PY
+          # Source, cohort, budget and worker output are independently checked
+          # even when this is a follow-on after the first wave timed out.
           python scripts/tpex_factor_bounded_campaign.py --max-batches 3 --report tpex-final-preview.json
       - name: Reconcile up to 3 sequential 100-stock source-verified historical batches
         env:
