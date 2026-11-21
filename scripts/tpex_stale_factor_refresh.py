@@ -45,7 +45,7 @@ WITH latest_market AS (
    count(*)::int price_rows,
    count(*) FILTER(WHERE close>0 AND volume>=0)::int valid_days,
    max(trade_date) FILTER(WHERE close>0 AND volume>=0) last_valid,
-   max(retrieved_at) last_source_write
+   max(retrieved_at) FILTER(WHERE source='TPEX_DATED_OTC_EW') last_source_write
  FROM public.daily_prices
  WHERE market='tpex' AND stock_id<>'1808'
  GROUP BY stock_id
@@ -131,6 +131,23 @@ SELECT count(*)::int price_rows,
   count(*) FILTER(WHERE adjusted_day IS NULL
         OR technical_day IS NULL OR smc_day IS NULL)::int missing_derived_days
 FROM raw
+"""
+
+# A score that is recomputed but numerically unchanged is intentionally a
+# no-op in composite_score.calculate_all(). This dedicated historical
+# reconciliation must still record the verified calculation time to avoid
+# incorrectly selecting the same stock forever. No actual score values
+# change here: only the audit timestamp, after calculate_all() succeeded.
+STAMP_VERIFIED_SCORE_SQL = """
+UPDATE public.daily_composite_scores c SET calculated_at=clock_timestamp()
+WHERE c.market='tpex' AND c.stock_id=%s AND c.as_of_date=%s
+  AND c.calculated_at < (
+    SELECT GREATEST(t.calculated_at,s.calculated_at,a.calculated_at)
+    FROM public.daily_technicals t
+    JOIN public.daily_smc s USING(market,stock_id,trade_date)
+    JOIN public.daily_adjusted_prices a USING(market,stock_id,trade_date)
+    WHERE t.market=c.market AND t.stock_id=c.stock_id AND t.trade_date=c.as_of_date
+  )
 """
 
 CHECK_SCORE_SQL = """
@@ -277,7 +294,8 @@ def execute(url,*,apply=False,rounds=MAX_ROUNDS,report_path=None):
                     if n!=1:
                         raise RuntimeError("Expected one stock-scoped, audited score")
                     with conn.cursor() as cur:
-                        verify_latest_score(conn,stock)
+                        cur.execute(STAMP_VERIFIED_SCORE_SQL,(sid,stock["last_valid"]))
+                    verify_latest_score(conn,stock)
                     after=raw_proof(conn,sid)
                     if after!=before:
                         raise RuntimeError("Original TPEx source OHLCV changed during derived repair")
