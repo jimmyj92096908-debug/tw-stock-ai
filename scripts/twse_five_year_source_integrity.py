@@ -42,6 +42,17 @@ WITH tracked AS (
  WHERE market='twse' AND source='TWSE_MI_INDEX_ALLBUT0999'
 )
 SELECT tracked.*, sourced.*,
+       (SELECT count(*)::int FROM generate_series(
+          ((now() AT TIME ZONE 'Asia/Taipei')::date-INTERVAL '5 years')::date,
+          ((now() AT TIME ZONE 'Asia/Taipei')::date-INTERVAL '1 day')::date,
+          INTERVAL '1 day'
+       ) d(day_date)
+       WHERE extract(isodow FROM d.day_date) BETWEEN 1 AND 5
+         AND NOT EXISTS (
+           SELECT 1 FROM public.twse_history_day_progress progress
+           WHERE progress.trade_date=d.day_date::date
+             AND progress.status IN ('imported','closed')
+       )) missing_five_year_weekdays,
        pg_database_size(current_database())::bigint AS database_bytes
 FROM tracked CROSS JOIN sourced
 """
@@ -49,7 +60,8 @@ FROM tracked CROSS JOIN sourced
 COUNT_KEYS=("processed_days","imported_days","closed_days",
             "invalid_progress_days","inserted_receipts",
             "official_price_rows","official_price_dates",
-            "invalid_ohlcv_rows","database_bytes")
+            "invalid_ohlcv_rows","database_bytes",
+            "missing_five_year_weekdays")
 
 
 def evaluate(state):
@@ -82,7 +94,13 @@ def evaluate(state):
         "line_messages_sent":False,
         "live_trading_enabled":False,
         "paid_service_requested":False,
-        "five_year_complete":False,
+        # Calendar-date source coverage is distinct from full issuer histories,
+        # adjusted factors, or a pristine model validation sample.
+        "five_year_dates_fully_examined":bool(
+            state["missing_five_year_weekdays"]==0
+            and state["official_price_dates"]>=1000
+        ),
+        "model_holdout_validated":False,
     }
 
 
@@ -111,7 +129,7 @@ def main():
         "invalid_progress_days":report["evidence"]["invalid_progress_days"],
         "invalid_ohlcv_rows":report["evidence"]["invalid_ohlcv_rows"],
         "database_mutations":0,
-        "five_year_complete":False,
+        "five_year_dates_fully_examined":report["five_year_dates_fully_examined"],
         "live_trading_enabled":False,
     },ensure_ascii=False))
 
