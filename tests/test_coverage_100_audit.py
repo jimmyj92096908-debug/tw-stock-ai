@@ -60,7 +60,7 @@ class AuditTests(unittest.TestCase):
             module.classify(stock("1101",n=100,last=None))
         with self.assertRaisesRegex(ValueError,"Inconsistent recency"):
             module.classify(stock("1101",n=50, last="2026-11-01",recent=True))
-        with self.assertRaisesRegex(ValueError,"trade date"):
+        with self.assertRaisesRegex(ValueError,"Inconsistent verified price"):
             module.classify(stock("1101",last="2026-11-22"))
 
     def test_duplicate_key_and_mixed_snapshot_dates_fail_closed(self):
