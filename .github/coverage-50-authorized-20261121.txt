@@ -1,0 +1,6 @@
+One-time owner authorization: 2026-11-21.
+Goal: >=50% of all stock_master symbols must have an exact latest valid-price
+technical+SMC pair and a non-null same-day composite score.
+Source: verified official historical prices only.
+No LINE changes, no raw-price writes and no live trading.
+This marker is the single push trigger, not a recurring schedule.

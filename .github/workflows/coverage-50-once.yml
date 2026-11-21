@@ -1,0 +1,62 @@
+name: One-Time Authorized Fifty Percent Research Coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/coverage-50-authorized-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Owner-authorized bounded production writes? Default false."
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Same lock as the scheduled 20-per-market catch-up; never overlap writes.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  coverage:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing verified indicator and score dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify offline tests before any production write
+        run: |
+          python -m py_compile scripts/coverage_50_catchup.py
+          python -m unittest tests.test_coverage_50_catchup tests.test_batch_indicator_catchup tests.test_composite_score tests.test_composite_score_selection -v
+      - name: Require existing protected Neon credential
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::DATABASE_URL absent"; exit 1; fi
+      - name: Owner-authorized bounded indicator and composite catch-up
+        env:
+          STOCK_50_COVERAGE_WRITE_ENABLED: "yes"
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
+        run: python scripts/coverage_50_catchup.py --apply --max-rounds 55 --report coverage-50-evidence.json
+      - name: Preserve per-round evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-50-latest-session-evidence
+          path: coverage-50-evidence.json
+          retention-days: 30
+          if-no-files-found: ignore
