@@ -1,0 +1,1 @@
+Official TPEx backward history research canary: exactly two symbols, at most five months each, original daily_prices immutable, no recurring run; authorized one-time main-merge marker 2026-11-21.\n
