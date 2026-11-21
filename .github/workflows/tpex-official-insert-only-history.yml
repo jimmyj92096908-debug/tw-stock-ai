@@ -1,0 +1,77 @@
+name: Insert-Only Official TPEx Historical Price Enrichment
+
+on:
+  schedule:
+    # 02:10 Asia/Taipei Tue-Sat, after existing daily historical windows,
+    # before 03:10 bounded indicator catch-up. No weekend burst.
+    - cron: "10 18 * * 1-5"
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-official-history-authorized-canary-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Manually run bounded insert-only price enrichment? Default preview."
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Never overlap with existing bounded official history writes.
+concurrency:
+  group: twstock-daily-bounded-history-enrichment
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free Python dependencies only
+        run: pip install -r requirements.txt
+      - name: Prove official input and no-overwrite tests before production actions
+        run: |
+          python -m py_compile scripts/tpex_official_history_insert_only.py
+          python -m unittest tests.test_tpex_official_history_insert_only tests.test_tpex_market_data -v
+          python - <<'PY'
+          from scripts.tpex_official_history_insert_only import PRICE_INSERT_ONLY_SQL
+          assert "ON CONFLICT (market,stock_id,trade_date) DO NOTHING" in PRICE_INSERT_ONLY_SQL
+          assert "DO UPDATE" not in PRICE_INSERT_ONLY_SQL
+          PY
+      - name: Verify existing protected Neon connection is available
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL missing"; exit 1; fi
+      - name: Insert only verified newly missing TPEx dates
+        env:
+          STOCK_TPEX_INSERT_ONLY_HISTORY_ENABLED: "yes"
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            limit=10
+          else
+            limit=2
+          fi
+          python scripts/tpex_official_history_insert_only.py --apply --limit "$limit" --months 5 --report tpex-official-insert-only-evidence.json
+      - name: Retain nonsecret evidence even if a stock failed validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-official-insert-only-evidence
+          path: tpex-official-insert-only-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore
