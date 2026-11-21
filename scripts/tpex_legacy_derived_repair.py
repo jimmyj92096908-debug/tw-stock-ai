@@ -27,7 +27,8 @@ from composite_score import calculate_all
 MAX_TARGETS = 70
 MAX_WINDOW = 10
 MAX_DATABASE_BYTES = 800_000_000
-MIN_DAYS = 60
+MIN_DAYS = 1
+MIN_SCORE_DAYS = 60
 
 TARGET_SQL = """
 WITH last_day AS (
@@ -204,7 +205,7 @@ def execute(url, *, apply=False, rescore=False, offset=0,
                 checks = verify_derived(conn, stock)
             conn.commit()
             score_processed = 0
-            if rescore:
+            if rescore and stock["valid_days"] >= MIN_SCORE_DAYS:
                 # Separate dedicated connection; only this verified explicit
                 # stock may have its research-only score corrected.
                 score_processed = calculate_all(url, stocks=[("tpex", sid)],
@@ -226,6 +227,7 @@ def execute(url, *, apply=False, rescore=False, offset=0,
                 "legacy_rows_verified": checks["legacy_rows"],
                 "derived_rows": n_adj, "technical_rows": n_tech,
                 "smc_rows": n_smc, "scores_processed": score_processed,
+                "research_score_eligible": stock["valid_days"] >= MIN_SCORE_DAYS,
             })
             save(report_path, report)
     return report
