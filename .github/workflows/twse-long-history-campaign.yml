@@ -59,6 +59,12 @@ jobs:
       - name: Preview initial TWSE source depth; no writes or API fetch
         if: steps.gate.outputs.should_run == 'true'
         run: python scripts/twse_long_history_campaign.py --max-rounds 14 --report twse-long-preview.json
+      - name: Evidence of conservative 50MB maintenance margin before official source writes
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          python -c "from twse_dated_history import has_source_write_budget as safe; assert safe(610377728,days=8); assert not safe(745000000,days=8)"
+          echo "- Neon Free TWSE source reserve: 50MB plus an 8-day upper-bound growth allowance." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Live database size is re-checked before each dated source insert; no derived history is generated." >> "$GITHUB_STEP_SUMMARY"
       - name: Sequentially import at most 112 independent official market days
         if: steps.gate.outputs.should_run == 'true'
         env:
