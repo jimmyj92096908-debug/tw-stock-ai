@@ -1,0 +1,16 @@
+2026-11-21 owner-approved UNIQUE one-time TPEx OFFICIAL insert-only
+ten-stock extended source-to-score research batch after verified 2-stock
+canary (4305,4584) and successful 1111/1111 eligible coverage restoration.
+
+ONLY this exact new Git-added marker may enable 10 stocks in the one-off
+source push event; five official monthly requests per stock, <=50 calls.
+Raw price table only INSERT missing keys ON CONFLICT DO NOTHING; never
+fabricate, update or replace existing price history.
+Immediately close newly eligible research indicators and composite by two
+sequential batches of <=5 under the existing exclusive indicator mutex;
+existing scores are insert-only for this scoped follow-on.
+Fail closed if source price universe changes concurrently, if Neon Free
+storage approaches 800MB, if any source validation fails, or if same-day
+eligible tech+SMC+valid composite intersection is not complete.
+Zero paid API/subscription/Neon upgrades, zero LINE messages, zero orders.
+Do not ever modify or recommit this marker.
