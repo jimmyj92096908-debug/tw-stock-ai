@@ -17,6 +17,7 @@ def state(**changes):
         "tpex_historical_factors_current":880,
         "twse_240_eligible":20,"twse_full_indicators":20,
         "twse_complete_scores":20,
+        "missing_five_year_weekdays":900,
     }
     return {**base,**changes}
 
@@ -55,9 +56,23 @@ class TWSEIndependentReleaseGateTests(TestCase):
         self.assertFalse(gate.decide("source",state(legacy_rows=0)))
 
     def test_research_requires_real_240_day_and_incomplete_long_indicators(self):
-        long=state(twse_source_days=245,twse_240_eligible=1000,
+        long=state(twse_source_days=1100,missing_five_year_weekdays=0,
+                   twse_240_eligible=1000,
                    twse_full_indicators=300,twse_complete_scores=200)
         self.assertTrue(gate.decide("research",long))
+        # Source gets priority until all five calendar years have been checked.
+        self.assertFalse(gate.decide("research",{
+            **long,"missing_five_year_weekdays":1
+        }))
+        self.assertFalse(gate.decide("research",{
+            **long,"twse_source_days":999
+        }))
+        self.assertFalse(gate.decide("research",{
+            **long,"database_bytes":650_000_000
+        }))
+        self.assertIn("twse_history_day_progress",gate.STATE_SQL)
+        self.assertIn("missing_five_year_weekdays",gate.STATE_SQL)
+        self.assertIn("TIME ZONE 'Asia/Taipei'",gate.STATE_SQL)
         self.assertFalse(gate.decide("research",{
             **long,"twse_source_days":239
         }))
