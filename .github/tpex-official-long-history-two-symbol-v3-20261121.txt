@@ -1,0 +1,1 @@
+Third and final controlled 2-stock TPEx official longer price history source canary, fixed dict_row anchor proof, original OHLCV insert-only, 2026-11-21.\n
