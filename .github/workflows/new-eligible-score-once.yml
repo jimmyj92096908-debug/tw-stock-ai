@@ -1,0 +1,63 @@
+name: One-Time Small Newly Eligible Stock Indicator and Composite Catch-Up
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/new-eligible-score-authorized-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Opt in to bounded verified new-eligible score write? Default false."
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+# All indicator and composite writes belong to the SAME mutex as existing
+# 50%, 100%-eligible and scheduled indicator catch-up.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  followon:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free dependencies
+        run: pip install -r requirements.txt
+      - name: Test strict 2-stock no-price-overwrite and score-only mode
+        run: |
+          python -m py_compile scripts/new_eligible_score_followon.py src/composite_score.py
+          python -m unittest tests.test_new_eligible_score_followon tests.test_composite_score tests.test_score_after_refresh -v
+      - name: Verify protected existing Neon credential
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::No existing DATABASE_URL"; exit 1; fi
+      - name: Apply approved latest stock-only score insert (no full-market rescoring)
+        env:
+          STOCK_NEW_ELIGIBLE_SCORE_WRITE_ENABLED: "yes"
+        run: |
+          python scripts/new_eligible_score_followon.py --apply --limit 2 --report new-eligible-score-evidence.json
+      - name: Preserve report even if final acceptance fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: new-eligible-stock-score-verified
+          path: new-eligible-score-evidence.json
+          retention-days: 21
+          if-no-files-found: ignore

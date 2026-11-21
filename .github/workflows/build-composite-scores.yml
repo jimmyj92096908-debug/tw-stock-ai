@@ -1,14 +1,32 @@
 name: Build Multi-Factor Composite Scores
+
+# Legacy full-table rebuild is costly and must NEVER run on a feature-branch
+# push or a mere workflow-file change. The separate bounded authorized
+# official-snapshot workflow already handles normal daily score refresh.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "src/composite_score.py"
-      - "sql/composite_score_schema.sql"
-      - "tests/test_composite_score.py"
-      - ".github/workflows/build-composite-scores.yml"
+    inputs:
+      apply:
+        description: "Explicit full composite score rewrite on production main?"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Serialize with the existing protected composite-after-refresh writer.
+concurrency:
+  group: composite-score-after-market-refresh
+  cancel-in-progress: false
+
 jobs:
   test:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.apply == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +38,13 @@ jobs:
       - run: python -m py_compile src/composite_score.py
   build:
     needs: test
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.apply == true
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,7 +59,7 @@ jobs:
             echo "::error::DATABASE_URL secret is missing."
             exit 1
           fi
-      - name: Apply schema and calculate
+      - name: Apply schema and calculate only when explicitly approved
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |

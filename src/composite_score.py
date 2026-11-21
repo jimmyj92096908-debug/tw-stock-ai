@@ -149,7 +149,32 @@ WHERE p.market=%s AND p.stock_id=%s AND p.close > 0
 LIMIT 1
 """
 
-def calculate_all(database_url):
+def calculate_all(database_url, *, stocks=None, missing_only=False):
+    """Build all scores normally, or insert ONLY explicit missing latest scores.
+
+    A bounded per-stock mode is for newly verified 60-session research stocks
+    after official history insertion. Existing score rows are not overwritten
+    in missing-only mode; default caller behavior remains unchanged.
+    """
+    if missing_only and stocks is None:
+        raise ValueError("Missing-only scoring requires a bounded explicit stock cohort")
+    if stocks is not None:
+        import re
+        if not isinstance(stocks, (list, tuple)) or not 1 <= len(stocks) <= 10:
+            raise ValueError("Explicit score cohort must contain 1..10 stocks")
+        clean = []
+        for item in stocks:
+            if (not isinstance(item, (list, tuple)) or len(item) != 2 or
+                    item[0] not in ("twse", "tpex") or
+                    not isinstance(item[1], str) or
+                    not re.fullmatch(r"[0-9]{4,6}", item[1]) or
+                    item[1] == "1808"):
+                raise ValueError("Invalid explicit stock cohort key")
+            clean.append((item[0],item[1]))
+        if len(set(clean)) != len(clean):
+            raise ValueError("Duplicate explicit score cohort")
+        stocks = sorted(clean)
+
     upsert = """INSERT INTO daily_composite_scores
     (market,stock_id,as_of_date,total_score,coverage_weight,technical_score,smc_score,chip_score,
      short_term_score,swing_score,long_term_score,short_coverage,swing_coverage,long_coverage,
@@ -161,12 +186,19 @@ def calculate_all(database_url):
     short_term_score=EXCLUDED.short_term_score,swing_score=EXCLUDED.swing_score,long_term_score=EXCLUDED.long_term_score,
     short_coverage=EXCLUDED.short_coverage,swing_coverage=EXCLUDED.swing_coverage,long_coverage=EXCLUDED.long_coverage,
     component_status=EXCLUDED.component_status,calculated_at=now()"""
+    if missing_only:
+        upsert = upsert[:upsert.index("    ON CONFLICT (market,stock_id,as_of_date) DO UPDATE SET")] + (
+            "    ON CONFLICT (market,stock_id,as_of_date) DO NOTHING RETURNING stock_id"
+        )
     count=0
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
-            cur.execute(SCORABLE_STOCKS_SQL)
-            stocks=cur.fetchall()
-            for market,stock_id in stocks:
+            if stocks is None:
+                cur.execute(SCORABLE_STOCKS_SQL)
+                selected = cur.fetchall()
+            else:
+                selected = stocks
+            for market,stock_id in selected:
                 cur.execute(LATEST_VALID_TECH_SQL,(market,stock_id))
                 tr=cur.fetchone()
                 if not tr: continue
@@ -206,7 +238,11 @@ def calculate_all(database_url):
                     horizon_results["short"]["score"],horizon_results["swing"]["score"],horizon_results["long"]["score"],
                     horizon_results["short"]["coverage"],horizon_results["swing"]["coverage"],horizon_results["long"]["coverage"],
                     json.dumps(status,ensure_ascii=False)))
-                count+=1
+                if missing_only:
+                    if cur.fetchone() is not None:
+                        count+=1
+                else:
+                    count+=1
     return count
 
 def main():
