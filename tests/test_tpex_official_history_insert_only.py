@@ -91,6 +91,8 @@ class TPExInsertOnlyTests(TestCase):
         marker=".github/tpex-official-history-authorized-batch10-20261121.txt"
         self.assertIn(marker,source)
         self.assertIn(".github/tpex-official-history-authorized-batch10-v2-20261121.txt",source)
+        self.assertIn(".github/tpex-official-history-authorized-batch10-v3-20261121.txt",source)
+        self.assertIn('grep -Fxq ".github/tpex-official-history-authorized-batch10-v3-20261121.txt"',source)
         self.assertIn("git diff --name-only --diff-filter=A HEAD^ HEAD",source)
         self.assertIn("fetch-depth: 2",source)
         self.assertIn('echo "extended=true" >> "$GITHUB_OUTPUT"',source)
