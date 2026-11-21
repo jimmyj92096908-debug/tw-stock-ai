@@ -35,10 +35,24 @@ class TWSEDateBackfillPGTests(unittest.TestCase):
                 transactions bigint,source text,
                 PRIMARY KEY(market,stock_id,trade_date)
             )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.official_issuer_weekly_snapshots (
+                observed_at timestamptz NOT NULL, snapshot jsonb NOT NULL
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.official_issuer_snapshot_corrections (
+                observed_at timestamptz NOT NULL, snapshot jsonb NOT NULL
+            )""")
             stock_ids=[str(i) for i in range(1000,1700)]
             for stock_id in stock_ids:
                 conn.execute("""INSERT INTO public.stock_master(market,stock_id)
                     VALUES('twse',%s) ON CONFLICT DO NOTHING""",(stock_id,))
+            # Master-only symbol 1700 must be excluded from official active source.
+            conn.execute("""INSERT INTO public.stock_master(market,stock_id)
+                VALUES('twse','1700') ON CONFLICT DO NOTHING""")
+            conn.execute("""INSERT INTO public.official_issuer_weekly_snapshots
+                (observed_at,snapshot)
+                SELECT now(),jsonb_build_object('records',
+                   jsonb_agg(jsonb_build_object('market',market,'stock_id',stock_id)))
+                FROM public.stock_master WHERE stock_id <> '1700'""")
             # A verified older record must not be overwritten by whole-market data.
             conn.execute("""INSERT INTO public.daily_prices
                 (market,stock_id,trade_date,close,source)
@@ -51,7 +65,7 @@ class TWSEDateBackfillPGTests(unittest.TestCase):
             "low":Decimal("97"),"close":Decimal("101"),
             "volume":100,"turnover":10000,"price_change":Decimal("2"),
             "transactions":10,"source":"TWSE_MI_INDEX_ALLBUT0999"
-        } for stock_id in stock_ids]
+        } for stock_id in stock_ids+['1700']]
         real_connect=psycopg.connect
         # source/network mocked, but actual imports and progress use a real
         # local disposable database. Run once with a single weekday.
@@ -80,3 +94,5 @@ class TWSEDateBackfillPGTests(unittest.TestCase):
                 new_count=conn.execute("""SELECT COUNT(*) FROM public.daily_prices
                     WHERE market='twse' AND trade_date=%s AND close IS NOT NULL""",(DAY,)).fetchone()[0]
                 self.assertGreaterEqual(new_count,700)
+                self.assertEqual(conn.execute("""SELECT count(*) FROM public.daily_prices
+                    WHERE market='twse' AND stock_id='1700'""").fetchone()[0],0)
