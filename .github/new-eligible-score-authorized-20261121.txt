@@ -1,0 +1,9 @@
+Owner-authorized one-time catch-up for the two new verified TPEx stocks.
+2026-11-21: official TPEx source importer completed for 4305 and 4584,
+increasing real >=60-session recent eligible universe from 1109 to 1111.
+The existing bounded new-eligible score workflow may compute adjusted
+prices/technical/SMC for at most two stocks and insert ONLY missing latest
+composite score keys. No overwrite of stored raw prices or old scores.
+No paid API, Neon plan change, LINE message, webhook edit or live orders.
+Stop and report if baseline/official source or same-date acceptance fails.
+Do not modify this once-only authorization marker.
