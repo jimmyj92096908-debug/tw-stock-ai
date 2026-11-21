@@ -1,0 +1,12 @@
+2026-11-21 explicit owner-authorized single official revenue archive v3 canary.
+Real PostgreSQL 17 tests proved initial insert, repeated-source no-overwrite,
+revision append, non-stock-master exclusion and rollback.
+Fetch ONLY TWSE and TPEx official latest monthly revenue HTTPS JSON once,
+validate month, source table day and finite revenue. Suppress extreme source
+YoY as missing with a permanent fingerprint flag.
+Conservatively timestamp after HTTP response; do NOT fabricate historical
+issuer published_at. Append immutable research-only first-observed vintages.
+Neon Free <800 MB, no paid services, no raw price or score rewrites, no
+model retrain, LINE messages, live signals, webhook or trade orders.
+If any source or DB check fails, abort and do not claim coverage success.
+This marker is unique and must never be changed or recommitted.
