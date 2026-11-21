@@ -52,6 +52,34 @@ jobs:
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
           python src/stock_db_audit.py --json > twstock-audit.json
+      - name: Audit historical source, legacy adjusted units and frozen future research
+        env:
+          PYTHONPATH: .:src
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_research_readonly_milestones -v
+          python -m py_compile scripts/research_readonly_milestones.py
+          # Reuse the existing monitor, Neon read-only SELECT, and free runner.
+          python scripts/research_readonly_milestones.py --out twstock-research-milestones.json
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          x=json.loads(Path("twstock-research-milestones.json").read_text())
+          s=x["official_history"]
+          l=x["legacy_tpex_units"]
+          f=x["future_research"]
+          text=(
+              "### Official historical depth and model provenance (READ ONLY)\n"
+              f"- Verified TPEx/TWSE dated-source sessions: {s['tpex_dated_verified_sessions']}/{s['twse_dated_verified_sessions']}\n"
+              f"- Legacy adjusted TPEx volume/turnover unverified rows: {l['derived_volume_bad_or_missing']:,}/{l['derived_turnover_bad_or_missing']:,}\n"
+              f"- Independently frozen prospective signal dates: {f['frozen_signal_days']}\n"
+              "- Prospective frozen cohorts are NOT matured future results or proven trading alpha.\n"
+              "- No raw price updates, LINE trade messages, orders or paid subscription changes.\n"
+          )
+          print(text)
+          summary=os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary: Path(summary).open("a",encoding="utf-8").write(text)
+          PY
       - name: Verify data integrity and publish sanitized summary
         run: |
           python - <<'PY'
@@ -121,6 +149,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: twstock-readonly-quality-audit
-          path: twstock-audit.json
+          path: |
+            twstock-audit.json
+            twstock-research-milestones.json
           if-no-files-found: ignore
           retention-days: 7
