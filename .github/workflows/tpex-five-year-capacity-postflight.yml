@@ -1,0 +1,54 @@
+name: TPEx Five-Year Storage and Derived-Readiness Postflight (Read Only)
+
+on:
+  workflow_run:
+    workflows:
+      - "TPEx Five-Year Dated Market Full Free Campaign"
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-postflight-readonly-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  source-capacity-plan:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check immutable source and storage readiness contract
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_five_year_capacity_plan.py
+          python -m unittest tests.test_tpex_five_year_capacity_plan -v
+      - name: Audit actual per-table size, missing factor rows and bounded reprocess candidates READ ONLY
+        run: python scripts/tpex_five_year_capacity_plan.py --report tpex-five-year-capacity-derived-plan.json
+      - name: Preserve nonsecret budget and historical factor debt evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-year-free-budget-derived-readiness
+          path: tpex-five-year-capacity-derived-plan.json
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,6 +1,13 @@
 name: TPEx Five-Year Dated Market Full Free Campaign
 
 on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        type: boolean
+        required: true
+        default: false
+        description: "Resume only missing verified TPEx market dates? Default previews without writes."
   workflow_run:
     workflows:
       - "TPEx Five-Year Dated Market Source Canary"
@@ -23,11 +30,16 @@ jobs:
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.repository.full_name == github.repository
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.repository.full_name == github.repository
+        ) ||
+        github.event_name == 'workflow_dispatch'
+      )
     concurrency:
       group: twstock-tpex-dated-official-history
       cancel-in-progress: false
@@ -52,6 +64,9 @@ jobs:
       - name: Preview remaining anchored historical dates without writes
         run: python scripts/tpex_five_year_market_backfill.py --max-days 1250 --report tpex-five-year-full-preview.json
       - name: Insert only real official five-year dates with safe per-day commits
+        if: >-
+          github.event_name == 'workflow_run' ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
         env:
           STOCK_TPEX_FIVE_YEAR_SOURCE_WRITE_ENABLED: 'yes'
           STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
