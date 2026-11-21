@@ -64,6 +64,16 @@ jobs:
           if universe<=0: raise SystemExit("No candidate stocks; audit invalid")
           q=audit["quality"]
           ready=audit["analysis_readiness"]
+          cohort=audit["matched_cohort_coverage"]
+          blockers=cohort["blocking_cohorts"]
+          markets=audit["cohort_by_market"]
+          if sum(r["master"] for r in markets)!=universe:
+              raise SystemExit("Exact stock-master cohort denominator differs from coverage query")
+          if cohort["complete"]>cohort["eligible"] or cohort["eligible"]>universe:
+              raise SystemExit("Contradictory exact same-date cohort intersection")
+          if (cohort["eligible"]+sum(blockers.values()) != universe or
+              cohort["missing_eligible_matched_full_stack"]<0):
+              raise SystemExit("Incomplete stock-master coverage partition")
           backlog=audit["indicator_backlog"]
           pending=sum(int(m["pending"]) for m in backlog)
           eligible=sum(int(m["eligible"]) for m in backlog)
@@ -85,6 +95,12 @@ jobs:
               f"- Stocks with 120/240 sessions: {ready['history_120d']:,}/{ready['history_240d']:,}",
               f"- Technical/SMC stocks: {ready['technical_stocks']:,}/{ready['smc_stocks']:,}",
               f"- Stocks with score: {ready['scored_stocks']:,} of {covered:,} historical-price stocks",
+              f"- Exact SAME-STOCK SAME-LAST-VALID-CLOSE technical + SMC + composite: {cohort['complete']:,}/{cohort['eligible']:,} currently eligible",
+              f"- Full stock-master complete share: {cohort['complete']:,}/{cohort['master']:,} ({cohort['coverage_fraction_master']:.1%})",
+              f"- Missing real >=60-session price history: {blockers['short_history']:,}; no valid close: {blockers['no_valid_price']:,}",
+              f"- Sufficient but stale latest close: {blockers['stale_sufficient_history']:,}; research excluded: {blockers['research_excluded']:,}",
+              f"- Missing among currently eligible matched full-stack: {cohort['missing_eligible_matched_full_stack']:,}",
+              "- Eligible-stock current score coverage is NOT equivalent to full-exchange history or evidence of investment alpha.",
               f"- Scored on latest global price date: {ready['scored_latest_price_day']:,}",
               f"- Fresh 60+ session indicator backlog: {pending:,}/{eligible:,} eligible TWSE/TPEx stocks",
               *[f"- {m['market']} indicators pending/complete: {m['pending']}/{m['complete']} (unstarted {m['unstarted']})" for m in backlog],
