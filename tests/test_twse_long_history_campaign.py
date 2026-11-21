@@ -30,16 +30,16 @@ class TWSELongHistoryCampaignTests(TestCase):
         self.assertFalse(report["line_messages_sent"])
         run.assert_not_called()
 
-    def test_both_apply_gates_and_strict_14_rounds(self):
+    def test_both_apply_gates_and_strict_20_rounds(self):
         with patch.dict(os.environ,{},clear=True):
             with self.assertRaisesRegex(ValueError,"write gates"):
                 campaign.execute("fake",apply=True)
-        for n in (-1,15,100):
+        for n in (-1,21,100):
             with self.assertRaisesRegex(ValueError,"Unsafe"):
                 campaign.execute("fake",max_rounds=n)
         with self.assertRaisesRegex(ValueError,"write gates"):
             campaign.execute("fake",apply=True,max_rounds=0)
-        self.assertEqual(campaign.MAX_ROUNDS,14)
+        self.assertEqual(campaign.MAX_ROUNDS,20)
         self.assertEqual(campaign.MAX_DAYS_PER_ROUND,8)
         self.assertEqual(campaign.LOOKBACK_DAYS,1830)
         self.assertIn("TWSE_MI_INDEX_ALLBUT0999",campaign.STATE_SQL)
