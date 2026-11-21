@@ -1,0 +1,74 @@
+name: One-Time 100 Percent Currently Eligible Stock Research Coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/eligible-100-authorized-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Explicit owner-authorized 100% eligible ONLY; default preview"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Reuses exact same mutex as the original 50% and scheduled indicator writers.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  eligible:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free dependencies
+        run: pip install -r requirements.txt
+      - name: Offline tests and verify no paid or raw-price write path
+        run: |
+          python -m py_compile scripts/eligible_100_catchup.py
+          python -m unittest tests.test_eligible_100_catchup tests.test_batch_indicator_catchup tests.test_coverage_50_catchup -v
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/eligible_100_catchup.py').read_text()
+          assert 'MAX_DATABASE_BYTES=800_000_000' in source
+          assert 'MAX_ROUNDS=9' in source
+          assert 'STOCK_ELIGIBLE_100_COVERAGE_WRITE_ENABLED' in source
+          assert 'STOCK_INDICATOR_CATCHUP_WRITE_ENABLED' in source
+          assert 'calculate_all(url)' in source
+          assert 'batch_indicator_catchup' in source
+          assert 'raw_prices_modified' in source
+          PY
+      - name: Require protected existing Neon credentials
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
+      - name: Apply owner-approved fixed 9-round ceiling to currently eligible stocks
+        env:
+          STOCK_ELIGIBLE_100_COVERAGE_WRITE_ENABLED: "yes"
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: "yes"
+        run: |
+          python scripts/eligible_100_catchup.py --apply --max-rounds 9 --report eligible-100-evidence.json
+      - name: Save bounded verification evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eligible-100-latest-session-verified
+          path: eligible-100-evidence.json
+          retention-days: 21
+          if-no-files-found: ignore
