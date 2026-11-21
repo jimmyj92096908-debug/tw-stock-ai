@@ -49,6 +49,20 @@ class TPExDatedHistoryTests(TestCase):
         self.assertEqual([d["trade_date"] for d in days],
                          [date(2026,11,18), date(2026,11,17)])
 
+    def test_ten_day_cap_and_no_unanchored_dates(self):
+        fake = FakeConnection([
+            (date(2026, 11, 20), 875),
+            *[(date(2026, 11, d), 58) for d in range(2, 19)
+              if date(2026, 11, d).weekday() < 5],
+        ])
+        selected = history.choose_days(fake, today=date(2026, 11, 21),
+                                       universe=900, batch_days=10, lookback=20)
+        self.assertEqual(len(selected), 10)
+        self.assertTrue(all(x["old_valid_rows"] >= 10 for x in selected))
+        with self.assertRaisesRegex(ValueError, "bounds"):
+            history.choose_days(fake, today=date(2026, 11, 21),
+                                universe=900, batch_days=11, lookback=20)
+
     def test_same_day_close_cross_check_passes_and_fails_closed(self):
         existing = [("1000", Decimal("100")), ("1001", Decimal("101"))]
         bars = [{"market":"tpex", "stock_id":str(1000+i),
@@ -84,7 +98,7 @@ class TPExDatedHistoryTests(TestCase):
         with patch.dict(history.os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "write gate"):
                 history.run("postgresql://fake", apply=True)
-        for batch in (0, 5, 200):
+        for batch in (0, 11, 200):
             with self.assertRaisesRegex(ValueError, "bounds"):
                 history.run("postgresql://fake", batch_days=batch)
 

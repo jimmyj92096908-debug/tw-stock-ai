@@ -46,8 +46,8 @@ jobs:
           python -m py_compile src/tpex_dated_bulk_canary.py src/tpex_dated_history.py
           python -m unittest tests.test_tpex_dated_bulk_canary tests.test_tpex_dated_history -v
       - name: List missing dates without HTTP requests or writes
-        run: python src/tpex_dated_history.py --batch-days 4 --lookback-days 90
-      - name: Add at most four verified TPEx historical dates
+        run: python src/tpex_dated_history.py --batch-days 4 --lookback-days 150
+      - name: Backfill only exchange-verified missing TPEx price dates
         if: >-
           github.event_name == 'schedule' ||
           github.event_name == 'push' ||
@@ -55,11 +55,19 @@ jobs:
         env:
           STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = 'push' ]; then
-            # Initial release canary touches a single validated historical date.
-            python src/tpex_dated_history.py --apply --batch-days 1 --lookback-days 90
+            # One release-only campaign: at most six 10-day batches.
+            # Each invocation commits its own accepted dates only after a
+            # >=98% independent same-day close comparison (>=10 matches).
+            # Stop on the first failure; previous successful batches remain.
+            for batch in 1 2 3 4 5 6; do
+              echo "### Release campaign: batch $batch of 6" >> "$GITHUB_STEP_SUMMARY"
+              python src/tpex_dated_history.py --apply --batch-days 10 --lookback-days 150
+            done
           else
-            python src/tpex_dated_history.py --apply --batch-days 4 --lookback-days 90
+            # Routine batch remains small for zero-additional-cost operation.
+            python src/tpex_dated_history.py --apply --batch-days 4 --lookback-days 150
           fi
       - name: Confirm manual preview never wrote data
         if: github.event_name == 'workflow_dispatch' && inputs.apply != true
