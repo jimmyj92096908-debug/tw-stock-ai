@@ -1,0 +1,135 @@
+name: Official Current Issuer and Whole-Market Dividend Evidence (Free, Bounded)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/official-current-issuer-dividend-one-shot-20261121.txt"
+  workflow_run:
+    workflows:
+      - "Taiwan Stock AI - Daily Data"
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      apply_weekly_issuer:
+        description: "Write at most one immutable current-issuer snapshot per week? Preview by default."
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-official-issuer-weekly-evidence
+  cancel-in-progress: false
+
+jobs:
+  issuer-and-dividend-observations:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'schedule' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Validate exact newly added one-shot marker on main
+        id: once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+             grep -Fxq ".github/official-current-issuer-dividend-one-shot-20261121.txt"; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing no-paid dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate actual official source and source-times without retroactive alpha
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/official_current_issuer_snapshot.py scripts/official_dividend_monthly_preview.py
+          python -m unittest tests.test_official_issuer_dividend_evidence -v
+      - name: Audit exact Neon storage, and real transfer when read-only API key available
+        run: python scripts/neon_free_meter_guard.py --report official-source-free-budget.json
+      - name: Collect one real official TWSE and TPEx current-issuer date evidence
+        if: github.event_name != 'push' || steps.once.outputs.new == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Current API roster is NOT historical delisting/past eligible-stock proof.
+          # Single first receipt or weekly Friday insert only, never overwrite.
+          mode="$(python - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import os
+          event=os.getenv("GITHUB_EVENT_NAME")
+          friday=datetime.now(ZoneInfo("Asia/Taipei")).weekday()==4
+          # Use only existing authorized trigger; not a new full database import.
+          print("--apply" if (
+              event=="push" or
+              (event=="workflow_run" and friday) or
+              (event=="workflow_dispatch" and
+               os.getenv("MANUAL_APPLY_WEEKLY","false")=="true")
+          ) else "")
+          PY
+          )"
+          python - <<'PY'
+          import json,sys
+          r=json.load(open("official-source-free-budget.json"))
+          if r["database_bytes"]>=650000000:
+              sys.exit("Conservative issuer evidence pause at 650MB database")
+          if r["network_transfer_status"]=="PAUSE_NEW_NONESSENTIAL_WORK":
+              sys.exit("Conservative official source pause at high Neon transfer")
+          PY
+          if [ "$mode" = "--apply" ]; then
+            STOCK_OFFICIAL_ISSUER_EVIDENCE_WRITE=yes python scripts/official_current_issuer_snapshot.py --apply --report issuer-source-observation.json
+          else
+            python scripts/official_current_issuer_snapshot.py --report issuer-source-observation.json
+          fi
+        env:
+          MANUAL_APPLY_WEEKLY: ${{ inputs.apply_weekly_issuer || 'false' }}
+      - name: Parse at most 21 actual calendar days of four official ex-right and capital reduction feeds, READ ONLY
+        if: github.event_name != 'push' || steps.once.outputs.new == 'true'
+        run: |
+          python - <<'PY'
+          from datetime import datetime,timedelta,timezone
+          import subprocess,sys
+          today=datetime.now(timezone.utc).date()
+          before=today-timedelta(days=20)
+          cmd=[sys.executable,"scripts/official_dividend_monthly_preview.py",
+               "--from-date",before.isoformat(),"--to-date",today.isoformat(),
+               "--report","official-dividend-research.json"]
+          subprocess.run(cmd,check=True)
+          PY
+      - name: Preserve original issuer receipt and incomplete cash-dividend provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-issuer-dividend-free-evidence
+          path: |
+            official-source-free-budget.json
+            issuer-source-observation.json
+            official-dividend-research.json
+          retention-days: 14
+          if-no-files-found: ignore
