@@ -24,7 +24,12 @@ from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 MATURITY_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
 , active AS (
- SELECT stock_id FROM official_current_listed WHERE market='twse'
+ SELECT o.stock_id FROM official_current_listed o
+ WHERE o.market='twse'
+   AND NOT EXISTS (
+      SELECT 1 FROM public.model_stock_exclusions x
+      WHERE x.market=o.market AND x.stock_id=o.stock_id
+   )
 ), priced AS (
  SELECT a.stock_id,
         count(p.trade_date) FILTER(WHERE p.close>0 AND p.volume>=0)::int valid_days,

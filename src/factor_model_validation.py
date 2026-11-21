@@ -38,6 +38,10 @@ FROM public.daily_composite_scores s
 JOIN closes c ON c.market=s.market AND c.stock_id=s.stock_id
  AND c.trade_date=s.as_of_date
 WHERE s.total_score IS NOT NULL
+ AND NOT EXISTS (
+    SELECT 1 FROM public.model_stock_exclusions x
+    WHERE x.market=s.market AND x.stock_id=s.stock_id
+ )
  AND s.coverage_weight >= %s
  AND s.as_of_date >= %s
  AND s.as_of_date <= %s
