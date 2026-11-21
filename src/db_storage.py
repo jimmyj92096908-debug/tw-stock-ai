@@ -1,7 +1,7 @@
 """將 TWSE／TPEx CSV 歷史日 K 安全寫入 PostgreSQL（Neon）。
 
 需要環境變數 DATABASE_URL。此模組不包含、也不讀取任何硬編碼密碼。
-現有 CSV 的單位須依來源核實；特別是 TPEx 月資料尚待來源單位驗證。
+TPEx 個股日成交資訊原始 CSV 成交仟股／仟元僅於標記來源下轉換為股／元。
 此匯入器一律只新增缺漏主鍵，不覆寫正式資料庫既有行情。
 """
 
@@ -12,6 +12,7 @@ import csv
 import logging
 import os
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import psycopg
@@ -46,6 +47,35 @@ def optional_number(value: Any) -> int | float | None:
     return int(number) if number.is_integer() else number
 
 
+def normalize_tpex_monthly_units(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Convert raw TPEx tradingStock thousands to shares/NTD exactly once.
+
+    Only the raw monthly CSV source tag is supported; the OpenAPI already
+    reports shares/NTD and must never be scaled. No existing DB row is changed.
+    """
+    if parsed["market"] != "tpex" or parsed["source"] != "TPEX_TRADING_STOCK":
+        return parsed
+
+    for key in ("volume", "turnover"):
+        value = parsed[key]
+        if value is None:
+            continue
+        try:
+            scaled = Decimal(str(value)) * 1000
+        except InvalidOperation as exc:
+            raise ValueError(f"Invalid raw TPEx {key}") from exc
+        if not scaled.is_finite() or scaled < 0:
+            raise ValueError(f"Invalid raw TPEx {key}")
+        if key == "volume":
+            if scaled != scaled.to_integral_value() or scaled > 9223372036854775807:
+                raise ValueError("TPEx volume cannot be represented as integer shares")
+            parsed[key] = int(scaled)
+        else:
+            parsed[key] = scaled
+    parsed["source"] = "TPEX_TRADING_STOCK_NORMALIZED"
+    return parsed
+
+
 def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
     """讀取並驗證單檔歷史日 K CSV。"""
     if market not in {"twse", "tpex"}:
@@ -78,6 +108,7 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
                 "transactions": optional_number(row.get("transactions")),
                 "source": row.get("source") or market.upper(),
             }
+            parsed = normalize_tpex_monthly_units(parsed)
             prices = [parsed[key] for key in ("open", "high", "low", "close") if parsed[key] is not None]
             high, low = parsed["high"], parsed["low"]
             if prices and (
