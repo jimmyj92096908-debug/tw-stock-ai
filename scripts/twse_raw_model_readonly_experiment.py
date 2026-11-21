@@ -23,6 +23,8 @@ from src.raw_factor_walkforward import (
 # Frozen, current-official-listed small *research* roster, NOT all-market
 # model validation or an as-of historical survivor-free universe.
 PROTOTYPE_STOCKS = ("1301", "1303", "2303", "2317", "2330", "2454")
+MAX_STOCK_BARS = 400
+assert MAX_STOCK_BARS <= MAX_BARS
 
 ROSTER_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
 SELECT COUNT(*)::int AS eligible
@@ -69,7 +71,7 @@ def execute(url, *, label_cutoff, test_start, max_signals=50, output_dir=None):
             raise RuntimeError("Missing, stale or excluded current TWSE official research roster")
         series = {
             sid: [dict(r) for r in conn.execute(
-                PRICE_SQL, (sid, label_cutoff, MAX_BARS)).fetchall()]
+                PRICE_SQL, (sid, label_cutoff, MAX_STOCK_BARS)).fetchall()]
             for sid in PROTOTYPE_STOCKS
         }
         signal_rows = conn.execute(
