@@ -80,6 +80,31 @@ jobs:
           summary=os.environ.get("GITHUB_STEP_SUMMARY")
           if summary: Path(summary).open("a",encoding="utf-8").write(text)
           PY
+      - name: Verify still-short TPEx prices without inventing listing dates
+        env:
+          PYTHONPATH: .:src
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_tpex_short_history_gap_audit -v
+          python scripts/tpex_short_history_gap_audit.py --out tpex-short-history-gap-evidence.json
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          x=json.loads(Path("tpex-short-history-gap-evidence.json").read_text(encoding="utf-8"))
+          b=x["bands"]
+          summary=(
+              "### TPEx source-backed short-history audit (READ ONLY)\n"
+              f"- Actual latest price day: {x['price_date']}\n"
+              f"- Valid >=60-session TPEx: {x['eligible_real_60_session_history']}/{x['currently_priced']}\n"
+              f"- Short history 50–59/40–49/30–39/20–29/0–19: "
+              f"{b['50-59']}/{b['40-49']}/{b['30-39']}/{b['20-29']}/{b['0-19']}\n"
+              "- First observed price date is NOT independently verified official listing date.\n"
+              "- No fictitious trading days, price updates, LINE trade messages or orders.\n"
+          )
+          print(summary)
+          if os.getenv("GITHUB_STEP_SUMMARY"):
+              Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a",encoding="utf-8").write(summary)
+          PY
       - name: Verify data integrity and publish sanitized summary
         run: |
           python - <<'PY'
@@ -152,5 +177,6 @@ jobs:
           path: |
             twstock-audit.json
             twstock-research-milestones.json
+            tpex-short-history-gap-evidence.json
           if-no-files-found: ignore
           retention-days: 7
