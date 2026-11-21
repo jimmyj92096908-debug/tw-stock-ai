@@ -1,5 +1,10 @@
 name: TPEx Historical Factors Final 100 Percent Acceptance
 
+# Exact path main-merge retrigger for official per-stock TPEx provenance
+# correction. Only verified tradingStock monthly and official daily OpenAPI
+# stock records join dated EW in PER-STOCK factor freshness checks. Global
+# TPEX_DATED_OTC_EW 80-day release threshold remains independent and unchanged.
+
 on:
   # A single main-branch push creates the safe follow-on and queues behind
   # the first five-batch wave on the SAME writer mutex. No recurring cron,
@@ -52,8 +57,20 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$DATABASE_URL"
-          python -m py_compile scripts/tpex_factor_bounded_campaign.py scripts/tpex_stale_factor_refresh.py
-          python -m unittest tests.test_tpex_factor_bounded_campaign tests.test_tpex_stale_factor_refresh -v
+          python -m py_compile scripts/tpex_factor_bounded_campaign.py scripts/tpex_stale_factor_refresh.py scripts/twse_240_release_gate.py
+          python -m unittest tests.test_tpex_factor_bounded_campaign tests.test_tpex_stale_factor_refresh tests.test_twse_240_release_gate -v
+          # Check BOTH independent official market-wide dated days and the
+          # explicit per-symbol official TPEx endpoint allowlist before writes.
+          python - <<'PY'
+          from scripts.twse_240_release_gate import STATE_SQL
+          from scripts.tpex_stale_factor_refresh import CANDIDATES_SQL, CHECK_STOCK_SQL
+          assert "source='TPEX_DATED_OTC_EW')::int tpex_source_days" in STATE_SQL
+          allowlist=("TPEX_DATED_OTC_EW","TPEX_TRADING_STOCK","TPEX_DAILY_CLOSE_OPENAPI")
+          for source in allowlist:
+              assert source in STATE_SQL
+              assert source in CANDIDATES_SQL
+              assert source in CHECK_STOCK_SQL
+          PY
           python scripts/tpex_factor_bounded_campaign.py --max-batches 3 --report tpex-final-preview.json
       - name: Reconcile up to 3 sequential 100-stock source-verified historical batches
         env:
