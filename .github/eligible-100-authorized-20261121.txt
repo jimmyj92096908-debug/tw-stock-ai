@@ -1,0 +1,10 @@
+One-time owner authorization for 100% of the currently eligible
+60-valid-close-session research cohort only.
+Date: 2026-11-21.
+Never expands scope to stocks missing official price history.
+No new paid services or subscription upgrades.
+Never overwrites public.daily_prices.
+No LINE sends, webhook changes, trading or orders.
+Run only with nine bounded 20-per-market rounds, fail closed on
+raw price count/date change, free storage ceiling and lack of progress.
+This trigger file must never be modified or recommitted.
