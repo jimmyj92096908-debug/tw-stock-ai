@@ -1,0 +1,13 @@
+2026-11-21 explicit owner-approved one-time official TWSE/TPEx
+general-industry quarterly-income EPS first-observed archive.
+TWO fixed official HTTPS GET endpoints only, <=8MB each and <=2500 rows.
+Parse real 2026 Q3 or currently supplied official annual/quarter context.
+Keep YTD EPS and financial values as YTD, preserve exact source period,
+table date only when explicitly present, and first_observed_at only
+AFTER the actual completed response (never backdate issuer publication).
+Insert only missing (market,stock_id,period_end,payload_sha256) keys
+for known stock_master, reject UPDATE and DELETE of stored revisions.
+Tested on disposable PostgreSQL17; Neon Free 800MB stop line.
+No paid APIs, no model retraining, no LINE, no orders, no raw price writes.
+If source schema/financial context fails validation, abort and report.
+Never edit, delete, or recommit this unique one-time authorization marker.
