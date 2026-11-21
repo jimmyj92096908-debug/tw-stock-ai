@@ -1,0 +1,1 @@
+Only allow vetted transient TPEx HTTP retries <=3 with 10-day verified source canary then existing bounded full handoff. No overwrite of OHLCV, no LINE or paid services.\n

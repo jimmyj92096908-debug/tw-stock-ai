@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/tpex-five-year-market-20261121.txt"
+      - ".github/tpex-five-year-market-transient-http-v2-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -39,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ] &&
-             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-five-year-market-20261121.txt"; then
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-five-year-market-transient-http-v2-20261121.txt"; then
             echo "approved=true" >> "$GITHUB_OUTPUT"
           else
             echo "approved=false" >> "$GITHUB_OUTPUT"

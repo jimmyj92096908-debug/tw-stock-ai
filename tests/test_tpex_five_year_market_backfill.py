@@ -6,6 +6,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock,patch
 
 from scripts import tpex_five_year_market_backfill as m
+import requests
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -130,6 +131,57 @@ class FiveYearTPExBackfillTests(TestCase):
         insert.assert_called_once_with(conn,"tpex",day,stocks)
         proof.assert_called_once()
         pause.assert_called_once_with(1)
+
+
+    def test_bounded_backoff_only_for_transient_official_errors(self):
+        day=date(2025,4,11)
+        conn=MagicMock()
+        allowed={("tpex",str(1000+i)) for i in range(900)}
+        samples=[{"market":"tpex","stock_id":"1000","trade_date":day}]
+        transient=requests.exceptions.ReadTimeout("Temporary source outage")
+        fetch=MagicMock(side_effect=[transient,{"bars":samples}])
+        with patch.object(m,"select_candidates",return_value=samples),\
+             patch.object(m,"verify_source_date",return_value={
+                "compared":15,"matched":15,"mismatched":0}),\
+             patch.object(m.time,"sleep") as sleeper:
+            bars,proof=m.verified_source_bars(conn,day,allowed,fetcher=fetch)
+        self.assertEqual(len(bars),1)
+        self.assertEqual(proof["official_http_attempts"],2)
+        self.assertEqual(fetch.call_count,2)
+        sleeper.assert_called_once_with(5)
+
+        no_retry=MagicMock(side_effect=ValueError("Source date/close mismatch"))
+        with patch.object(m.time,"sleep") as sleeper:
+            with self.assertRaises(ValueError):
+                m.verified_source_bars(conn,day,allowed,fetcher=no_retry)
+            sleeper.assert_not_called()
+        no_retry.assert_called_once()
+
+        # A permanent 404 must be rejected after exactly one official GET.
+        response=MagicMock()
+        response.status_code=404
+        hard=requests.exceptions.HTTPError("Not Found",response=response)
+        no_retry=MagicMock(side_effect=hard)
+        with patch.object(m.time,"sleep") as sleeper:
+            with self.assertRaises(requests.exceptions.HTTPError):
+                m.verified_source_bars(conn,day,allowed,fetcher=no_retry)
+            sleeper.assert_not_called()
+        no_retry.assert_called_once()
+        self.assertEqual(hard.official_http_attempts,1)
+
+        # 503 may be retried, but no more than three total source attempts.
+        temporarily_down=MagicMock()
+        temporarily_down.status_code=503
+        soft=requests.exceptions.HTTPError("Service Unavailable",
+                                           response=temporarily_down)
+        fetch=MagicMock(side_effect=soft)
+        with patch.object(m.time,"sleep") as sleeper:
+            with self.assertRaises(requests.exceptions.HTTPError):
+                m.verified_source_bars(conn,day,allowed,fetcher=fetch)
+            self.assertEqual(fetch.call_count,3)
+            self.assertEqual(soft.official_http_attempts,3)
+            self.assertEqual(sleeper.call_count,2)
+        self.assertEqual(m.MAX_OFFICIAL_HTTP_ATTEMPTS,3)
 
     def test_source_failure_is_audit_and_no_raw_insert(self):
         conn=MagicMock()
