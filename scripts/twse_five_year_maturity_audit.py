@@ -1,6 +1,6 @@
 """Read-only TWSE officially-active stock history maturity and storage audit.
 
-This audit describes actually observed positive-volume-valid?  No invented days:
+This audit describes only actually observed verified price sessions. No invented days:
 only dates with a positive closing price and non-negative volume are counted.
 A 1,000-session threshold is an indicator of depth, NOT proof of five complete
 calendar years for a recently listed issuer or of unbiased model validation.
@@ -9,7 +9,7 @@ Never modifies historical prices, scores, LINE, or trade signals.
 from __future__ import annotations
 
 import argparse
-from datetime import date,datetime,timezone
+from datetime import datetime,timezone
 import json
 import os
 from pathlib import Path
