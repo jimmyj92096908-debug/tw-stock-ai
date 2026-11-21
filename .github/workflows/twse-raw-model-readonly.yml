@@ -1,0 +1,85 @@
+name: TWSE No-Storage Raw Model Research (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'src/raw_factor_walkforward.py'
+      - 'scripts/twse_raw_model_readonly_experiment.py'
+      - 'tests/test_twse_raw_model_readonly_experiment.py'
+      - '.github/workflows/twse-raw-model-readonly.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/raw_factor_walkforward.py'
+      - 'scripts/twse_raw_model_readonly_experiment.py'
+      - '.github/workflows/twse-raw-model-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-no-storage-research-readonly
+  cancel-in-progress: false
+
+jobs:
+  offline-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Causal feature isolation, real forward labels and non-release regression
+        run: |
+          python -m py_compile src/raw_factor_walkforward.py scripts/twse_raw_model_readonly_experiment.py
+          python -m unittest -v tests.test_raw_factor_walkforward tests.test_twse_raw_model_readonly_experiment tests.test_raw_factor_feature_bridge
+
+  actual-readonly:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    needs: offline-safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Run tiny real TWSE source cohort in protected read-only connection
+        run: |
+          test -n "$DATABASE_URL"
+          python scripts/twse_raw_model_readonly_experiment.py \
+            --label-cutoff 2026-11-20 --test-start 2026-10-30 \
+            --max-signal-days 50 --output-dir twse-raw-research-proof
+      - name: Fail closed: no live trading or production factor output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('twse-raw-research-proof/research-safety-evidence.json').read_text())
+          assert d['neon_read_only'] and d['no_derived_database_rows_written']
+          assert d['live_trading_approved'] is False
+          assert d['independent_future_validation_passed'] is False
+          assert d['paid_upgrade_required'] is False
+          print('TWSE raw-price exploratory model ran without Neon writes')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: twse-raw-research-nostorage-evidence
+          path: |
+            twse-raw-research-proof/research-safety-evidence.json
+            twse-raw-research-proof/prototype-walkforward.json
+          retention-days: 14
+          if-no-files-found: ignore
