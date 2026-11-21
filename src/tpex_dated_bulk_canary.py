@@ -49,6 +49,7 @@ def parse_day(payload: dict, requested: date) -> dict:
         raise ValueError("Missing TPEx data tables")
     selected = []
     invalid_numeric = 0
+    seen = set()
     for table in tables:
         if not isinstance(table, dict):
             continue
@@ -61,7 +62,6 @@ def parse_day(payload: dict, requested: date) -> dict:
         if not isinstance(rows, list):
             raise ValueError("Malformed TPEx session rows")
         idx = {field: fields.index(field) for field in REQUIRED_FIELDS}
-        seen = set()
         for row in rows:
             if not isinstance(row, list) or len(row) != len(fields):
                 raise ValueError("Unexpected TPEx row width")
