@@ -52,6 +52,7 @@ class LegacyDerivedRepairSafetyTests(TestCase):
         self.assertIn("volume::numeric*1000*share_adjustment_factor",
                       repair.VERIFY_SQL)
         self.assertEqual((repair.MAX_TARGETS, repair.MAX_WINDOW), (70,10))
+        self.assertEqual((repair.MIN_DAYS,repair.MIN_SCORE_DAYS),(1,60))
 
     def test_dry_run_never_rebuilds_derived_series(self):
         fake = FakeConnection()
@@ -117,6 +118,31 @@ class LegacyDerivedRepairSafetyTests(TestCase):
                                       missing_only=False)
         verify.assert_called_once()
         self.assertGreaterEqual(fake.commits,2)
+
+    def test_sub60_stock_recomputes_derived_but_never_research_scores(self):
+        fake=FakeConnection()
+        short={"stock_id":"2249","valid_days":20,"last_price":"2026-11-20"}
+        gates={
+            "STOCK_TPEX_LEGACY_DERIVED_REPAIR_ENABLED":"yes",
+            "STOCK_INDICATOR_CATCHUP_WRITE_ENABLED":"yes",
+            "STOCK_TPEX_LEGACY_SCORE_RECALC_ENABLED":"yes",
+        }
+        with (
+            patch.dict(os.environ,gates),
+            patch.object(repair.psycopg,"connect",return_value=fake),
+            patch.object(repair,"fingerprint",return_value=baseline()),
+            patch.object(repair,"choose_targets",return_value=[short]),
+            patch.object(repair,"build_adjusted",return_value=20),
+            patch.object(repair,"build_technicals",return_value=20),
+            patch.object(repair,"build_smc",return_value=20),
+            patch.object(repair,"verify_derived",return_value={"legacy_rows":18}),
+            patch.object(repair,"calculate_all") as score,
+        ):
+            result=repair.execute("fake",apply=True,rescore=True,offset=0,limit=1)
+        self.assertEqual(result["stocks"][0]["status"],"verified")
+        self.assertFalse(result["stocks"][0]["research_score_eligible"])
+        self.assertEqual(result["stocks"][0]["scores_processed"],0)
+        score.assert_not_called()
 
     def test_source_audit_failure_prevents_score_rebuild(self):
         fake=FakeConnection()
