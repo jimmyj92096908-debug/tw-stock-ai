@@ -1,0 +1,12 @@
+2026-11-21 unique owner-authorized FIRST immutable prospective research
+freeze of fixed tw-factor-ridge-1 weights BEFORE future trading labels.
+Capture FULL latest actual positive-price, scored, same-day symbol universe,
+all model and baseline ranks, feature vectors, raw score and signal close,
+plus SHA256 of model and frozen roster. Only true latest market date;
+refuse any past backdating, after-open capture or stale price data.
+Real PostgreSQL clock timestamp and database-side reject-UPDATE/DELETE
+trigger, insert once by (model_version,signal_date), never overwrite.
+Neon Free 800MB guard; no external paid services, LINE messages,
+webhook changes, model retraining, trade orders or live signal approval.
+This does NOT establish profitability or independent holdout success.
+Never modify, delete or recommit this marker.
