@@ -1,6 +1,10 @@
-name: TPEx Official Backward History Ladder Canary (Manual Only)
+name: TPEx Official Backward History Ladder Canary (One-Time Or Manual)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-official-long-history-two-symbol-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -12,7 +16,8 @@ on:
 permissions:
   contents: read
 
-# Reuse the existing TPEx dated writer mutex. No recurring workflow.
+# Reuse the existing TPEx dated writer mutex. One new marker triggers only once.
+# No recurring workflow; future changes do not reauthorize this canary.
 concurrency:
   group: twstock-tpex-dated-official-history
   cancel-in-progress: false
@@ -29,6 +34,19 @@ jobs:
       PYTHONPATH: .:src
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify exact new one-time release marker in this commit
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-long-history-two-symbol-20261121.txt"; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -50,7 +68,9 @@ jobs:
       - name: Read-only candidate and anchored window preview
         run: python scripts/tpex_long_history_ladder.py --limit 2 --months 5 --report tpex-long-history-preview.json
       - name: Import only verified older official price dates
-        if: github.event_name == 'workflow_dispatch' && inputs.apply == true
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true) ||
+          (github.event_name == 'push' && steps.release.outputs.approved == 'true')
         env:
           STOCK_TPEX_LONG_HISTORY_ENABLED: "yes"
         run: python scripts/tpex_long_history_ladder.py --apply --limit 2 --months 5 --report tpex-long-history-apply.json
