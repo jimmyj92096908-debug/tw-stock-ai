@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - ".github/new-eligible-score-authorized-20261121.txt"
+  workflow_run:
+    workflows:
+      - "Build Multi-Factor Composite Scores"
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       apply:
@@ -16,6 +21,12 @@ on:
 permissions:
   contents: read
 
+# A *single exact* legacy full-market rebuild (run 44864565316) was
+# accidentally triggered before old insecure workflow guard was disabled.
+# When it completes successfully, automatically process only the two newly
+# eligible symbols once, not another full-market rescore. Other workflow_run
+# events cannot pass the exact run-ID and source-branch gate.
+#
 # All indicator and composite writes belong to the SAME mutex as existing
 # 50%, 100%-eligible and scheduled indicator catch-up.
 concurrency:
@@ -27,8 +38,17 @@ jobs:
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'workflow_dispatch' && inputs.apply == true))
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply == true) ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.id == 44864565316 &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'feat/new-eligible-incremental-score-20261121' &&
+          github.event.workflow_run.repository.full_name == github.repository
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
