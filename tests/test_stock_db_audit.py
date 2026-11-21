@@ -4,7 +4,8 @@ from datetime import date
 
 from src.stock_db_audit import (
     COVERAGE_SQL, GLOBAL_DATES_SQL, SCORE_MATCH_SQL, SAMPLES_SQL,
-    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, INDICATOR_BACKLOG_SQL, LATEST_VALID_DAY_COVERAGE_SQL, collect_audit, format_audit, iso_date,
+    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, INDICATOR_BACKLOG_SQL, LATEST_VALID_DAY_COVERAGE_SQL,
+    COHORT_INTERSECTION_SQL, validate_cohort_intersection, collect_audit, format_audit, iso_date,
 )
 
 
@@ -79,6 +80,19 @@ class _Cursor:
                 {"market": "tpex", "stock_id": "6488",
                  "stock_name": "環球晶", "last_price": None},
             ]
+        if self.sql == COHORT_INTERSECTION_SQL:
+            return [
+                {"market":"tpex","master":898,"no_valid_price":8,
+                 "short_history":867,"research_excluded":0,
+                 "stale_sufficient_history":1,"eligible":22,
+                 "tech_current":21,"smc_current":21,"indicator_current":21,
+                 "score_current":20,"matched_current":20},
+                {"market":"twse","master":1093,"no_valid_price":1,
+                 "short_history":4,"research_excluded":1,
+                 "stale_sufficient_history":0,"eligible":1087,
+                 "tech_current":1087,"smc_current":1087,"indicator_current":1087,
+                 "score_current":1087,"matched_current":1087},
+            ]
         if self.sql == INDICATOR_BACKLOG_SQL:
             return [
                 {"market":"tpex","eligible":21,"pending":0,"complete":21,"unstarted":0},
@@ -108,7 +122,7 @@ class StockAuditTests(unittest.TestCase):
         self.assertEqual(result["latest"]["latest_score_date"], "2026-11-18")
         self.assertEqual(result["score"]["matched_price"], 17)
         self.assertEqual(result["samples"][0]["last_price"], "2026-10-30")
-        self.assertEqual(len(conn.cur.calls), 10)
+        self.assertEqual(len(conn.cur.calls), 11)
         self.assertEqual(conn.cur.calls[1][1], (date(2026, 11, 19),))
         self.assertEqual(conn.cur.calls[3][1], (["2330", "6488", "6213"],))
 
@@ -127,9 +141,53 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("技術／SMC 待補總量：1044/1106", output)
         self.assertEqual(result["indicator_backlog"][1]["unstarted"], 942)
         self.assertEqual(conn.cur.calls[-2][0], INDICATOR_BACKLOG_SQL)
-        self.assertEqual(conn.cur.calls[-1][0], LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertEqual(conn.cur.calls[-2][0], LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertEqual(conn.cur.calls[-1][0], COHORT_INTERSECTION_SQL)
+        self.assertEqual(result["matched_cohort_coverage"]["complete"],1107)
+        self.assertEqual(result["matched_cohort_coverage"]["eligible"],1109)
+        self.assertEqual(result["matched_cohort_coverage"]["blocking_cohorts"]["no_valid_price"],9)
+        self.assertFalse(result["matched_cohort_coverage"]["all_eligible_current_complete"])
+        self.assertIn("同股同最新有效日完整指標＋SMC＋評分：1107/1109 檔", output)
+        self.assertIn("研究資料達標不代表 AI 模型績效合格", output)
         self.assertEqual(result["latest_valid_day_coverage"]["scored_current"], 10)
         self.assertIn("各股最新有效收盤日覆蓋：價格 40 檔；技術 12 檔", output)
+
+    def test_exact_intersection_coverage_partition_refuses_false_success(self):
+        good=[
+            {"market":"twse","master":11,"no_valid_price":1,
+             "short_history":2,"research_excluded":1,"stale_sufficient_history":1,
+             "eligible":6,"tech_current":6,"smc_current":6,
+             "indicator_current":6,"score_current":6,"matched_current":6}
+        ]
+        out=validate_cohort_intersection(good)
+        self.assertTrue(out["all_eligible_current_complete"])
+        self.assertFalse(out["all_master_current_complete"])
+        self.assertEqual(out["coverage_fraction_eligible"],1)
+        self.assertEqual(out["coverage_fraction_master"],round(6/11,6))
+        self.assertEqual(out["blocking_cohorts"]["short_history"],2)
+        self.assertFalse(out["not_evidence_of_investment_alpha"] is False)
+        self.assertFalse(out["production_writes"])
+        self.assertFalse(out["orders_enabled"])
+        for field,value in (
+            ("master",10), ("eligible",7),("matched_current",7),
+            ("score_current",5),("indicator_current",5),
+            ("tech_current",4),("short_history",True),
+            ("research_excluded",-1)
+        ):
+            with self.subTest(field=field,value=value):
+                with self.assertRaises(ValueError):
+                    validate_cohort_intersection([{**good[0],field:value}])
+        with self.assertRaisesRegex(ValueError,"Duplicated"):
+            validate_cohort_intersection(good+good)
+        with self.assertRaisesRegex(ValueError,"market"):
+            validate_cohort_intersection([{**good[0],"market":"other"}])
+        self.assertIn("COUNT(*) FILTER(WHERE eligible AND has_tech AND has_smc AND has_score)",
+                      COHORT_INTERSECTION_SQL)
+        self.assertIn("c.as_of_date=h.last_valid AND c.total_score IS NOT NULL",
+                      COHORT_INTERSECTION_SQL)
+        self.assertIn("p.close>0",COHORT_INTERSECTION_SQL)
+        for command in ("INSERT ","UPDATE ","DELETE ","DROP "):
+            self.assertNotIn(command,COHORT_INTERSECTION_SQL)
 
     def test_latest_valid_close_coverage_requires_exact_day_and_non_null_score(self):
         self.assertIn("close > 0", LATEST_VALID_DAY_COVERAGE_SQL)
@@ -142,7 +200,7 @@ class StockAuditTests(unittest.TestCase):
         conn = _Connection(refresh_exists=False)
         snapshot = collect_audit(conn)
         self.assertEqual(snapshot["refresh_state"], [])
-        self.assertEqual(len(conn.cur.calls), 9)
+        self.assertEqual(len(conn.cur.calls), 10)
 
     def test_quality_warnings_report_flagged_rows(self):
         snapshot = collect_audit(_Connection())
