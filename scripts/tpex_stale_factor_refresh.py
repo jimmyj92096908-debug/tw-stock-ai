@@ -112,7 +112,7 @@ WHERE
      )
  )
 ORDER BY
- (a.price_rows-GREATEST(a.adjusted_rows,a.technical_rows,a.smc_rows)) DESC,
+ (a.price_rows-LEAST(a.adjusted_rows,a.technical_rows,a.smc_rows)) DESC,
  a.stock_id
 LIMIT %s
 """
@@ -126,10 +126,16 @@ WHERE market='tpex' AND stock_id=%s
 """
 
 CHECK_STOCK_SQL = """
-WITH raw AS (
- SELECT p.trade_date,p.close,p.volume,
-        a.trade_date AS adjusted_day,t.trade_date AS technical_day,
-        s.trade_date AS smc_day
+WITH official_source AS (
+ SELECT max(retrieved_at) newest_official_ingest
+ FROM public.daily_prices
+ WHERE market='tpex' AND stock_id=%s AND source='TPEX_DATED_OTC_EW'
+), raw AS (
+ SELECT p.trade_date,
+        a.trade_date adjusted_day,t.trade_date technical_day,
+        s.trade_date smc_day,
+        a.calculated_at adjusted_at,t.calculated_at technical_at,
+        s.calculated_at smc_at
  FROM public.daily_prices p
  LEFT JOIN public.daily_adjusted_prices a
    ON a.market=p.market AND a.stock_id=p.stock_id AND a.trade_date=p.trade_date
@@ -140,9 +146,18 @@ WITH raw AS (
  WHERE p.market='tpex' AND p.stock_id=%s
 )
 SELECT count(*)::int price_rows,
-  count(*) FILTER(WHERE adjusted_day IS NULL
-        OR technical_day IS NULL OR smc_day IS NULL)::int missing_derived_days
-FROM raw
+  count(*) FILTER(WHERE adjusted_day IS NULL OR technical_day IS NULL
+    OR smc_day IS NULL)::int missing_derived_days,
+  count(*) FILTER(WHERE
+    adjusted_day IS NULL OR technical_day IS NULL OR smc_day IS NULL
+    OR adjusted_at IS NULL OR technical_at IS NULL OR smc_at IS NULL
+    OR (newest_official_ingest IS NOT NULL AND (
+      adjusted_at < newest_official_ingest
+      OR technical_at < newest_official_ingest
+      OR smc_at < newest_official_ingest
+    ))
+  )::int stale_derived_days
+FROM raw CROSS JOIN official_source
 """
 
 # A score that is recomputed but numerically unchanged is intentionally a
@@ -222,10 +237,11 @@ def raw_proof(conn,sid):
 
 def verify_derived(conn,stock):
     with conn.cursor() as cur:
-        cur.execute(CHECK_STOCK_SQL,(stock["stock_id"],))
+        cur.execute(CHECK_STOCK_SQL,(stock["stock_id"],stock["stock_id"]))
         checks=dict(cur.fetchone())
-    if checks["price_rows"]!=stock["price_rows"] or checks["missing_derived_days"]:
-        raise RuntimeError("New historical TPEx bars missing derived dates")
+    if (checks["price_rows"]!=stock["price_rows"]
+            or checks["missing_derived_days"] or checks["stale_derived_days"]):
+        raise RuntimeError("TPEx historical adjusted/technical/SMC dates remain missing or stale")
     return checks
 
 

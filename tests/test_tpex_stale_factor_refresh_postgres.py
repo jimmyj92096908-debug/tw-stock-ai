@@ -53,6 +53,8 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
             self.assertEqual([x["stock_id"] for x in before],["6488"])
             self.assertEqual(before[0]["price_rows"],65)
             self.assertEqual(before[0]["technical_rows"],55)
+            with self.assertRaisesRegex(RuntimeError,"missing or stale"):
+                refresh.verify_derived(conn,before[0])
             with conn.cursor() as cur:
                 for table in ("daily_adjusted_prices","daily_technicals","daily_smc"):
                     cur.executemany(f"""INSERT INTO public.{table}
@@ -62,7 +64,9 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
                        SET calculated_at='2026-11-20 02:00:00+00'
                        WHERE stock_id='6488'""")
             conn.commit()
-            self.assertEqual(refresh.verify_derived(conn,before[0])["missing_derived_days"],0)
+            checked=refresh.verify_derived(conn,before[0])
+            self.assertEqual(checked["missing_derived_days"],0)
+            self.assertEqual(checked["stale_derived_days"],0)
             self.assertEqual(len(refresh.choose(conn)),1)
 
             # Numeric score unchanged; explicitly record a REAL successful
@@ -83,6 +87,8 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
                 (dates[0],))
             conn.commit()
             self.assertEqual(len(refresh.choose(conn)),1)
+            with self.assertRaisesRegex(RuntimeError,"missing or stale"):
+                refresh.verify_derived(conn,before[0])
             conn.execute("""UPDATE public.daily_technicals
                 SET calculated_at='2026-11-20 02:00:00+00'
                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
@@ -98,6 +104,8 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
                 (dates[0],))
             conn.commit()
             self.assertEqual(len(refresh.choose(conn)),1)
+            with self.assertRaisesRegex(RuntimeError,"missing or stale"):
+                refresh.verify_derived(conn,before[0])
             conn.execute("""UPDATE public.daily_smc
                 SET calculated_at='2026-11-20 02:00:00+00'
                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
@@ -113,5 +121,7 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
                   'TPEX_DATED_OTC_EW','2026-11-21 01:00:00+00')""")
             conn.commit()
             self.assertEqual(len(refresh.choose(conn)),1)
+            with self.assertRaisesRegex(RuntimeError,"missing or stale"):
+                refresh.verify_derived(conn,before[0])
             self.assertEqual(conn.execute(
                 "SELECT count(*)::int n FROM daily_prices").fetchone()["n"],66)
