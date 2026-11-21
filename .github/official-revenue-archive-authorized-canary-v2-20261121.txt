@@ -1,0 +1,11 @@
+2026-11-21 unique owner-authorized official revenue source v2 canary.
+Corrected extreme official YoY observations: preserve real monthly
+revenue, suppress unusably extreme YoY as NULL with a flagged hash.
+Capture only officially verified TWSE+TPEx latest source snapshot,
+timestamped AFTER official HTTPS response, and never backdate any
+company release time. Retain immutable revisions, inserting only
+new (market,stock_id,period_end,source_sha256) primary keys of
+known stock_master symbols. Stop if source/data validation fails,
+do not use paid APIs or upgrade Neon Free. Never modify daily
+prices, other valuation scores, AI weights, LINE or trading settings.
+This marker is unique and MUST NEVER be edited or recommitted.
