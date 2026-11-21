@@ -27,6 +27,14 @@
   使用同一 `twstock-indicator-catchup` 排他鎖。
   `new-eligible-score-once.yml` 的專用標記檔只建立一次，
   平常沒有新增一條每天重跑的 CI 排程。
+- 由於先前舊版 `build-composite-scores.yml` 的不安全 push 觸發器
+  意外啟動了已知 GitHub run `44864565316`，經修正後目前已禁止
+  feature-branch push 自動執行全市場寫入。`new-eligible-score-once.yml`
+  只會對**這個精確 run ID**、特定來源分支、且結論為成功的
+  `workflow_run` 事件，自動觸發一次兩檔補算。其他歷史或未來
+  全市場評分執行均不能藉此額外觸發。
+- 若該舊工作失敗，受控自動補算不會觸發，需另行檢查證據；
+  不會不顧正式 Neon 情況盲目重試。
 
 ## 零額外付費及限制
 
