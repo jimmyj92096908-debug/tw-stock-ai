@@ -28,7 +28,7 @@ def master(*,day,active=("1742","1777")):
         valid=320 if sid in active else 18
         result.append({"stock_id":sid,"valid_source_days":valid,
             "invalid_source_tags":0,"last_source_day":day,
-            "legacy_monthly_rows":0,
+            "legacy_monthly_rows":0,"source_nonquoted_rows":0,
             "persisted_technical_rows":19,
             "persisted_smc_rows":19,
             "persisted_adjusted_rows":19})
@@ -52,6 +52,10 @@ class WholeMarketSourceFactorTests(TestCase):
         bad[0]["invalid_source_tags"]=-1
         with self.assertRaises(ValueError):
             m.classify(bad,market_last=day)
+        extra=[dict(x) for x in table]
+        extra[0]["source_nonquoted_rows"]=10
+        _,count=m.classify(extra,market_last=day)
+        self.assertEqual(count["nonquoted_original_price_rows_excluded_not_imputed"],10)
 
     def test_raw_factor_matches_existing_core_and_is_causal_on_prior_day(self):
         p=raw("1742")
@@ -113,6 +117,8 @@ class WholeMarketSourceFactorTests(TestCase):
                       c.call_args.kwargs["options"])
         self.assertIn("REPEATABLE READ READ ONLY",
                       conn.execute.call_args_list[0].args[0])
+        self.assertIn("AND p.close>0 AND p.volume>=0",m.BARS_SQL)
+        self.assertTrue(report["no_trade_or_null_close_rows_never_invented_or_forward_filled"])
         self.assertEqual(
             len([x for x in conn.execute.call_args_list if x.args[0]==m.BARS_SQL]),1)
         for sql in (m.META_SQL,m.STOCK_COUNTS_SQL,m.BARS_SQL):
