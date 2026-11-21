@@ -1,0 +1,88 @@
+name: One-Time TPEx Last-Mile Verified Historical Completion
+
+on:
+  workflow_run:
+    workflows:
+      - 'One-Time TPEx After Verified 60-Day History - Indicators and Scores'
+    types:
+      - completed
+  push:
+    branches: [main]
+    paths:
+      - '.github/tpex-last-mile-trigger-20261121.txt'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Explicitly run safe TPEx last-mile backfill? Default preview only'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Backfill jobs never overlap other whole-market TPEx historical jobs.
+concurrency:
+  group: twstock-tpex-dated-official-history
+  cancel-in-progress: false
+
+jobs:
+  last-mile:
+    # One exact already authorized source->indicator run, not a recurring loop.
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.id == 44885508203 &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.name == 'One-Time TPEx After Verified 60-Day History - Indicators and Scores' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.head_sha == 'a5d7f3b10b636eeaa2159d0ca9fdd6d8830f5947' &&
+         github.event.workflow_run.repository.full_name == github.repository)
+        ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        ||
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.apply == true)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies (no paid services)
+        run: pip install -r requirements.txt
+      - name: Guard and regression-test official sources, indicators and scoring
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile src/tpex_dated_history.py scripts/tpex_after_history_catchup.py
+          python -m unittest tests.test_tpex_dated_bulk_canary tests.test_tpex_dated_history tests.test_tpex_after_history_catchup -v
+      - name: Read-only preview of missing anchored TPEx history
+        run: python src/tpex_dated_history.py --batch-days 10 --lookback-days 150
+      - name: Add at most 30 more independently verified TPEx history dates
+        env:
+          STOCK_TPEX_DATED_HISTORY_WRITE_ENABLED: 'yes'
+        run: |
+          set -euo pipefail
+          for batch in 1 2 3; do
+            echo "### Official TPEx last-mile history batch $batch of 3" >> "$GITHUB_STEP_SUMMARY"
+            python src/tpex_dated_history.py --apply --batch-days 10 --lookback-days 150
+          done
+      - name: Refresh only eligible TPEx indicators and missing composite scores
+        env:
+          STOCK_TPEX_INDICATOR_CAMPAIGN_WRITE_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+        run: python scripts/tpex_after_history_catchup.py --apply --max-rounds 45 --report tpex-last-mile-evidence.json
+      - name: Retain auditable release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-last-mile-research-coverage
+          path: tpex-last-mile-evidence.json
+          if-no-files-found: ignore
+          retention-days: 14
