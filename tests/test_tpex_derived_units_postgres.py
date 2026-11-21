@@ -40,9 +40,10 @@ class TPExDerivedVolumePostgresTests(unittest.TestCase):
               action_type text,price_factor numeric,share_factor numeric,
               cash_amount numeric,stock_amount numeric,verified boolean DEFAULT false
             )""")
-            conn.executemany("""INSERT INTO public.daily_prices
-              (market,stock_id,trade_date,open,high,low,close,volume,turnover,source)
-              VALUES('tpex','6488',%s,100,110,90,105,%s,%s,%s)""",[
+            with conn.cursor() as cursor:
+                cursor.executemany("""INSERT INTO public.daily_prices
+                  (market,stock_id,trade_date,open,high,low,close,volume,turnover,source)
+                  VALUES('tpex','6488',%s,100,110,90,105,%s,%s,%s)""",[
                 ("2026-11-18",9367,5047518,"TPEX_TRADING_STOCK"),
                 ("2026-11-19",9738,4906510,"TPEX_TRADING_STOCK"),
                 ("2026-11-20",7958762,3920000000,"TPEX_DAILY_CLOSE_OPENAPI"),
