@@ -120,7 +120,7 @@ class TPExBackwardHistoryCanaryTests(TestCase):
         self.assertIn("DO NOTHING",m.existing.PRICE_INSERT_ONLY_SQL)
         self.assertNotIn("DO UPDATE",m.existing.PRICE_INSERT_ONLY_SQL)
         state.assert_called_once()
-        self.assertEqual(state.call_args.args[2],"long-history-success")
+        self.assertEqual(state.call_args.args[2],"success")
 
     def test_failed_anchor_never_inserts_prices_and_is_not_success(self):
         conn=MagicMock()
@@ -140,7 +140,7 @@ class TPExBackwardHistoryCanaryTests(TestCase):
         self.assertEqual(result["new_valid_days"],0)
         self.assertEqual(result["stocks"][0]["status"],"failed")
         conn.cursor.return_value.__enter__.return_value.executemany.assert_not_called()
-        self.assertEqual(state.call_args.args[2],"long-history-failed")
+        self.assertEqual(state.call_args.args[2],"failed")
 
     def test_candidate_source_and_storage_safety(self):
         sql=m.CANDIDATES_SQL.upper()
@@ -152,3 +152,6 @@ class TPExBackwardHistoryCanaryTests(TestCase):
         self.assertEqual(m.MAX_SOURCE_CALLS,10)
         self.assertEqual(m.MAX_DB_BYTES,800_000_000)
         self.assertNotIn("UPDATE PUBLIC.DAILY_PRICES",sql)
+        # market_data_refresh_state has an existing constrained last_status enum.
+        self.assertNotIn('long-history-success',m.run.__code__.co_consts)
+        self.assertNotIn('long-history-failed',m.run.__code__.co_consts)

@@ -20,3 +20,7 @@
 ## 一次性主分支發布
 
 在主分支**首次新增** `.github/tpex-official-long-history-two-symbol-20261121.txt` 才可啟動這兩檔的正式來源檢查與新增。工作從 `git diff --name-only --diff-filter=A HEAD^ HEAD` 確認新增標記；只有路徑篩選或舊標記重新修改不等於再次授權。標記完成後沿用無排程的手動預覽模式。每一檔如缺少至少兩個官方錨點收盤價或有任何來源錯誤，保留失敗證據且不寫入該股舊 K 線。
+
+## 第一次正式執行失敗與來源調查
+
+一次性試點 GitHub [run #44905760725](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44905760725) 未通過。4183 的 2026-07 TPEx 官方回應沒有兩筆足以同日核實的存儲價格交集；單一股票整批交易已回滾。其次，錯誤狀態 `long-history-failed` 不符合現有 `market_data_refresh_state.last_status` CHECK constraint，連錯誤寫入都失敗；目前正式 Neon 唯讀確認 4183／6212 有效日數仍為 60／61，沒有歷史行情新增。修正為現有受允許的 `success`／`failed` 狀態；來源異常仍嚴格拒絕，**不降低至少兩筆同日收盤錨點門檻**。在再次做任何行情寫入之前，先執行一次沒有資料庫寫入的固定日期、固定股票官方來源 probe，以檢查官方月資料是否真能回傳 2026-07 與 2026-11 的既有正值收盤。
