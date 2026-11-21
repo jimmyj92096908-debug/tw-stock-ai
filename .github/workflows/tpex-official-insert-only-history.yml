@@ -22,12 +22,13 @@ on:
 permissions:
   contents: read
 
-# Owner-authorized marker pushes (two-stock canary / one-time ten-stock
-# verified *Git-added* extension) wait behind the indicator/score mutex. The ten-stock extension
-# completes each newly-eligible ticker under that same lock.
-# Regular schedule keeps the original bounded-history mutex and frequency.
+# All official TPEx price imports and at most two newly-eligible 5-stock
+# score follow-on rounds reuse the existing indicator mutex; this also
+# applies to the ordinary daily schedule. No extra recurring workflow.
+# Source history and post-source indicator/composite repair use one mutex,
+# including the ordinary schedule, without adding another daily Action.
 concurrency:
-  group: ${{ github.event_name == 'push' && 'twstock-indicator-catchup' || 'twstock-daily-bounded-history-enrichment' }}
+  group: twstock-indicator-catchup
   cancel-in-progress: false
 
 jobs:
@@ -84,9 +85,9 @@ jobs:
             limit=2
           fi
           python scripts/tpex_official_history_insert_only.py --apply --limit "$limit" --months 5 --report tpex-official-insert-only-evidence.json
-      - name: One-time close only newly eligible latest indicators and composites
+      - name: Close latest indicators and composites after verified official TPEx history
         if: >-
-          steps.batch.outputs.extended == 'true'
+          github.event_name == 'schedule' || steps.batch.outputs.extended == 'true'
         env:
           STOCK_NEW_ELIGIBLE_SCORE_WRITE_ENABLED: "yes"
         run: |
@@ -94,7 +95,7 @@ jobs:
           python scripts/new_eligible_score_followon.py --apply --limit 5 --report tpex-new-eligible-followon-second.json
       - name: Verify completed 60-session research cohort without claims of model alpha
         if: >-
-          steps.batch.outputs.extended == 'true'
+          github.event_name == 'schedule' || steps.batch.outputs.extended == 'true'
         run: |
           python - <<'PY'
           import os,sys
