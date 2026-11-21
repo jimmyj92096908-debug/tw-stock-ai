@@ -99,7 +99,8 @@ def parse_day(payload: dict, requested: date) -> dict:
         "valid_four_digit_codes": len(selected),
         "close_checksum": str(sum(v for _, v, _ in selected)),
         "total_round_lot_shares": sum(v for _, _, v in selected),
-        "samples": {code: str(close) for code, close, _ in selected
+        "samples": {code: {"close": str(close), "round_lot_volume_shares": volume}
+                    for code, close, volume in selected
                     if code in ("3105", "6488", "8069")},
         "date_independently_verified": False,
         "write_approved": False,
