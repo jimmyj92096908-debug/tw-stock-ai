@@ -21,6 +21,11 @@ on:
       - "tests/test_research_forward_freeze_postgres.py"
       - "src/official_revenue_archive.py"
       - "src/official_quarterly_income_archive.py"
+      - "src/official_balance_sheet_archive.py"
+      - "scripts/capture_official_balance_sheet.py"
+      - "sql/official_balance_sheet_observation_schema.sql"
+      - "tests/test_official_balance_sheet_archive.py"
+      - "tests/test_official_balance_sheet_postgres.py"
       - "scripts/capture_official_quarterly_income.py"
       - "sql/official_quarterly_income_observation_schema.sql"
       - "tests/test_quarterly_income_archive.py"
@@ -72,6 +77,11 @@ on:
       - "tests/test_research_forward_freeze_postgres.py"
       - "src/official_revenue_archive.py"
       - "src/official_quarterly_income_archive.py"
+      - "src/official_balance_sheet_archive.py"
+      - "scripts/capture_official_balance_sheet.py"
+      - "sql/official_balance_sheet_observation_schema.sql"
+      - "tests/test_official_balance_sheet_archive.py"
+      - "tests/test_official_balance_sheet_postgres.py"
       - "scripts/capture_official_quarterly_income.py"
       - "sql/official_quarterly_income_observation_schema.sql"
       - "tests/test_quarterly_income_archive.py"
@@ -145,7 +155,7 @@ jobs:
           python -m py_compile src/stock_db_audit.py src/full_market_refresh.py src/send_line_report.py src/official_market_feed.py src/official_snapshot_ingest.py src/targeted_history_refresh.py src/composite_score.py src/twse_dated_history.py src/batch_indicator_catchup.py
       - name: Test coverage audit, report dates and PostgreSQL batch rotation
         run: |
-          python -m unittest -v tests.test_stock_db_audit tests.test_send_line_report tests.test_send_line_report_queries tests.test_send_line_report_delivery tests.test_refresh_rotation_db tests.test_full_market_refresh tests.test_score_after_refresh tests.test_official_market_feed tests.test_official_snapshot_db tests.test_targeted_history_refresh tests.test_composite_score_selection tests.test_composite_score_idempotent tests.test_revenue_snapshot_archive tests.test_revenue_snapshot_archive_postgres tests.test_quarterly_income_archive tests.test_quarterly_income_archive_postgres tests.test_research_forward_freeze tests.test_research_forward_freeze_postgres tests.test_research_forward_outcome tests.test_research_forward_outcome_postgres tests.test_twse_dated_history tests.test_twse_dated_history_postgres tests.test_batch_indicator_catchup tests.test_batch_indicator_catchup_postgres tests.test_live_data_workflow_guards
+          python -m unittest -v tests.test_stock_db_audit tests.test_send_line_report tests.test_send_line_report_queries tests.test_send_line_report_delivery tests.test_refresh_rotation_db tests.test_full_market_refresh tests.test_score_after_refresh tests.test_official_market_feed tests.test_official_snapshot_db tests.test_targeted_history_refresh tests.test_composite_score_selection tests.test_composite_score_idempotent tests.test_revenue_snapshot_archive tests.test_revenue_snapshot_archive_postgres tests.test_quarterly_income_archive tests.test_quarterly_income_archive_postgres tests.test_official_balance_sheet_archive tests.test_official_balance_sheet_postgres tests.test_research_forward_freeze tests.test_research_forward_freeze_postgres tests.test_research_forward_outcome tests.test_research_forward_outcome_postgres tests.test_twse_dated_history tests.test_twse_dated_history_postgres tests.test_batch_indicator_catchup tests.test_batch_indicator_catchup_postgres tests.test_live_data_workflow_guards
       - name: Ensure test database connection never targets Neon
         run: |
           python -c "import os; from urllib.parse import urlparse; u=urlparse(os.environ['STOCK_CI_POSTGRES_URL']); assert u.hostname=='127.0.0.1' and u.path=='/stock_ci_test'"
