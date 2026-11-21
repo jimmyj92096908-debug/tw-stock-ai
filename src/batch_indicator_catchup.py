@@ -117,7 +117,13 @@ def run(database_url: str, *, apply=False, per_market=12, markets=("twse", "tpex
     results=[]
     with psycopg.connect(database_url,row_factory=dict_row,connect_timeout=20) as conn:
         for market in markets:
-            selected=select_candidates(conn,market,per_market,min_verified_price_days)
+            # Preserve the exact legacy three-argument call contract for
+            # existing scheduled jobs and isolated PostgreSQL test doubles.
+            # Pass an explicit fourth argument only for opt-in 240-day depth.
+            if min_verified_price_days==MIN_VERIFIED_PRICE_DAYS:
+                selected=select_candidates(conn,market,per_market)
+            else:
+                selected=select_candidates(conn,market,per_market,min_verified_price_days)
             for stock in selected:
                 item={"market":market,"stock_id":stock["stock_id"],
                       "price_days":stock["close_days"],
