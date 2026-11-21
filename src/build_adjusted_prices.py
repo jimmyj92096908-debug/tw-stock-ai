@@ -70,7 +70,7 @@ def normalize_source_units(bars, market):
 
 def build(conn, market, stock_id):
  with conn.cursor() as cur:
-  cur.execute("SELECT market,stock_id,trade_date,open,high,low,close,volume,turnover,price_change,transactions,source FROM daily_prices WHERE market=%s AND stock_id=%s ORDER BY trade_date",(market,stock_id))
+  cur.execute("SELECT market,stock_id,trade_date,open,high,low,close,volume,turnover,price_change,transactions,source FROM daily_prices WHERE market=%s AND stock_id=%s AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x WHERE x.market=daily_prices.market AND x.stock_id=daily_prices.stock_id) ORDER BY trade_date",(market,stock_id))
   bars=cur.fetchall()
   cur.execute("SELECT ex_date,action_type,price_factor,share_factor,cash_amount,stock_amount FROM corporate_actions WHERE market=%s AND stock_id=%s AND verified=TRUE ORDER BY ex_date",(market,stock_id))
   actions=cur.fetchall()
@@ -91,7 +91,7 @@ def main():
   with conn.cursor() as cur:
    stocks=[]
    for m in markets:
-    cur.execute("SELECT DISTINCT stock_id FROM daily_prices WHERE market=%s AND stock_id=ANY(%s) ORDER BY stock_id",(m,a.stock_ids))
+    cur.execute("SELECT DISTINCT stock_id FROM daily_prices WHERE market=%s AND stock_id=ANY(%s) AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x WHERE x.market=daily_prices.market AND x.stock_id=daily_prices.stock_id) ORDER BY stock_id",(m,a.stock_ids))
     stocks.extend((m,r["stock_id"]) for r in cur.fetchall())
   if not stocks: raise RuntimeError("找不到指定股票的原始行情")
   for m,sid in stocks: print(f"{m} {sid}: {build(conn,m,sid)} rows")
