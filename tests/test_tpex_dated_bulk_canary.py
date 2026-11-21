@@ -15,7 +15,7 @@ def fixture(day_code=0):
         rows.append([str(1000+i), "TEST", str(20 + day_code), "0",
                      str(20 + day_code), str(21 + day_code),
                      str(19 + day_code), "1,000", "20,000", "10"])
-    return {"stat": "ok", "tables": [{"fields": FIELDS, "data": rows}]}
+    return {"stat": "ok", "tables": [{"fields": list(FIELDS), "data": rows}]}
 
 
 class FakeResponse:
@@ -60,7 +60,7 @@ class TPExDatedBulkCanaryTests(TestCase):
         result = canary.probe([date(2026, 11, 18), date(2026, 11, 19)], fake)
         self.assertEqual(len(result), 2)
         self.assertEqual(len(fake.calls), 2)
-        self.assertTrue(all(x["kwargs"]["params"]["type"] == "EW" for x in fake.calls))
+        self.assertTrue(all(x[1]["params"]["type"] == "EW" for x in fake.calls))
         with self.assertRaisesRegex(ValueError, "one or two"):
             canary.probe([date(2026, 11, 18)] * 3, fake)
         self.assertEqual(len(fake.calls), 2)
