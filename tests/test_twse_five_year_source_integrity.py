@@ -32,7 +32,7 @@ class TWSEHistoricalSourceAcceptanceTests(TestCase):
         self.assertIn("Asia/Taipei",audit.STATE_SQL)
         self.assertNotIn("INSERT INTO",audit.STATE_SQL.upper())
         self.assertNotIn("UPDATE ",audit.STATE_SQL.upper())
-        future=evidence(processed_days=1120,imported_days=1100,
+        future=evidence(processed_days=1124,imported_days=1100,
                         official_price_dates=1100,official_price_rows=1100000,
                         missing_five_year_weekdays=0)
         self.assertTrue(audit.evaluate(future)["five_year_dates_fully_examined"])
