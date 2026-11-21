@@ -33,6 +33,9 @@ class TWSEIndependentReleaseGateTests(TestCase):
         for t in ("a","t","s"):
             self.assertIn(f"min({t}.calculated_at)",gate.STATE_SQL)
         self.assertNotIn("max(t.calculated_at)",gate.STATE_SQL)
+        for t in ("a", "t", "s"):
+            self.assertIn(f"{t}.calculated_at IS NULL",gate.STATE_SQL)
+        self.assertIn("e.latest_official_ingest",gate.STATE_SQL)
         self.assertFalse(gate.decide("source",state(bad_legacy_volume=1)))
         self.assertFalse(gate.decide("source",state(bad_legacy_turnover=1)))
         self.assertFalse(gate.decide("source",state(twse_source_days=240)))

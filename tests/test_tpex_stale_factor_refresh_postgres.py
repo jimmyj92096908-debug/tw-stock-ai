@@ -90,6 +90,21 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
             conn.commit()
             self.assertEqual(refresh.choose(conn),[])
 
+            # PostgreSQL MIN(calculated_at) ignores NULL: even one historical
+            # NULL timestamp must still block model-factor completion.
+            conn.execute("""UPDATE public.daily_smc
+                SET calculated_at=NULL
+                WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                (dates[0],))
+            conn.commit()
+            self.assertEqual(len(refresh.choose(conn)),1)
+            conn.execute("""UPDATE public.daily_smc
+                SET calculated_at='2026-11-20 02:00:00+00'
+                WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                (dates[0],))
+            conn.commit()
+            self.assertEqual(refresh.choose(conn),[])
+
             # A NEW independent historical source insertion invalidates the
             # previous proof without replacing a single old price.
             with conn.cursor() as cur:

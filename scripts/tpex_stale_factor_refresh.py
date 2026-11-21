@@ -37,6 +37,9 @@ MAX_DATABASE_BYTES = 800_000_000
 
 # Source date completeness and calculation ordering both matter. Historical
 # prices may arrive later than a previously scored latest-close row.
+# Aggregate MIN(calculated_at) ignores NULL timestamps, so the correlated
+# per-raw-day EXISTS audit below must independently reject any NULL factor
+# calculation timestamp, even when every derived row is present.
 CANDIDATES_SQL = """
 WITH latest_market AS (
  SELECT max(trade_date) latest_date FROM public.daily_prices WHERE close>0
@@ -97,7 +100,16 @@ WHERE
    LEFT JOIN public.daily_smc s
      ON s.market=p.market AND s.stock_id=p.stock_id AND s.trade_date=p.trade_date
    WHERE p.market='tpex' AND p.stock_id=a.stock_id
-     AND (d.trade_date IS NULL OR t.trade_date IS NULL OR s.trade_date IS NULL)
+     AND (
+       d.trade_date IS NULL OR t.trade_date IS NULL OR s.trade_date IS NULL
+       OR d.calculated_at IS NULL OR t.calculated_at IS NULL
+       OR s.calculated_at IS NULL
+       OR (a.last_source_write IS NOT NULL AND (
+           d.calculated_at<a.last_source_write
+           OR t.calculated_at<a.last_source_write
+           OR s.calculated_at<a.last_source_write
+       ))
+     )
  )
 ORDER BY
  (a.price_rows-GREATEST(a.adjusted_rows,a.technical_rows,a.smc_rows)) DESC,
