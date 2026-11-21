@@ -100,7 +100,7 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
             # must invalidate that score, even though MIN factor times are
             # unchanged and every official source timestamp is satisfied.
             conn.execute("""UPDATE public.daily_technicals
-                SET calculated_at='2026-11-20 04:00:00+00'
+                SET calculated_at=clock_timestamp() + interval '1 second'
                 WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
                 (dates[0],))
             conn.commit()
