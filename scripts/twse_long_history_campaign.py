@@ -143,7 +143,9 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
             raise RuntimeError("Repeated zero-insert TWSE source days; investigate official session")
         previous=current
     else:
-        report["finished"]=True
+        # The capped batch is exhausted, not the rolling five-year backlog.
+        # Only an empty source selection proves every eligible date was examined.
+        report["finished"]=False
     save(report_path,report)
     return report
 
