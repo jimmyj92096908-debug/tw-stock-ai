@@ -57,11 +57,11 @@ WITH latest_market AS (
     WHERE t.market='tpex' AND t.stock_id=p.stock_id) technical_rows,
    (SELECT count(*)::int FROM public.daily_smc s
     WHERE s.market='tpex' AND s.stock_id=p.stock_id) smc_rows,
-   (SELECT max(a.calculated_at) FROM public.daily_adjusted_prices a
+   (SELECT min(a.calculated_at) FROM public.daily_adjusted_prices a
     WHERE a.market='tpex' AND a.stock_id=p.stock_id) adjusted_at,
-   (SELECT max(t.calculated_at) FROM public.daily_technicals t
+   (SELECT min(t.calculated_at) FROM public.daily_technicals t
     WHERE t.market='tpex' AND t.stock_id=p.stock_id) technical_at,
-   (SELECT max(s.calculated_at) FROM public.daily_smc s
+   (SELECT min(s.calculated_at) FROM public.daily_smc s
     WHERE s.market='tpex' AND s.stock_id=p.stock_id) smc_at,
    (SELECT max(c.calculated_at) FROM public.daily_composite_scores c
     WHERE c.market='tpex' AND c.stock_id=p.stock_id
