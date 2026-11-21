@@ -1,0 +1,1 @@
+One-shot retry only read-only per-stock and per-year five-year TPEx source maturity after real PostgreSQL year-alias correction. No DB writes.\n
