@@ -7,12 +7,12 @@ price and the already-calculated verified composite factor coverage.
 from __future__ import annotations
 from datetime import date, datetime
 import math
+from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 MODEL_VERSION = "composite-rank-v1"
 MIN_COVERAGE = 0.50
 
-LATEST_RANKING_SQL = """
-WITH latest AS (
+LATEST_RANKING_SQL = f"""{CURRENT_OFFICIAL_LISTED_CTE}, latest AS (
  SELECT MAX(as_of_date) AS last_score_date
  FROM public.daily_composite_scores WHERE total_score IS NOT NULL
 )
@@ -26,6 +26,8 @@ JOIN public.daily_prices p
  AND p.trade_date=s.as_of_date
 JOIN public.stock_master sm
  ON sm.market=s.market AND sm.stock_id=s.stock_id
+JOIN official_current_listed active
+ ON active.market=s.market AND active.stock_id=s.stock_id
 WHERE s.total_score IS NOT NULL AND s.coverage_weight >= %s
   AND p.close IS NOT NULL AND p.close > 0 AND s.stock_id <> '1808'
 ORDER BY s.total_score DESC, s.coverage_weight DESC,
