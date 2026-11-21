@@ -1,0 +1,48 @@
+name: Research Model Data Readiness Tests
+
+on:
+  push:
+    branches:
+      - 'feature/model-readiness-audit-*'
+    paths:
+      - 'scripts/model_data_readiness.py'
+      - 'tests/test_model_data_readiness.py'
+      - '.github/workflows/model-data-readiness-tests.yml'
+  pull_request:
+    paths:
+      - 'scripts/model_data_readiness.py'
+      - 'tests/test_model_data_readiness.py'
+      - '.github/workflows/model-data-readiness-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and execute offline tests (no secrets)
+        run: |
+          python -m py_compile scripts/model_data_readiness.py tests/test_model_data_readiness.py
+          python -m unittest tests.test_model_data_readiness -v
+      - name: Verify archived holdout blocks trading and LINE
+        run: |
+          python scripts/model_data_readiness.py --offline --as-of 2026-11-22 --output /tmp/model-readiness.json
+          python - <<'PY'
+          import json
+          r=json.load(open('/tmp/model-readiness.json'))
+          assert r['model_gate']=='BLOCKED'
+          assert r['live_trading_approved'] is False
+          assert r['line_signal_delivery_approved'] is False
+          assert r['database_writes'] is False
+          assert r['coverage'] is None
+          print('Fail-closed offline model evidence verified')
+          PY
