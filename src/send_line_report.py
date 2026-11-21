@@ -10,7 +10,13 @@ from typing import Any
 import psycopg
 import requests
 from psycopg.rows import dict_row
-from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+# The scheduled LINE workflow executes this file directly as
+# `python src/send_line_report.py`, while tests import `src.send_line_report`.
+# Support both entry points without changing the webhook or sending messages.
+if __package__:
+    from .current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+else:
+    from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
