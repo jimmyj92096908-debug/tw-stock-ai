@@ -166,9 +166,9 @@ def freeze_weekly(url,snapshot,*,apply=False):
             ddl=(Path(__file__).resolve().parents[1]/
                  "sql/official_issuer_weekly_snapshots.sql").read_text()
             conn.execute(ddl)
-            conn.execute(INSERT_SQL,(week,snapshot["payload_sha256"],data))
-            created=conn.fetchone() if False else None
-            # psycopg connection.execute returns a cursor; use explicit result.
+            created=conn.execute(INSERT_SQL,(week,snapshot["payload_sha256"],data)).fetchone()
+            # ON CONFLICT is never an UPDATE; an existing, different digest
+            # immediately fails instead of overwriting the original evidence.
             prior=conn.execute(READ_SQL,(week,)).fetchone()
             if prior is None or prior["payload_sha256"].strip()!=snapshot["payload_sha256"]:
                 raise RuntimeError("Existing weekly official source proof cannot be overwritten")
@@ -176,7 +176,8 @@ def freeze_weekly(url,snapshot,*,apply=False):
                 raise RuntimeError("Would exceed free safety reserve")
     return {"persisted":True,"observed_week":week.isoformat(),
             "payload_sha256":snapshot["payload_sha256"],
-            "new_or_same_preexisting":True,"database_writes":1}
+            "new_or_same_preexisting":created is not None,
+            "database_writes":1 if created is not None else 0}
 
 def run(url,*,apply=False,report_path=None):
     # Download exact two authoritative endpoints; never fabricate historical
