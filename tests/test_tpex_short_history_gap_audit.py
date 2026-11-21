@@ -80,7 +80,7 @@ class TPExShortHistoryGapTests(unittest.TestCase):
             [row("60+",787,first="2026-11-20",last="2026-11-18")],
             [row("55-59",883)],
             [row("0-19",-1),row("60+",883)],
-            [dict(row("60+",883),latest_market_date=date(2026,11,21))],
+            [dict(row("60+",883),latest_market_date=date(2026,11,1))],
         ):
             with self.subTest(broken=broken):
                 with self.assertRaises(ValueError):
