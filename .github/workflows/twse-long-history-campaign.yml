@@ -54,8 +54,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$DATABASE_URL"
-          python -m py_compile src/twse_dated_history.py scripts/twse_long_history_campaign.py scripts/twse_five_year_source_gate.py
-          python -m unittest tests.test_twse_dated_history tests.test_twse_long_history_campaign tests.test_twse_five_year_source_gate tests.test_official_market_feed -v
+          python -m py_compile src/twse_dated_history.py scripts/twse_long_history_campaign.py scripts/twse_five_year_source_gate.py scripts/twse_five_year_source_integrity.py
+          python -m unittest tests.test_twse_dated_history tests.test_twse_long_history_campaign tests.test_twse_five_year_source_gate tests.test_twse_five_year_source_integrity tests.test_official_market_feed -v
       - name: Preview initial TWSE source depth; no writes or API fetch
         if: steps.gate.outputs.should_run == 'true'
         run: python scripts/twse_long_history_campaign.py --max-rounds 14 --report twse-long-preview.json
@@ -68,6 +68,9 @@ jobs:
       - name: Audit currently listed stock maturity and remaining source scope (read only)
         if: steps.gate.outputs.should_run == 'true' && success()
         run: python scripts/twse_five_year_maturity_audit.py --report twse-five-year-maturity.json
+      - name: Independently verify every dated source receipt and actual OHLCV in Neon (read only)
+        if: steps.gate.outputs.should_run == 'true' && success()
+        run: python scripts/twse_five_year_source_integrity.py --report twse-verified-source-integrity.json
       - name: Preserve official source and no-overwrite accounting evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -77,5 +80,6 @@ jobs:
             twse-long-preview.json
             twse-long-evidence.json
             twse-five-year-maturity.json
+            twse-verified-source-integrity.json
           retention-days: 14
           if-no-files-found: ignore
