@@ -40,6 +40,10 @@ STATE_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
  FROM public.daily_prices p
  INNER JOIN official_current_listed listed ON listed.market=p.market AND listed.stock_id=p.stock_id
  WHERE p.market='twse' AND p.stock_id<>'1808'
+   AND NOT EXISTS (
+     SELECT 1 FROM public.model_stock_exclusions x
+     WHERE x.market=p.market AND x.stock_id=p.stock_id
+   )
  GROUP BY p.stock_id
 ), market_latest AS (
  SELECT max(trade_date) max_day FROM public.daily_prices WHERE close>0
@@ -98,6 +102,10 @@ SCORE_PAGE_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
  FROM public.daily_prices p
  INNER JOIN official_current_listed listed ON listed.market=p.market AND listed.stock_id=p.stock_id
  WHERE p.market='twse' AND p.stock_id<>'1808'
+   AND NOT EXISTS (
+     SELECT 1 FROM public.model_stock_exclusions x
+     WHERE x.market=p.market AND x.stock_id=p.stock_id
+   )
  GROUP BY p.stock_id
 ), newest AS (
  SELECT max(trade_date) max_day FROM public.daily_prices WHERE close>0
