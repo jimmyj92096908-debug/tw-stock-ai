@@ -108,13 +108,17 @@ class TPExBackwardHistoryCanaryTests(TestCase):
              patch.object(m.psycopg,"connect",return_value=conn),\
              patch.object(m.existing,"_size_guard",return_value=300000000),\
              patch.object(m,"_select",return_value=[stock]),\
-             patch.object(m,"official_months",return_value=bars),\
+             patch.object(m,"official_months",return_value=bars) as network,\
              patch.object(m,"_stock_state",side_effect=states),\
              patch.object(m,"verify_existing_anchor",return_value=2),\
              patch.object(m.existing,"_state") as state:
             result=m.run("protected",apply=True,limit=1,today=date(2026,11,21))
         self.assertEqual(result["new_valid_days"],10)
         self.assertEqual(result["source_calls_actual"],5)
+        self.assertEqual(network.call_count,2)
+        self.assertEqual(network.call_args_list[0].args[1],[date(2026,7,1)])
+        self.assertEqual([x.strftime("%Y-%m") for x in network.call_args_list[1].args[1]],
+                         ["2026-03","2026-04","2026-05","2026-06"])
         self.assertEqual(result["stocks"][0]["status"],"new_official_history")
         conn.cursor.return_value.__enter__.return_value.executemany.assert_called_once()
         self.assertIn("DO NOTHING",m.existing.PRICE_INSERT_ONLY_SQL)
@@ -131,7 +135,7 @@ class TPExBackwardHistoryCanaryTests(TestCase):
              patch.object(m.psycopg,"connect",return_value=conn),\
              patch.object(m.existing,"_size_guard",return_value=300000000),\
              patch.object(m,"_select",return_value=[stock]),\
-             patch.object(m,"official_months",return_value=[official("2026-07-16")]),\
+             patch.object(m,"official_months",return_value=[official("2026-07-16")]) as source,\
              patch.object(m,"_stock_state",return_value={"days":85,
                 "first_observed":date(2026,7,16),"last_observed":date(2026,11,20)}),\
              patch.object(m,"verify_existing_anchor",side_effect=ValueError("bad-anchor")),\
@@ -139,6 +143,7 @@ class TPExBackwardHistoryCanaryTests(TestCase):
             result=m.run("protected",apply=True,limit=1,today=date(2026,11,21))
         self.assertEqual(result["new_valid_days"],0)
         self.assertEqual(result["stocks"][0]["status"],"failed")
+        source.assert_called_once()
         conn.cursor.return_value.__enter__.return_value.executemany.assert_not_called()
         self.assertEqual(state.call_args.args[2],"failed")
 
