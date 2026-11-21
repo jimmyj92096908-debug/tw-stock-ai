@@ -16,3 +16,7 @@
 先從最多兩檔取得官方前四個月的真實新增日期，並核對歷史最低日確實往前、原有收盤及交易量未被覆寫、增量股數及儲存容量；確認源可靠後再獨立規劃可負擔的免費多批輪替。五年所有檔全面回補的時間仍取決於來源可取得性、交易所限流及 GitHub/Neon Free 額度。
 
 `python -m unittest tests.test_tpex_long_history_ladder -v`
+
+## 一次性主分支發布
+
+在主分支**首次新增** `.github/tpex-official-long-history-two-symbol-20261121.txt` 才可啟動這兩檔的正式來源檢查與新增。工作從 `git diff --name-only --diff-filter=A HEAD^ HEAD` 確認新增標記；只有路徑篩選或舊標記重新修改不等於再次授權。標記完成後沿用無排程的手動預覽模式。每一檔如缺少至少兩個官方錨點收盤價或有任何來源錯誤，保留失敗證據且不寫入該股舊 K 線。
