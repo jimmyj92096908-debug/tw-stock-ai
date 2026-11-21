@@ -63,17 +63,19 @@ def fetch_month(start,end,*,fetcher=_read_rows):
                 "endDate":e.replace("-",""),"response":"json"}
     tw_ex=fetcher(TWSE_EX_URL,eight_args)
     tw_red=fetcher(TWSE_REDUCTION_URL,eight_args)
+    source_tpex_ex=TPEX_EX_URL
     try:
         tp_ex=fetcher(TPEX_EX_URL,date_args)
     except (requests.exceptions.RequestException,ValueError):
         roc=lambda d:f"{d.year-1911}/{d.month:02d}/{d.day:02d}"
+        source_tpex_ex=TPEX_EX_LEGACY_URL
         tp_ex=fetcher(TPEX_EX_LEGACY_URL,{
             "l":"zh-tw","d":roc(start),"ed":roc(end)})
     tp_red=fetcher(TPEX_REDUCTION_URL,date_args)
     groups={
         ("twse","ex",TWSE_EX_URL):tw_ex,
         ("twse","reduction",TWSE_REDUCTION_URL):tw_red,
-        ("tpex","ex",TPEX_EX_URL):tp_ex,
+        ("tpex","ex",source_tpex_ex):tp_ex,
         ("tpex","reduction",TPEX_REDUCTION_URL):tp_red
     }
     if any(not isinstance(v,list) or len(v)>MAX_RETURNED_EVENTS for v in groups.values()):
@@ -157,7 +159,9 @@ def assess(groups,*,start,end,observed_at,current_stocks,existing_counts):
     rows=[]
     for (market,kind,source),raw in sorted(groups.items()):
         if market not in SOURCES or kind not in ("ex","reduction") or (
-            source not in (SOURCES[market][kind],TPEX_EX_LEGACY_URL)):
+            source!=SOURCES[market][kind] and not (
+                market=="tpex" and kind=="ex" and source==TPEX_EX_LEGACY_URL
+            )):
             raise ValueError("Unverified exchange source provenance")
         if not isinstance(raw,list) or len(raw)>MAX_RETURNED_EVENTS:
             raise ValueError("Oversized official event response")
