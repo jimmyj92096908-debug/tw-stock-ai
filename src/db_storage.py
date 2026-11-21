@@ -1,7 +1,8 @@
 """將 TWSE／TPEx CSV 歷史日 K 安全寫入 PostgreSQL（Neon）。
 
 需要環境變數 DATABASE_URL。此模組不包含、也不讀取任何硬編碼密碼。
-現有 CSV 的 volume 單位為股數，turnover 單位為新台幣元。
+現有 CSV 的單位須依來源核實；特別是 TPEx 月資料尚待來源單位驗證。
+此匯入器一律只新增缺漏主鍵，不覆寫正式資料庫既有行情。
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ DEFAULT_HISTORY_DIR = ROOT / "data" / "history"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-UPSERT_PRICE_SQL = """
+INSERT_MISSING_PRICE_SQL = """
 INSERT INTO daily_prices (
     market, stock_id, trade_date, open, high, low, close,
     volume, turnover, price_change, transactions, source
@@ -31,17 +32,7 @@ VALUES (
     %(market)s, %(stock_id)s, %(trade_date)s, %(open)s, %(high)s, %(low)s, %(close)s,
     %(volume)s, %(turnover)s, %(change)s, %(transactions)s, %(source)s
 )
-ON CONFLICT (market, stock_id, trade_date) DO UPDATE SET
-    open = EXCLUDED.open,
-    high = EXCLUDED.high,
-    low = EXCLUDED.low,
-    close = EXCLUDED.close,
-    volume = EXCLUDED.volume,
-    turnover = EXCLUDED.turnover,
-    price_change = EXCLUDED.price_change,
-    transactions = EXCLUDED.transactions,
-    source = EXCLUDED.source,
-    retrieved_at = NOW()
+ON CONFLICT (market, stock_id, trade_date) DO NOTHING
 """
 
 
@@ -133,7 +124,7 @@ def upsert_csv(conn: psycopg.Connection, path: Path, market: str) -> int:
                     (market, stock_id, len(rows)),
                 )
                 run_id = cur.fetchone()["run_id"]
-                cur.executemany(UPSERT_PRICE_SQL, rows)
+                cur.executemany(INSERT_MISSING_PRICE_SQL, rows)
                 cur.execute(
                     """
                     UPDATE import_runs
