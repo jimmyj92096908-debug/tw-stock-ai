@@ -96,14 +96,18 @@ def parse_snapshot(market,source_rows,*,observed_at):
         revenue=decimal_or_none(raw[MONTHLY_FIELD])
         if revenue is None:
             continue
-        yoy=decimal_or_none(raw.get(YOY_FIELD),max_abs=Decimal("100000"))
-        if yoy is not None and abs(yoy)>Decimal("10000"):
-            # Extremely anomalous YoY data cannot be safely treated as a factor.
+        yoy=decimal_or_none(raw.get(YOY_FIELD))
+        suppressed_yoy=yoy is not None and abs(yoy)>Decimal("10000")
+        if suppressed_yoy:
+            # Source can report enormous comparisons when prior revenue nears
+            # zero. This is NOT a supported factor value; keep valid revenue
+            # and fingerprint the fact that this source field was suppressed.
             yoy=None
         material={
             "market":market,"stock_id":stock_id,"period_end":period.isoformat(),
             "reported_revenue_thousands_ntd":str(revenue),
             "reported_yoy_pct":str(yoy) if yoy is not None else None,
+            "official_yoy_outlier_suppressed":suppressed_yoy,
             "official_table_date":table_day.isoformat(),
         }
         fingerprint=sha256(json.dumps(material,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
