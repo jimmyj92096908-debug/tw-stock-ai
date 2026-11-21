@@ -62,7 +62,7 @@ jobs:
           python scripts/twse_raw_model_readonly_experiment.py \
             --label-cutoff 2026-11-20 --test-start 2026-10-30 \
             --max-signal-days 50 --output-dir twse-raw-research-proof
-      - name: Fail closed: no live trading or production factor output
+      - name: 'Fail closed: no live trading or production factor output'
         run: |
           python - <<'PY'
           import json
