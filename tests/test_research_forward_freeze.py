@@ -113,6 +113,21 @@ class ForwardFreezeTests(unittest.TestCase):
             build_frozen_universe(roster(),unfit,model_sha256="a"*64,
                                   as_of=CAPTURE,latest_market_date=SIGNAL)
 
+    def test_frozen_precommit_uses_existing_verified_scoring_schedule_not_a_new_daily_run(self):
+        root=ROOT
+        post=(root/".github/workflows/composite-after-market-refresh.yml").read_text()
+        only=(root/".github/workflows/research-forward-once.yml").read_text()
+        self.assertIn("Official Taiwan Market Daily Snapshot (Authorized)",post)
+        self.assertIn("github.event.workflow_run.name == 'Official Taiwan Market Daily Snapshot (Authorized)'",post)
+        self.assertIn("STOCK_FORWARD_RESEARCH_FREEZE_WRITE",post)
+        self.assertIn("freeze_prospective_research.py --apply",post)
+        self.assertNotIn("  schedule:",only)
+        self.assertIn("git diff --name-only --diff-filter=A HEAD^ HEAD",only)
+        self.assertIn("group: composite-score-after-market-refresh",only)
+        self.assertIn("forward-research-first-precommit-20261121.txt",only)
+        self.assertNotIn("LINE_CHANNEL",only)
+        self.assertNotIn("workflow_dispatch:",only)
+
     def test_no_database_write_without_explicit_gate_and_append_only_conflict(self):
         with patch.dict(os.environ,{},clear=True):
             with self.assertRaises(PermissionError):
