@@ -1,0 +1,76 @@
+name: TPEx Whole-Market Raw Technical and SMC Factor Validation (No Storage)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tpex-whole-market-raw-factor-one-shot-20261121.txt"
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "TPEx Five-Year Dated Market Full Free Campaign"
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-tpex-all-market-raw-technical-smc-readonly-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  all-current-stock-raw-factor-reconstruction:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.repository.full_name == github.repository &&
+        github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Confirm new one-shot evidence marker when push fired
+        id: once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+               grep -Fxq ".github/tpex-whole-market-raw-factor-one-shot-20261121.txt"; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify all market source cohort, technical SMC and no-lookahead guards
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_whole_market_raw_factor_audit.py
+          python -m unittest tests.test_tpex_whole_market_raw_factor_audit tests.test_raw_factor_feature_bridge tests.test_tpex_free_on_demand_pit -v
+      - name: Recompute all 240+ session current TPEx stock RAW factors from verified prices, no DB writes
+        if: github.event_name != 'push' || steps.once.outputs.new == 'true'
+        run: |
+          set -euo pipefail
+          python scripts/tpex_whole_market_raw_factor_audit.py --report tpex-all-stock-technical-smc-source-proof.json
+      - name: Retain per-issuer feature hashes and full source maturity receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-whole-market-raw-factor-no-storage-evidence
+          path: tpex-all-stock-technical-smc-source-proof.json
+          retention-days: 14
+          if-no-files-found: ignore
