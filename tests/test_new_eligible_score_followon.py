@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 import os
 import unittest
 from unittest import TestCase
@@ -24,6 +25,15 @@ BASELINE={"price_rows":198000,"latest_price_date":date(2026,11,20),
 
 
 class NewEligibleFollowonTests(TestCase):
+    def test_legacy_full_rebuild_is_not_automatically_triggered_by_code_push(self):
+        workflow=(Path(__file__).resolve().parents[1] /
+                  ".github/workflows/build-composite-scores.yml").read_text(encoding="utf-8")
+        self.assertNotIn("  push:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("inputs.apply == true", workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("composite-score-after-market-refresh", workflow)
+
     def test_candidate_query_only_selects_real_recent_sixty_session_unscored(self):
         q=follow.MISSING_SQL.lower()
         self.assertIn("p.valid_days>=60",q)
