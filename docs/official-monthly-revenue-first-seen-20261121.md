@@ -46,3 +46,29 @@ PYTHONPATH=src python -m unittest tests.test_revenue_snapshot_archive tests.test
 最初唯一 marker 已使用，不能重用；修正後只使用另一個
 新檔案 `.github/official-revenue-archive-authorized-canary-v2-20261121.txt`
 執行一次新的來源真實核對。每月正常自動排程的頻率不變。
+
+## v2 官方來源成功解析，實際 PostgreSQL 寫入問題修復
+
+v2 真實來源 run
+[44870517692](https://github.com/jimmyj92096908-debug/tw-stock-ai/actions/runs/44870517692)
+已越過官方數值驗證，但在實際批量 `INSERT ... SELECT` 時，
+psycopg3/PostgreSQL 回報：
+`AmbiguousParameter: inconsistent types deduced for parameter $2;
+text versus character varying`。同一個命名參數在 INSERT 目標和
+`stock_master` 比較中被推斷成不同型別，原本 Python-only
+測試無法偵測。正式來源寫入**整個資料庫事務回滾**，
+Neon 仍然沒有部分歸檔資料。
+
+v3 修正每個重複參數的明確 PostgreSQL 型別（如
+`%(stock_id)s::varchar(6)`、
+`%(market)s::text`，以及日期／數值／時區欄位的具體 cast），
+並新增`tests/test_revenue_snapshot_archive_postgres.py`；
+在既有`Stock Database Diagnostics (Isolated CI)`
+臨時 schema 進行第一次插入、完全相同資料再次寫入
+`rowcount=0`、下一版來源保留、非 `stock_master` 代號拒絕，
+以及 rollback 不留測試資料。
+
+舊授權標記不能重用，v3 僅使用
+`.github/official-revenue-archive-authorized-canary-v3-20261121.txt`
+單次來源驗證。**CI 通過前不嘗試再次正式寫入**，本修正
+不涉及任何付費方案。
