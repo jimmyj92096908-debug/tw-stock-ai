@@ -27,6 +27,9 @@ def stock_dates(**kwargs):
         "latest_publishable_chip_date": date(2026,11,20),
         "latest_publishable_chip_score": 40.65,
         "latest_publishable_chip_coverage": .65,
+        "valid_price_days": 260,
+        "latest_composite_coverage": .60,
+        "latest_smc_date": date(2026,11,19),
     }
     row.update(kwargs)
     return row
@@ -131,6 +134,25 @@ class InvestmentBundleTests(unittest.TestCase):
         self.assertTrue(out["abstain_from_trading"])
         self.assertEqual(out["overall_status"],"RESEARCH_ONLY_EVIDENCE_BLOCKED")
 
+    def test_data_quality_is_not_a_profit_probability_and_requires_current_dates(self):
+        stale=bundle.assemble_research_bundle(
+            MODEL,EVALUATION,[],stock_dates()
+        )["data_quality"]
+        self.assertIsNone(stale["data_quality_index"])
+        self.assertFalse(stale["is_probability_of_profit"])
+        self.assertIn("SCORE_NOT_ON_LATEST_PRICE_DATE", stale["reasons"])
+        current=bundle.assemble_research_bundle(
+            MODEL,EVALUATION,[],stock_dates(
+                latest_technical_date=date(2026,11,20),
+                latest_smc_date=date(2026,11,20),
+                latest_composite_date=date(2026,11,20),
+            )
+        )["data_quality"]
+        self.assertEqual(current["status"],"CURRENT_EVIDENCE_PARTIAL")
+        self.assertEqual(current["data_quality_index"],67.0)
+        self.assertIn("CHIP_NOT_IN_CURRENT_COMPOSITE",current["reasons"])
+        self.assertFalse(current["trading_approved"])
+
     def test_cross_date_rank_input_fails_closed(self):
         with self.assertRaisesRegex(ValueError,"Cannot mix score dates"):
             bundle.assemble_research_bundle(
@@ -142,7 +164,7 @@ class InvestmentBundleTests(unittest.TestCase):
 
     def test_query_contract_only_reads_public_research_and_exact_symbol(self):
         sql=bundle.STOCK_STATUS_SQL
-        self.assertEqual(sql.count("%s"),16)
+        self.assertEqual(sql.count("%s"),22)
         for table in ("daily_prices","daily_technicals",
                       "daily_composite_scores","daily_chip_scores"):
             self.assertIn("public."+table,sql)
@@ -200,7 +222,7 @@ class InvestmentBundleTests(unittest.TestCase):
         self.assertEqual(result.execute.call_args_list[0].args[0],
                          "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         self.assertEqual(result.execute.call_args_list[3].args[1],
-                         ("twse","2330")*8)
+                         ("twse","2330")*11)
 
     def test_produces_local_valid_json_not_a_trading_report(self):
         with TemporaryDirectory() as folder:
