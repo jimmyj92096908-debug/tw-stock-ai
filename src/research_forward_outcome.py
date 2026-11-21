@@ -128,8 +128,8 @@ def assess_frozen_outcomes(row,*,cutoff):
     if not isinstance(cutoff,date):
         raise ValueError("Actual date-only label cutoff required")
     signal=date.fromisoformat(row["signal_date"])
-    if cutoff<=signal:
-        raise ValueError("Future outcomes must follow the frozen signal date")
+    if cutoff<signal:
+        raise ValueError("Label cutoff cannot precede the frozen signal date")
     total=_int(row,"universe_count")
     selected=_int(row,"selected_count")
     seen=_int(row,"actual_members")
