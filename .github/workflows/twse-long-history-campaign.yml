@@ -6,15 +6,16 @@ on:
     paths:
       - '.github/workflows/twse-long-history-campaign.yml'
   schedule:
-    # Independent root: 17:30 Asia/Taipei daily; never 4th workflow_run.
-    - cron: '30 9 * * *'
+    # Two separated daily windows: 09:30 and 17:30 Asia/Taipei.
+    # Shared concurrency prevents overlapping official TWSE importers.
+    - cron: '30 1,9 * * *'
   workflow_dispatch:
     inputs:
       apply:
         type: boolean
         required: true
         default: false
-        description: 'Explicitly source-verify and append up to 112 older TWSE dates? Default preview.'
+        description: 'Explicitly source-verify and append up to 160 older TWSE dates? Default preview.'
 
 permissions:
   contents: read
@@ -58,14 +59,14 @@ jobs:
           python -m unittest tests.test_twse_dated_history tests.test_twse_long_history_campaign tests.test_twse_five_year_source_gate tests.test_twse_five_year_source_integrity tests.test_official_market_feed -v
       - name: Preview initial TWSE source depth; no writes or API fetch
         if: steps.gate.outputs.should_run == 'true'
-        run: python scripts/twse_long_history_campaign.py --max-rounds 14 --report twse-long-preview.json
+        run: python scripts/twse_long_history_campaign.py --max-rounds 20 --report twse-long-preview.json
       - name: Evidence of conservative 50MB maintenance margin before official source writes
         if: steps.gate.outputs.should_run == 'true'
         run: |
           python -c "from twse_dated_history import has_source_write_budget as safe; assert safe(610377728,days=8); assert not safe(745000000,days=8)"
           echo "- Neon Free TWSE source reserve: 50MB plus an 8-day upper-bound growth allowance." >> "$GITHUB_STEP_SUMMARY"
           echo "- Live database size is re-checked before each dated source insert; no derived history is generated." >> "$GITHUB_STEP_SUMMARY"
-      - name: Sequentially import at most 112 independent official market days
+      - name: Sequentially import at most 160 independent official market days
         if: steps.gate.outputs.should_run == 'true'
         env:
           STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED: 'yes'
