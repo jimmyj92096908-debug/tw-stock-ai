@@ -22,6 +22,32 @@ class AppendOnlyHistoryTests(unittest.TestCase):
         self.assertIn("return inserted", source)
 
 
+
+    def test_tpex_monthly_thousands_normalized_only_once(self):
+        raw = {"market": "tpex", "source": "TPEX_TRADING_STOCK",
+               "volume": "1,234.5", "turnover": "90,123.456"}
+        result = db_storage.normalize_tpex_monthly_units(raw)
+        self.assertEqual(result["volume"], 1234500)
+        self.assertEqual(result["turnover"], 90123456)
+        self.assertEqual(result["source"], "TPEX_TRADING_STOCK_NORMALIZED")
+        self.assertEqual(db_storage.normalize_tpex_monthly_units(result)["volume"], 1234500)
+
+    def test_openapi_and_twse_are_not_rescaled(self):
+        for market, source in (("tpex", "TPEX_DAILY_CLOSE_OPENAPI"),
+                               ("twse", "TWSE_MONTHLY")):
+            record = {"market": market, "source": source,
+                      "volume": 12000, "turnover": 500000}
+            self.assertIs(db_storage.normalize_tpex_monthly_units(record), record)
+            self.assertEqual(record["volume"], 12000)
+
+    def test_fractional_share_and_negative_volume_rejected(self):
+        for value in ("0.0001", "-1", "NaN"):
+            with self.assertRaises(ValueError):
+                db_storage.normalize_tpex_monthly_units({
+                    "market": "tpex", "source": "TPEX_TRADING_STOCK",
+                    "volume": value, "turnover": "100"
+                })
+
     def test_duplicate_rows_are_not_reported_as_inserted(self):
         """Exercise importer with mocked PostgreSQL insert effects."""
         import csv
