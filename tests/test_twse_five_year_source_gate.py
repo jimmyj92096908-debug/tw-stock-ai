@@ -28,6 +28,7 @@ class TWSEFiveYearSourceGateTests(TestCase):
             self.assertFalse(gate.decide(evidence(**changes)))
         self.assertTrue(gate.decide(evidence(database_bytes=610_377_728)))
         self.assertIn("official_current_listed", gate.STATE_SQL)
+        self.assertIn("public.model_stock_exclusions", gate.STATE_SQL)
         self.assertIn("14 days", gate.STATE_SQL)
         self.assertIn("twse_history_day_progress", gate.STATE_SQL)
         self.assertIn("AT TIME ZONE 'Asia/Taipei'", gate.STATE_SQL)
