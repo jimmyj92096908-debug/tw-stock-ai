@@ -21,6 +21,8 @@ MAX_DATABASE_BYTES=800_000_000
 MIN_TPEX_SOURCE_DAYS=80
 MIN_TPEX_ELIGIBLE=700
 MIN_TWSE_LONG_SOURCE_DAYS=240
+MIN_TWSE_FIVE_YEAR_SOURCE_DAYS=1000
+MAX_FACTOR_RESEARCH_START_BYTES=650_000_000
 MIN_TWSE_LONG_ELIGIBLE=500
 
 STATE_SQL="""
@@ -120,6 +122,18 @@ WITH last_market AS (
 SELECT s.tpex_source_days,s.twse_source_days,
        l.legacy_rows,l.bad_legacy_volume,l.bad_legacy_turnover,
        (SELECT pg_database_size(current_database())::bigint) database_bytes,
+       (SELECT count(*)::int
+        FROM generate_series(
+          ((now() AT TIME ZONE 'Asia/Taipei')::date-INTERVAL '5 years')::date,
+          ((now() AT TIME ZONE 'Asia/Taipei')::date-INTERVAL '1 day')::date,
+          INTERVAL '1 day'
+        ) d(day_date)
+        WHERE extract(isodow FROM d.day_date) BETWEEN 1 AND 5
+          AND NOT EXISTS (
+            SELECT 1 FROM public.twse_history_day_progress progress
+            WHERE progress.trade_date=d.day_date::date
+              AND progress.status IN ('imported','closed')
+          )) missing_five_year_weekdays,
        count(*) FILTER(WHERE c.market='tpex')::int tpex_eligible,
        count(*) FILTER(WHERE c.market='tpex' AND c.tech_latest
          AND c.smc_latest AND c.scored)::int tpex_matched,
@@ -162,7 +176,8 @@ def snapshot(url):
         "bad_legacy_volume","bad_legacy_turnover","database_bytes",
         "tpex_eligible","tpex_matched","tpex_historical_factors_current",
         "twse_240_eligible",
-        "twse_full_indicators","twse_complete_scores"
+        "twse_full_indicators","twse_complete_scores",
+        "missing_five_year_weekdays"
     ):
         if type(result.get(key)) is not int or result[key]<0:
             raise RuntimeError("Invalid read-only source/score prerequisite")
@@ -195,7 +210,11 @@ def decide(mode,state):
         )
     else:
         ready=(
-            state["twse_source_days"]>=MIN_TWSE_LONG_SOURCE_DAYS and
+            # 240 verified sessions are NOT five calendar years of coverage.
+            state["twse_source_days"]>=MIN_TWSE_FIVE_YEAR_SOURCE_DAYS and
+            state["missing_five_year_weekdays"]==0 and
+            # Protect raw source ingestion from free-tier factor materialization.
+            state["database_bytes"]<MAX_FACTOR_RESEARCH_START_BYTES and
             state["twse_240_eligible"]>=MIN_TWSE_LONG_ELIGIBLE and
             (state["twse_full_indicators"]<state["twse_240_eligible"] or
              state["twse_complete_scores"]<state["twse_240_eligible"])
