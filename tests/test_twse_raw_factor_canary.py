@@ -35,6 +35,8 @@ class TWSEInMemoryCanaryTests(TestCase):
         conn.__enter__.return_value=conn
         def query(sql,params=None):
             response=MagicMock()
+            if sql.startswith("SET "):
+                return response
             if "pg_database_size" in sql:
                 response.fetchone.return_value={"bytes":550_000_000}
             elif sql==canary.CANDIDATES_SQL:
