@@ -230,7 +230,7 @@ def purged_ridge_prototype(dataset,*,test_start):
             "universe_raw_mean_return":round(float(np.mean([
                 v["raw_unadjusted_gross_return"] for v in members])),10)
         })
-        last_exit=exit_
+        last_exit=_day(exit_)
     result.update({
         "status":"RETROSPECTIVE_EXPLORATORY_UNADJUSTED_PRICE_ONLY",
         "training_features_scaled_using_only_mature_development_rows":True,
