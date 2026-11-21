@@ -1,0 +1,78 @@
+name: One-Time Free TPEx Five-Batch Historical Factor Campaign
+
+on:
+  # Exact one-shot main-merge trigger, never triggered by daily market jobs.
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/tpex-five-batch-history-campaign.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Explicitly apply at most 5 source-verified 100-stock research batches?'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+# Existing historical-factor workflow uses this exact writer lock.
+concurrency:
+  group: twstock-indicator-catchup
+  cancel-in-progress: false
+
+jobs:
+  tpex-source-verified-wave:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+      )
+    # No factor rebuild may race independently dated official TPEx imports.
+    concurrency:
+      group: twstock-tpex-dated-official-history
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify aggregate source, cost and exact 100-stock round limits
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m py_compile scripts/tpex_factor_bounded_campaign.py scripts/tpex_stale_factor_refresh.py
+          python -m unittest tests.test_tpex_factor_bounded_campaign tests.test_tpex_stale_factor_refresh -v
+      - name: Record only read-only source and free-Neon preflight
+        run: |
+          python scripts/tpex_factor_bounded_campaign.py --max-batches 5 --report tpex-five-batch-preview.json
+      - name: Reconcile up to five sequential approved 100-stock historical factor batches
+        env:
+          STOCK_TPEX_FACTOR_CAMPAIGN_ENABLED: 'yes'
+          STOCK_TPEX_STALE_FACTOR_WRITE_ENABLED: 'yes'
+          STOCK_INDICATOR_CATCHUP_WRITE_ENABLED: 'yes'
+          STOCK_TPEX_STALE_SCORE_WRITE_ENABLED: 'yes'
+        run: |
+          python scripts/tpex_factor_bounded_campaign.py --apply --max-batches 5 --report tpex-five-batch-evidence.json
+      - name: Preserve source-only, no-raw-price historical factor evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpex-five-batch-research-verification
+          path: |
+            tpex-five-batch-preview.json
+            tpex-five-batch-evidence.json
+            tpex-factor-source-batch-*.json
+          retention-days: 14
+          if-no-files-found: ignore
