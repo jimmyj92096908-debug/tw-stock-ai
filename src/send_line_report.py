@@ -10,6 +10,7 @@ from typing import Any
 import psycopg
 import requests
 from psycopg.rows import dict_row
+from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
@@ -75,12 +76,14 @@ def load_report(database_url: str) -> dict[str, Any]:
                 WHERE trade_date=(SELECT MAX(trade_date) FROM public.margin_short)
             """)
             margin = cur.fetchone()
-            cur.execute("""
+            cur.execute(f"""{CURRENT_OFFICIAL_LISTED_CTE}
                 SELECT p.market,p.stock_id,sm.stock_name,p.close,p.price_change,
                        c.total_score,c.short_term_score,c.swing_score,c.long_term_score,
                        c.coverage_weight,c.component_status
                 FROM public.daily_prices p
                 JOIN public.stock_master sm USING (market,stock_id)
+                JOIN official_current_listed active
+                  ON active.market=p.market AND active.stock_id=p.stock_id
                 LEFT JOIN public.daily_composite_scores c
                   ON c.market=p.market AND c.stock_id=p.stock_id AND c.as_of_date=p.trade_date
                 WHERE p.trade_date=%s AND p.close IS NOT NULL AND c.total_score IS NOT NULL
