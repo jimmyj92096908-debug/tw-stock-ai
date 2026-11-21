@@ -1,6 +1,10 @@
 name: Safe Prospective Research Precommit and Free Budget Proof
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/neon-free-forward-once-20261121.txt"
   workflow_run:
     workflows:
       - "Official Taiwan Market Daily Snapshot (Authorized)"
@@ -26,7 +30,8 @@ jobs:
     if: >-
       github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_branch == 'main' &&
@@ -40,6 +45,15 @@ jobs:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+      - name: Require exact one-shot read-only push marker
+        id: marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            git diff --name-only --diff-filter=A HEAD^ HEAD |
+              grep -Fxq ".github/neon-free-forward-once-20261121.txt"
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
