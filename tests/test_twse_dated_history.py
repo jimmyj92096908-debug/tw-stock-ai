@@ -63,7 +63,7 @@ class DateHistoryTests(unittest.TestCase):
         for limit in (0,9,-1,100):
             with self.assertRaisesRegex(ValueError,"batch_days"):
                 history.schedule_dates(today=today,already=set(),batch_days=limit)
-        for horizon in (0,6,367,10000):
+        for horizon in (0,6,1831,10000):
             with self.assertRaisesRegex(ValueError,"lookback_days"):
                 history.schedule_dates(today=today,already=set(),lookback_days=horizon)
         self.assertEqual(
@@ -99,7 +99,7 @@ class DateHistoryTests(unittest.TestCase):
         allowed={("twse",str(i)) for i in range(1000,1800)}
         with (
             patch.object(history.psycopg,"connect",return_value=fake),
-            patch.object(history,"load_allowed",return_value=allowed),
+            patch.object(history,"load_current_twse_allowed",return_value=allowed),
             patch.object(history,"fetch_official_day",return_value=prices) as source,
             patch.object(history,"write_missing",side_effect=AssertionError("wrote in dry run")),
             patch.object(history,"_record_day",side_effect=AssertionError("wrote progress")),
@@ -133,7 +133,7 @@ class DateHistoryTests(unittest.TestCase):
         with (
             patch.dict(os.environ,{"STOCK_TWSE_HISTORY_WRITE_ENABLED":"yes"}),
             patch.object(history.psycopg,"connect",return_value=fake),
-            patch.object(history,"load_allowed",return_value=allowed),
+            patch.object(history,"load_current_twse_allowed",return_value=allowed),
             patch.object(history,"fetch_official_day",side_effect=[prices,None]),
             patch.object(history,"write_missing",return_value=799) as write,
             patch.object(history,"_record_day",side_effect=lambda *x: calls.append(x)),
@@ -155,7 +155,7 @@ class DateHistoryTests(unittest.TestCase):
                  for i in range(1000,1050)]
         with (
             patch.object(history.psycopg,"connect",return_value=fake),
-            patch.object(history,"load_allowed",return_value=allowed),
+            patch.object(history,"load_current_twse_allowed",return_value=allowed),
             patch.object(history,"fetch_official_day",return_value=limited),
             patch.object(history,"write_missing",side_effect=AssertionError("partial import")),
         ):
