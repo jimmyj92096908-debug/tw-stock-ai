@@ -1,0 +1,77 @@
+name: Official Monthly Revenue First-Seen Archive (Research Only)
+
+on:
+  schedule:
+    # Monthly on the 15th at 14:15 Asia/Taipei, after normal reporting deadlines.
+    - cron: "15 6 15 * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/official-revenue-archive-authorized-canary-20261121.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Archive first-observed official revenue once? Default false."
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twstock-official-monthly-revenue-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Only permit a truly newly added one-time authorization marker
+        id: gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] &&
+             git diff --name-only --diff-filter=A HEAD^ HEAD |
+               grep -Fxq ".github/official-revenue-archive-authorized-canary-20261121.txt"; then
+            echo "apply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing free dependencies
+        run: pip install -r requirements.txt
+      - name: Test source schema, first-captured vintage and no future leakage before writes
+        run: |
+          python -m py_compile src/official_revenue_archive.py scripts/capture_official_revenue.py
+          python -m unittest tests.test_revenue_snapshot_archive tests.test_offline_research_hardening -v
+      - name: Capture only actual exchange snapshots from the time first observed
+        if: >-
+          github.event_name == 'schedule' ||
+          steps.gate.outputs.apply == 'true' ||
+          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        env:
+          STOCK_OFFICIAL_REVENUE_ARCHIVE_WRITE: "yes"
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Protected DATABASE_URL unavailable"; exit 1; fi
+          python scripts/capture_official_revenue.py --apply --report official-revenue-archive-evidence.json
+      - name: Keep only aggregated proof, never expose issuer records or secrets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-revenue-first-seen-evidence
+          path: official-revenue-archive-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore
