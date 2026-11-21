@@ -21,6 +21,10 @@ class IndicatorEligibilityPGTests(unittest.TestCase):
         if parsed.hostname not in ("localhost","127.0.0.1") or parsed.path!="/stock_ci_test":
             raise RuntimeError("Unsafe external database URL")
         with psycopg.connect(URL,row_factory=dict_row) as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS public.model_stock_exclusions
+                (market text NOT NULL,stock_id text NOT NULL,
+                 reason text NOT NULL,excluded_at timestamptz DEFAULT now(),
+                 PRIMARY KEY(market,stock_id))""")
             conn.execute("""CREATE TABLE IF NOT EXISTS public.daily_prices
                 (market text,stock_id text,trade_date date,close numeric,source text,
                  PRIMARY KEY (market,stock_id,trade_date))""")
