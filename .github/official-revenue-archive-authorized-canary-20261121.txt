@@ -1,0 +1,10 @@
+2026-11-21 explicit owner-approved one-time official fundamental archive canary.
+Two FIXED official exchange monthly-revenue OpenAPI HTTPS GET sources only;
+no paid API; max 2500 rows per source; <=6 MB each.
+Store actual first-observed-after-HTTP time and immutable issuer/period/hash
+versions in a new append-only research observation table. Never infer
+issuer-specific historical published_at or backdate to prior close signals.
+Exclude non-stock-master rows; do not alter financial_statements, prices,
+composites, LINE, webhook, AI model weights, or trading approval.
+Keep Neon Free 800 MB stop line; source failures fail closed, no automatic
+retry loop. This marker is unique and must not be recommitted.
