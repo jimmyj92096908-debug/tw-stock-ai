@@ -14,6 +14,7 @@ def state(**changes):
         "legacy_rows":26504,"bad_legacy_volume":0,"bad_legacy_turnover":0,
         "database_bytes":300_000_000,
         "tpex_eligible":880,"tpex_matched":880,
+        "tpex_historical_factors_current":880,
         "twse_240_eligible":20,"twse_full_indicators":20,
         "twse_complete_scores":20,
     }
@@ -25,6 +26,13 @@ class TWSEIndependentReleaseGateTests(TestCase):
         self.assertTrue(gate.decide("source",state()))
         self.assertFalse(gate.decide("source",state(tpex_source_days=61)))
         self.assertFalse(gate.decide("source",state(tpex_matched=870)))
+        self.assertFalse(gate.decide("source",state(tpex_historical_factors_current=879)))
+        self.assertIn("missing_historical_derived_date",gate.STATE_SQL)
+        self.assertIn("c.score_at>=GREATEST(",gate.STATE_SQL)
+        self.assertIn("c.latest_official_ingest",gate.STATE_SQL)
+        for t in ("a","t","s"):
+            self.assertIn(f"min({t}.calculated_at)",gate.STATE_SQL)
+        self.assertNotIn("max(t.calculated_at)",gate.STATE_SQL)
         self.assertFalse(gate.decide("source",state(bad_legacy_volume=1)))
         self.assertFalse(gate.decide("source",state(bad_legacy_turnover=1)))
         self.assertFalse(gate.decide("source",state(twse_source_days=240)))

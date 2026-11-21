@@ -68,10 +68,13 @@ jobs:
           s=x["official_history"]
           l=x["legacy_tpex_units"]
           f=x["future_research"]
+          r=x["current_research"]
           text=(
               "### Official historical depth and model provenance (READ ONLY)\n"
               f"- Verified TPEx/TWSE dated-source sessions: {s['tpex_dated_verified_sessions']}/{s['twse_dated_verified_sessions']}\n"
               f"- Legacy adjusted TPEx volume/turnover unverified rows: {l['derived_volume_bad_or_missing']:,}/{l['derived_turnover_bad_or_missing']:,}\n"
+              f"- TPEx latest valid scores: {r['tpex_latest_full_stack']}/{r['tpex_60_session_eligible']}\n"
+              f"- TPEx FULL historical factor / score freshness: {r['tpex_historical_full_stack']}/{r['tpex_60_session_eligible']}; outstanding: {r['tpex_historical_repair_backlog']}\n"
               f"- Independently frozen prospective signal dates: {f['frozen_signal_days']}\n"
               "- Prospective frozen cohorts are NOT matured future results or proven trading alpha.\n"
               "- No raw price updates, LINE trade messages, orders or paid subscription changes.\n"

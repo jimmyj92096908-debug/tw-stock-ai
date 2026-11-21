@@ -75,6 +75,21 @@ class TPExStaleFactorPostgresTests(unittest.TestCase):
             raw=conn.execute("SELECT count(*)::int n FROM daily_prices").fetchone()
             self.assertEqual(raw["n"],65)
 
+            # A single STALE older factor date must be detected even though
+            # the MAX calculated_at and the latest-day score remain fresh.
+            conn.execute("""UPDATE public.daily_technicals
+                SET calculated_at='2026-11-19 12:00:00+00'
+                WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                (dates[0],))
+            conn.commit()
+            self.assertEqual(len(refresh.choose(conn)),1)
+            conn.execute("""UPDATE public.daily_technicals
+                SET calculated_at='2026-11-20 02:00:00+00'
+                WHERE market='tpex' AND stock_id='6488' AND trade_date=%s""",
+                (dates[0],))
+            conn.commit()
+            self.assertEqual(refresh.choose(conn),[])
+
             # A NEW independent historical source insertion invalidates the
             # previous proof without replacing a single old price.
             with conn.cursor() as cur:
