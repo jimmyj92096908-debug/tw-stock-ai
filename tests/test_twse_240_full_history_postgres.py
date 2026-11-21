@@ -18,6 +18,9 @@ class TWSEFullHistoricalIndicatorPostgresTests(unittest.TestCase):
         if p.hostname not in ("localhost","127.0.0.1") or p.path!="/stock_ci_test":
             raise RuntimeError("Refusing non-disposable database")
         with psycopg.connect(URL) as conn:
+            conn.execute("""CREATE TABLE public.model_stock_exclusions (
+              market text,stock_id text,reason text,
+              PRIMARY KEY(market,stock_id))""")
             conn.execute("""CREATE TABLE public.twse_history_day_progress (
               trade_date date primary key,status text NOT NULL)""")
             conn.execute("""CREATE TABLE public.official_issuer_weekly_snapshots (
@@ -80,3 +83,12 @@ class TWSEFullHistoricalIndicatorPostgresTests(unittest.TestCase):
         completed=task.capture(URL)
         self.assertEqual(completed["current_indicators"],1)
         self.assertEqual(completed["current_scores"],1)
+
+        # User-blocked stocks cannot be counted by the 240-session model.
+        with psycopg.connect(URL) as conn:
+            conn.execute("""INSERT INTO public.model_stock_exclusions
+                (market,stock_id,reason) VALUES('twse','2330','CI owner exclusion')""")
+        excluded=task.capture(URL)
+        self.assertEqual(excluded["eligible"],0)
+        self.assertEqual(excluded["current_indicators"],0)
+        self.assertEqual(excluded["current_scores"],0)
