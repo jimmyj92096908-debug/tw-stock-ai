@@ -13,10 +13,11 @@ on:
       - ".github/tpex-official-history-authorized-batch10-v2-20261121.txt"
       - ".github/tpex-official-history-authorized-batch10-v3-20261121.txt"
       - ".github/tpex-official-history-authorized-batch10-v4-20261121.txt"
+      - ".github/tpex-official-history-authorized-batch10-v5-20261121.txt"
   workflow_dispatch:
     inputs:
       apply:
-        description: "Manually run bounded insert-only price enrichment? Default preview."
+        description: "Run bounded 10-symbol official history and SAME-RUN full indicator/score closure? False skips writes."
         type: boolean
         required: true
         default: false
@@ -55,7 +56,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "push" ] &&
-             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-history-authorized-batch10-v4-20261121.txt"; then
+             git diff --name-only --diff-filter=A HEAD^ HEAD | grep -Fxq ".github/tpex-official-history-authorized-batch10-v5-20261121.txt"; then
             echo "extended=true" >> "$GITHUB_OUTPUT"
           else
             echo "extended=false" >> "$GITHUB_OUTPUT"
@@ -81,7 +82,7 @@ jobs:
         env:
           STOCK_TPEX_INSERT_ONLY_HISTORY_ENABLED: "yes"
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ steps.batch.outputs.extended }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ steps.batch.outputs.extended }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             limit=10
           else
             limit=2
@@ -89,7 +90,7 @@ jobs:
           python scripts/tpex_official_history_insert_only.py --apply --limit "$limit" --months 5 --report tpex-official-insert-only-evidence.json
       - name: Close latest indicators and composites after verified official TPEx history
         if: >-
-          github.event_name == 'schedule' || steps.batch.outputs.extended == 'true'
+          github.event_name == 'schedule' || steps.batch.outputs.extended == 'true' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
         env:
           STOCK_NEW_ELIGIBLE_SCORE_WRITE_ENABLED: "yes"
         run: |
@@ -97,7 +98,7 @@ jobs:
           python scripts/new_eligible_score_followon.py --apply --limit 5 --report tpex-new-eligible-followon-second.json
       - name: Verify completed 60-session research cohort without claims of model alpha
         if: >-
-          github.event_name == 'schedule' || steps.batch.outputs.extended == 'true'
+          github.event_name == 'schedule' || steps.batch.outputs.extended == 'true' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
         run: |
           python - <<'PY'
           import os,sys
