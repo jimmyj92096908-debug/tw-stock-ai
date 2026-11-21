@@ -1,0 +1,58 @@
+name: One-Time Prospective Full-Cohort Research Precommit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/forward-research-first-precommit-20261121.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: composite-score-after-market-refresh
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Require unique actually-added first precommit marker
+        shell: bash
+        run: |
+          git diff --name-only --diff-filter=A HEAD^ HEAD |
+            grep -Fxq ".github/forward-research-first-precommit-20261121.txt"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Existing free Python dependencies and no-future tests
+        run: |
+          pip install -r requirements.txt
+          python -m unittest tests.test_research_forward_freeze -v
+          python -m py_compile scripts/freeze_prospective_research.py
+      - name: First actual Neon pre-return cohort freeze only
+        env:
+          STOCK_FORWARD_RESEARCH_FREEZE_WRITE: "yes"
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Neon protected connection unavailable"; exit 1
+          fi
+          python scripts/freeze_prospective_research.py --apply --report prospective-research-freeze-evidence.json
+      - name: Retain aggregate hash and frozen count without names or picks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-research-forward-precommit-proof
+          path: prospective-research-freeze-evidence.json
+          if-no-files-found: ignore
+          retention-days: 14
