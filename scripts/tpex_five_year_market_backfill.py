@@ -20,6 +20,7 @@ import time
 from zoneinfo import ZoneInfo
 
 import psycopg
+import requests
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"src"))
@@ -30,6 +31,8 @@ MAX_DATES=1250
 MAX_DB_BYTES=800_000_000
 SAFE_DAY_BYTES=5_000_000
 MAX_FAILURES=3
+MAX_OFFICIAL_HTTP_ATTEMPTS=3
+TRANSIENT_HTTP_CODES={408,429,500,502,503,504}
 MIN_ANCHORS=10
 MIN_OFFICIAL_COHORT=500
 MIN_PAUSE_SECONDS=1.0
@@ -95,12 +98,45 @@ def select_sparse_days(conn, *, last_day:date,allowed_count:int,max_days:int):
     return chosen
 
 def verified_source_bars(conn,day,allowed,*,fetcher=fetch_day):
-    snapshot=fetcher(day)
+    """Retry ONLY transient TPEx HTTP/connection errors; never bypass close proof.
+
+    A real HTTP status outside 408/429/5xx allowlist or malformed/mismatched
+    official data is NOT retried. Each date has <=3 total source requests.
+    """
+    attempts=0
+    for attempt in range(1,MAX_OFFICIAL_HTTP_ATTEMPTS+1):
+        attempts=attempt
+        try:
+            snapshot=fetcher(day)
+            break
+        except requests.exceptions.RequestException as exc:
+            code=getattr(getattr(exc,"response",None),"status_code",None)
+            transient=(
+                isinstance(exc,(requests.exceptions.Timeout,
+                                requests.exceptions.ConnectionError)) or
+                (isinstance(exc,requests.exceptions.HTTPError) and
+                 code in TRANSIENT_HTTP_CODES))
+            if not transient or attempt==MAX_OFFICIAL_HTTP_ATTEMPTS:
+                setattr(exc,"official_http_attempts",attempt)
+                raise
+            # Conservative server pacing; 429 must back off more heavily.
+            delay=(20 if code==429 else 5)*attempt
+            reply=getattr(exc,"response",None)
+            raw_retry=reply.headers.get("Retry-After") if reply is not None else None
+            if raw_retry is not None and str(raw_retry).strip().isdigit():
+                delay=max(delay,min(60,int(raw_retry)))
+            print(json.dumps({"official_day":day.isoformat(),
+                 "transient_http_retry":attempt,"http_status":code,
+                 "seconds_before_retry":delay}),flush=True)
+            time.sleep(delay)
+    else:
+        raise RuntimeError("No official source after finite retries")
     if not isinstance(snapshot,dict) or "bars" not in snapshot:
         raise ValueError("Official TPEx whole-market payload missing actual bars")
     minimum=max(MIN_OFFICIAL_COHORT,int(sum(m=="tpex" for m,s in allowed)*.6))
     permitted=select_candidates(snapshot["bars"],allowed,minimum=minimum)
     proof=verify_source_date(conn,day,permitted)
+    proof["official_http_attempts"]=attempts
     if proof["compared"]<MIN_ANCHORS or proof["matched"]*100<98*proof["compared"]:
         raise ValueError("Insufficient old-date independent official market close proof")
     return permitted,proof
@@ -139,6 +175,7 @@ def run(url,*,apply=False,max_days=10,pause_seconds=2.0,
             "as_of_utc":datetime.now(ZoneInfo("UTC")).isoformat(),
             "apply":bool(apply),"source_requests":0,"max_requests":max_days,
             "date_anchors_checked":0,"verified_days":0,
+            "official_http_requests":0,"max_http_attempts_per_date":MAX_OFFICIAL_HTTP_ATTEMPTS,
             "new_price_rows":0,"failures":[],
             "processed_dates":[],
             "unprocessed_dates":None,
@@ -176,6 +213,7 @@ def run(url,*,apply=False,max_days=10,pause_seconds=2.0,
                 result["source_requests"]+=1
                 bars,proof=verified_source_bars(conn,day,allowed,fetcher=fetcher)
                 result["date_anchors_checked"]+=1
+                result["official_http_requests"]+=proof.get("official_http_attempts",1)
                 # Captured fact rows are for exactly the requested day.
                 if any(x["market"]!="tpex" or x["trade_date"]!=day for x in bars):
                     raise RuntimeError("Mixed market/dates in official source")
@@ -189,7 +227,10 @@ def run(url,*,apply=False,max_days=10,pause_seconds=2.0,
                 result["verified_days"]+=1
                 result["new_price_rows"]+=inserted
             except Exception as ex:
-                observed.update({"status":"rejected","error_type":type(ex).__name__})
+                result["official_http_requests"]+=getattr(ex,"official_http_attempts",1)
+                observed.update({"status":"rejected","error_type":type(ex).__name__,
+                                 "source_http_status":getattr(
+                                    getattr(ex,"response",None),"status_code",None)})
                 result["failures"].append({"date":day.isoformat(),
                                           "error_type":type(ex).__name__})
                 # Respect TPEx server; do not flood invalid/blocked requests.
@@ -227,7 +268,7 @@ def main():
           report_path=args.report)
     print(json.dumps({k:v for k,v in r.items()
         if k in ("scope","apply","source_requests","verified_days",
-                 "new_price_rows","candidate_dates_in_this_batch",
+                 "new_price_rows","official_http_requests","candidate_dates_in_this_batch",
                  "unprocessed_dates","complete_source_date_coverage",
                  "full_five_year_official_history_verified","database_bytes_after")},
         ensure_ascii=False))
