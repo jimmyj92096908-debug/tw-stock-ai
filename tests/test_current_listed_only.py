@@ -1,6 +1,8 @@
 """Owner rule: exclude all stocks absent current official TWSE TPEx list."""
 from datetime import datetime,timezone
 from pathlib import Path
+import subprocess
+import sys
 from unittest import TestCase
 from unittest.mock import MagicMock,patch
 
@@ -95,6 +97,14 @@ class CurrentOnlyStockModelTests(TestCase):
         self.assertIn("active.stock_id=p.stock_id",s)
         self.assertIn("CURRENT_OFFICIAL_LISTED_CTE",s)
         self.assertNotIn("push",m.AUDIT_SQL.lower())
+
+    def test_standalone_scheduled_line_preview_entrypoint_imports_without_sending(self):
+        # Scheduled GitHub Actions invokes the Python source path directly,
+        # not import src.send_line_report. --help is safe and never sends.
+        run=subprocess.run([sys.executable,"src/send_line_report.py","--help"],
+                           cwd=ROOT,capture_output=True,text=True,timeout=15)
+        self.assertEqual(run.returncode,0,run.stderr)
+        self.assertIn("--dry-run",run.stdout)
 
     def test_workflow_does_not_send_line_or_write_data_or_buy_services(self):
         wf=(ROOT/".github/workflows/current-official-listed-only-audit.yml").read_text()
