@@ -1,7 +1,8 @@
 """將 TWSE／TPEx CSV 歷史日 K 安全寫入 PostgreSQL（Neon）。
 
 需要環境變數 DATABASE_URL。此模組不包含、也不讀取任何硬編碼密碼。
-現有 CSV 的 volume 單位為股數，turnover 單位為新台幣元。
+TPEx 個股日成交資訊原始 CSV 成交仟股／仟元僅於標記來源下轉換為股／元。
+此匯入器一律只新增缺漏主鍵，不覆寫正式資料庫既有行情。
 """
 
 from __future__ import annotations
@@ -11,6 +12,9 @@ import csv
 import logging
 import os
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
+from datetime import date
+import re
 from typing import Any
 
 import psycopg
@@ -22,7 +26,7 @@ DEFAULT_HISTORY_DIR = ROOT / "data" / "history"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-UPSERT_PRICE_SQL = """
+INSERT_MISSING_PRICE_SQL = """
 INSERT INTO daily_prices (
     market, stock_id, trade_date, open, high, low, close,
     volume, turnover, price_change, transactions, source
@@ -31,17 +35,7 @@ VALUES (
     %(market)s, %(stock_id)s, %(trade_date)s, %(open)s, %(high)s, %(low)s, %(close)s,
     %(volume)s, %(turnover)s, %(change)s, %(transactions)s, %(source)s
 )
-ON CONFLICT (market, stock_id, trade_date) DO UPDATE SET
-    open = EXCLUDED.open,
-    high = EXCLUDED.high,
-    low = EXCLUDED.low,
-    close = EXCLUDED.close,
-    volume = EXCLUDED.volume,
-    turnover = EXCLUDED.turnover,
-    price_change = EXCLUDED.price_change,
-    transactions = EXCLUDED.transactions,
-    source = EXCLUDED.source,
-    retrieved_at = NOW()
+ON CONFLICT (market, stock_id, trade_date) DO NOTHING
 """
 
 
@@ -53,6 +47,35 @@ def optional_number(value: Any) -> int | float | None:
         return None
     number = float(raw)
     return int(number) if number.is_integer() else number
+
+
+def normalize_tpex_monthly_units(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Convert raw TPEx tradingStock thousands to shares/NTD exactly once.
+
+    Only the raw monthly CSV source tag is supported; the OpenAPI already
+    reports shares/NTD and must never be scaled. No existing DB row is changed.
+    """
+    if parsed["market"] != "tpex" or parsed["source"] != "TPEX_TRADING_STOCK":
+        return parsed
+
+    for key in ("volume", "turnover"):
+        value = parsed[key]
+        if value is None:
+            continue
+        try:
+            scaled = Decimal(str(value).strip().replace(",", "")) * 1000
+        except InvalidOperation as exc:
+            raise ValueError(f"Invalid raw TPEx {key}") from exc
+        if not scaled.is_finite() or scaled < 0:
+            raise ValueError(f"Invalid raw TPEx {key}")
+        if key == "volume":
+            if scaled != scaled.to_integral_value() or scaled > 9223372036854775807:
+                raise ValueError("TPEx volume cannot be represented as integer shares")
+            parsed[key] = int(scaled)
+        else:
+            parsed[key] = scaled
+    parsed["source"] = "TPEX_TRADING_STOCK_NORMALIZED"
+    return parsed
 
 
 def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
@@ -81,12 +104,37 @@ def read_history_csv(path: Path, market: str) -> list[dict[str, Any]]:
                 "high": optional_number(row.get("high")),
                 "low": optional_number(row.get("low")),
                 "close": optional_number(row.get("close")),
-                "volume": optional_number(row.get("volume")),
-                "turnover": optional_number(row.get("turnover")),
+                "volume": (row.get("volume") if market == "tpex" and row.get("source") == "TPEX_TRADING_STOCK"
+                           else optional_number(row.get("volume"))),
+                "turnover": (row.get("turnover") if market == "tpex" and row.get("source") == "TPEX_TRADING_STOCK"
+                             else optional_number(row.get("turnover"))),
                 "change": optional_number(row.get("change")),
                 "transactions": optional_number(row.get("transactions")),
                 "source": row.get("source") or market.upper(),
             }
+            # Unknown CSV tags are ambiguous about volume/turnover units.
+            allowed_sources = {
+                "twse": {"TWSE_STOCK_DAY"},
+                "tpex": {"TPEX_TRADING_STOCK", "TPEX_TRADING_STOCK_NORMALIZED"},
+            }
+            if parsed["source"] not in allowed_sources[market]:
+                raise ValueError("Unknown or incompatible historical CSV source")
+            if not re.fullmatch(r"\d{4,6}", parsed["stock_id"]):
+                raise ValueError("Invalid historical stock code")
+            try:
+                trading_day = date.fromisoformat(parsed["trade_date"])
+            except ValueError as exc:
+                raise ValueError("Invalid historical trading date") from exc
+            if trading_day > date.today():
+                raise ValueError("Historical CSV contains a future trading date")
+            parsed = normalize_tpex_monthly_units(parsed)
+            if parsed["close"] is None or parsed["close"] <= 0:
+                # Zero-activity daily entries are not evidence of valid closes.
+                continue
+            if parsed["volume"] is None or parsed["turnover"] is None:
+                raise ValueError("Historical close lacks volume/turnover provenance")
+            if parsed["volume"] < 0 or parsed["turnover"] < 0:
+                raise ValueError("Negative historical volume/turnover")
             prices = [parsed[key] for key in ("open", "high", "low", "close") if parsed[key] is not None]
             high, low = parsed["high"], parsed["low"]
             if prices and (
@@ -133,17 +181,22 @@ def upsert_csv(conn: psycopg.Connection, path: Path, market: str) -> int:
                     (market, stock_id, len(rows)),
                 )
                 run_id = cur.fetchone()["run_id"]
-                cur.executemany(UPSERT_PRICE_SQL, rows)
+                cur.executemany(INSERT_MISSING_PRICE_SQL, rows)
+                # psycopg3 executemany rowcount is the cumulative affected-row
+                # count, so ON CONFLICT DO NOTHING contributes zero.
+                inserted = cur.rowcount
+                if not 0 <= inserted <= len(rows):
+                    raise RuntimeError("Unexpected history insert row count")
                 cur.execute(
                     """
                     UPDATE import_runs
                     SET finished_at = NOW(), rows_upserted = %s, status = 'success'
                     WHERE run_id = %s
                     """,
-                    (len(rows), run_id),
+                    (inserted, run_id),
                 )
-        logger.info("%s %s：寫入 %s 筆", market.upper(), stock_id, len(rows))
-        return len(rows)
+        logger.info("%s %s：新增 %s / 收到 %s 筆", market.upper(), stock_id, inserted, len(rows))
+        return inserted
     except Exception as exc:
         if run_id is not None:
             with conn.transaction():
