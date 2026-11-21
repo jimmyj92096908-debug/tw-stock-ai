@@ -4,7 +4,7 @@ from datetime import date
 
 from src.stock_db_audit import (
     COVERAGE_SQL, GLOBAL_DATES_SQL, SCORE_MATCH_SQL, SAMPLES_SQL,
-    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, INDICATOR_BACKLOG_SQL, collect_audit, format_audit, iso_date,
+    REFRESH_STATUS_SQL, QUALITY_SQL, ANALYSIS_READINESS_SQL, INDICATOR_BACKLOG_SQL, LATEST_VALID_DAY_COVERAGE_SQL, collect_audit, format_audit, iso_date,
 )
 
 
@@ -48,6 +48,9 @@ class _Cursor:
                 "smc_stocks": 18, "scored_stocks": 15,
                 "scored_latest_price_day": 12,
             }
+        if self.sql == LATEST_VALID_DAY_COVERAGE_SQL:
+            return {"priced_stocks": 40, "technical_current": 12,
+                    "smc_current": 11, "scored_current": 10}
         if self.sql == QUALITY_SQL:
             return {
                 "total_price_rows": 49392, "invalid_close": 0,
@@ -105,7 +108,7 @@ class StockAuditTests(unittest.TestCase):
         self.assertEqual(result["latest"]["latest_score_date"], "2026-11-18")
         self.assertEqual(result["score"]["matched_price"], 17)
         self.assertEqual(result["samples"][0]["last_price"], "2026-10-30")
-        self.assertEqual(len(conn.cur.calls), 9)
+        self.assertEqual(len(conn.cur.calls), 10)
         self.assertEqual(conn.cur.calls[1][1], (date(2026, 11, 19),))
         self.assertEqual(conn.cur.calls[3][1], (["2330", "6488", "6213"],))
 
@@ -123,13 +126,23 @@ class StockAuditTests(unittest.TestCase):
         self.assertIn("待補 1044", output)
         self.assertIn("技術／SMC 待補總量：1044/1106", output)
         self.assertEqual(result["indicator_backlog"][1]["unstarted"], 942)
-        self.assertEqual(conn.cur.calls[-1][0], INDICATOR_BACKLOG_SQL)
+        self.assertEqual(conn.cur.calls[-2][0], INDICATOR_BACKLOG_SQL)
+        self.assertEqual(conn.cur.calls[-1][0], LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertEqual(result["latest_valid_day_coverage"]["scored_current"], 10)
+        self.assertIn("各股最新有效收盤日覆蓋：價格 40 檔；技術 12 檔", output)
+
+    def test_latest_valid_close_coverage_requires_exact_day_and_non_null_score(self):
+        self.assertIn("close > 0", LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertIn("t.trade_date=l.last_close", LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertIn("s.trade_date=l.last_close", LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertIn("c.as_of_date=l.last_close AND c.total_score IS NOT NULL", LATEST_VALID_DAY_COVERAGE_SQL)
+        self.assertIn("各股最新有效收盤日覆蓋", format_audit(collect_audit(_Connection())))
 
     def test_optional_refresh_table_can_be_absent(self):
         conn = _Connection(refresh_exists=False)
         snapshot = collect_audit(conn)
         self.assertEqual(snapshot["refresh_state"], [])
-        self.assertEqual(len(conn.cur.calls), 8)
+        self.assertEqual(len(conn.cur.calls), 9)
 
     def test_quality_warnings_report_flagged_rows(self):
         snapshot = collect_audit(_Connection())

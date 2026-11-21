@@ -14,6 +14,34 @@ import psycopg
 from psycopg.rows import dict_row
 
 
+LATEST_VALID_DAY_COVERAGE_SQL = """
+WITH latest_valid AS (
+ SELECT market,stock_id,MAX(trade_date) AS last_close
+ FROM public.daily_prices
+ WHERE close IS NOT NULL AND close > 0
+ GROUP BY market,stock_id
+)
+SELECT
+ COUNT(*)::int AS priced_stocks,
+ COUNT(*) FILTER (WHERE EXISTS (
+   SELECT 1 FROM public.daily_technicals t
+   WHERE t.market=l.market AND t.stock_id=l.stock_id
+     AND t.trade_date=l.last_close
+ ))::int AS technical_current,
+ COUNT(*) FILTER (WHERE EXISTS (
+   SELECT 1 FROM public.daily_smc s
+   WHERE s.market=l.market AND s.stock_id=l.stock_id
+     AND s.trade_date=l.last_close
+ ))::int AS smc_current,
+ COUNT(*) FILTER (WHERE EXISTS (
+   SELECT 1 FROM public.daily_composite_scores c
+   WHERE c.market=l.market AND c.stock_id=l.stock_id
+     AND c.as_of_date=l.last_close AND c.total_score IS NOT NULL
+ ))::int AS scored_current
+FROM latest_valid l
+"""
+
+
 GLOBAL_DATES_SQL = """
 SELECT
   (SELECT MAX(trade_date) FROM public.daily_prices WHERE close IS NOT NULL)
@@ -209,6 +237,8 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         # Aggregate counts only; no ticker lists, writes or personal data.
         cur.execute(INDICATOR_BACKLOG_SQL)
         backlog = [dict(row) for row in cur.fetchall()]
+        cur.execute(LATEST_VALID_DAY_COVERAGE_SQL)
+        latest_valid_coverage = dict(cur.fetchone())
 
     return {
         "latest": {name: iso_date(value) for name, value in dict(dates).items()},
@@ -222,6 +252,7 @@ def collect_audit(conn: Any) -> dict[str, Any]:
         "quality": quality,
         "analysis_readiness": readiness,
         "indicator_backlog": backlog,
+        "latest_valid_day_coverage": latest_valid_coverage,
     }
 
 
@@ -303,6 +334,14 @@ def format_audit(audit: dict[str, Any]) -> str:
         lines.append(f"技術／SMC 待補總量：{pending_total}/{eligible_total} 檔（不等於全市場）")
         if pending_total:
             lines.append("注意：補算程式通過測試不代表這些待補股票已實際寫入。")
+    current = audit.get("latest_valid_day_coverage")
+    if current is not None:
+        lines.append(
+            "各股最新有效收盤日覆蓋：價格 {priced_stocks} 檔；技術 {technical_current} 檔；"
+            "SMC {smc_current} 檔；有效綜合評分 {scored_current} 檔".format(**current)
+        )
+        if current["scored_current"] < current["priced_stocks"]:
+            lines.append("注意：歷史曾有評分不代表各股最新有效收盤日有有效評分。")
     if latest["latest_price_date"] != latest["latest_score_date"]:
         lines.append("提醒：最新行情日與最新評分日不同，請勿混用。")
     if total_universe and total_priced < total_universe:
