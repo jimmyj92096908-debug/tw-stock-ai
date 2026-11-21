@@ -16,6 +16,7 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 
+from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 from build_adjusted_prices import build as build_adjusted_stock
 from calculate_technicals import calculate_stock as calculate_technical_stock
 from calculate_smc import calculate_stock as calculate_smc_stock
@@ -67,6 +68,19 @@ ORDER BY CASE WHEN stock_id IN ('2330','6213','4919','7827','8937')
 LIMIT %s
 """
 
+# The 240-session catch-up only touches officially current-listed issuers.
+# Keep the legacy 60-session query for existing daily jobs.
+CANDIDATES_240_ACTIVE_SQL = (
+    CURRENT_OFFICIAL_LISTED_CTE
+    + CANDIDATES_SQL.replace("WITH priced AS (", ", priced AS (", 1).replace(
+        " FROM public.daily_prices p\\n WHERE p.market=%s",
+        " FROM public.daily_prices p\\n"
+        " INNER JOIN official_current_listed active\\n"
+        "   ON active.market=p.market AND active.stock_id=p.stock_id\\n"
+        " WHERE p.market=%s", 1
+    )
+)
+
 VERIFY_SQL="""
 WITH target AS (
  SELECT %s::text AS market, %s::text AS stock_id,
@@ -96,7 +110,8 @@ def select_candidates(conn,market,limit,minimum_days=MIN_VERIFIED_PRICE_DAYS):
             or not MIN_VERIFIED_PRICE_DAYS<=minimum_days<=240):
         raise ValueError("Unsafe market, verified history depth or indicator batch")
     with conn.cursor() as cur:
-        cur.execute(CANDIDATES_SQL,(market,minimum_days,limit))
+        cur.execute(CANDIDATES_240_ACTIVE_SQL if minimum_days==240 else CANDIDATES_SQL,
+                    (market,minimum_days,limit))
         return [dict(row) for row in cur.fetchall()]
 
 
