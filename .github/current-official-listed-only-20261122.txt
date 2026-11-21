@@ -1,0 +1,1 @@
+User requires selecting ONLY currently TWSE-listed or TPEx-listed stocks. Exclude all stock_master-only symbols from new research and reports. Preserve past price rows and prior immutable predictions. No paid service, LINE messages or orders.\n
