@@ -41,9 +41,11 @@ def roster(n=50):
 
 
 def make(rows=None,**kwargs):
+    values={"model_sha256":"a"*64,"as_of":CAPTURE,
+            "latest_market_date":SIGNAL}
+    values.update(kwargs)
     return build_frozen_universe(
-        rows if rows is not None else roster(),MODEL,model_sha256="a"*64,
-        as_of=CAPTURE,latest_market_date=SIGNAL,**kwargs)
+        rows if rows is not None else roster(),MODEL,**values)
 
 
 class ForwardFreezeTests(unittest.TestCase):
