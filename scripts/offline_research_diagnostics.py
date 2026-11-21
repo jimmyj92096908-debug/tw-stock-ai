@@ -38,7 +38,7 @@ def main():
     p.add_argument("--fold-signals", type=int, default=3)
     p.add_argument("--max-folds", type=int, default=12)
     p.add_argument("--benchmark", type=Path,
-                   help="Optional independently verified same-horizon net benchmark-return JSON map")
+                   help="Optional user-supplied exact-entry/exit-horizon net benchmark JSON mapping")
     p.add_argument("--index-prices", type=Path,
                    help="Optional sorted official market index JSON rows")
     p.add_argument("--as-of-date")
