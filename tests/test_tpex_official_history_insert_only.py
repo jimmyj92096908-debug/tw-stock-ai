@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 import os
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
@@ -82,6 +83,26 @@ class TPExInsertOnlyTests(TestCase):
         self.assertEqual(len(rows),2)
         self.assertEqual(get.call_count,2)
         sleep.assert_called_once_with(2.0)
+
+    def test_one_time_ten_stock_marker_is_bounded_and_closes_scores(self):
+        source=(Path(__file__).resolve().parents[1]/
+                ".github/workflows/tpex-official-insert-only-history.yml"
+                ).read_text(encoding="utf-8")
+        marker=".github/tpex-official-history-authorized-batch10-20261121.txt"
+        self.assertIn(marker,source)
+        self.assertIn("contains(github.event.head_commit.added",source)
+        self.assertIn('limit=10',source)
+        self.assertIn('limit=2',source)
+        self.assertIn('--months 5',source)
+        self.assertIn("group: ${{ github.event_name == 'push' && 'twstock-indicator-catchup'",source)
+        self.assertIn("STOCK_TPEX_INSERT_ONLY_HISTORY_ENABLED",source)
+        self.assertIn("STOCK_NEW_ELIGIBLE_SCORE_WRITE_ENABLED",source)
+        self.assertIn("new_eligible_score_followon.py --apply --limit 5",source)
+        self.assertIn("snapshot(os.environ[\"DATABASE_URL\"])",source)
+        self.assertIn('cohort["matched_current"]==cohort["eligible"]',source)
+        self.assertEqual(source.count("    - cron:"),1)
+        self.assertIn('if-no-files-found: ignore',source)
+        self.assertIn("tpex-new-eligible-followon-second.json",source)
 
     def test_insert_sql_preserves_existing_primary_keys(self):
         sql=src.PRICE_INSERT_ONLY_SQL.upper()
