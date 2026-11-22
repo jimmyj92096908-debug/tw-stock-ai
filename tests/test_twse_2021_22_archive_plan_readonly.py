@@ -1,4 +1,8 @@
 """Offline fail-closed tests: 2021-22 archive planner must NEVER write to Neon."""
+import os
+from pathlib import Path
+import subprocess
+import sys
 from datetime import date, datetime, timedelta, timezone
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
@@ -16,6 +20,26 @@ class ArchiveBatchPlannerTests(TestCase):
             "database_bytes": 751689728,
             "official_receipt": datetime(2026, 11, 22, tzinfo=timezone.utc),
         }
+
+    def test_module_help_without_pythonpath_is_offline_and_importable(self):
+        """Owner PowerShell entrypoint must work without PYTHONPATH=.:src."""
+        checkout_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("DATABASE_URL", None)
+        result = subprocess.run(
+            [sys.executable, "-m", "scripts.twse_2021_22_archive_plan_readonly",
+             "--help"],
+            cwd=checkout_root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--archive-dir", result.stdout)
+        self.assertIn("--key-vault", result.stdout)
 
     def test_realistic_sparse_2021_22_windows_and_frozen_neon_writes(self):
         rows = [

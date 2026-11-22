@@ -1,0 +1,37 @@
+name: TWSE 2021-22 Owner Archive Planner (Offline Import Tests)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_archive_plan_readonly.py'
+      - 'tests/test_twse_2021_22_archive_plan_readonly.py'
+      - '.github/workflows/twse-2021-22-owner-archive-plan-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2021_22_archive_plan_readonly.py'
+      - 'tests/test_twse_2021_22_archive_plan_readonly.py'
+      - '.github/workflows/twse-2021-22-owner-archive-plan-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-standalone-owner-cli-without-credentials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ""
+      STOCK_ARCHIVE_KEY_HEX: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing open-source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Ensure standalone CLI imports without PYTHONPATH and does not contact Neon
+        run: |
+          unset PYTHONPATH
+          python -m scripts.twse_2021_22_archive_plan_readonly --help >/dev/null
+          python -m unittest tests.test_twse_2021_22_archive_plan_readonly -v
