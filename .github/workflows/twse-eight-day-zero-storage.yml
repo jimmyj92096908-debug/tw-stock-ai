@@ -1,0 +1,122 @@
+name: TWSE 2022 Eight-Day Official Source Zero-Storage Audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/twse-eight-day-zero-storage.yml'
+      - 'scripts/twse_official_direct_archive.py'
+      - 'tests/test_twse_official_direct_archive.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/twse-eight-day-zero-storage.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-2022-eight-official-sessions-no-storage
+  cancel-in-progress: false
+
+jobs:
+  verify-official-source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Confirm fail-closed roster, source dates and encrypted archive tests
+        run: |
+          python -m py_compile scripts/twse_official_direct_archive.py
+          python -m unittest tests.test_twse_official_direct_archive -v
+
+  real-official-eight-days-memory-only:
+    needs: verify-official-source-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free official source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check eight authentic early 2022 sparse days with spaced official requests
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from collections import Counter
+          from datetime import date
+          from scripts.twse_official_direct_archive import (
+              preflight, _canonical_source_rows, MAX_REQUESTED_SESSIONS,
+          )
+          from src.twse_dated_history import fetch_official_day
+
+          dates, allowed = preflight(
+              os.environ["DATABASE_URL"],
+              start=date(2022, 1, 1),
+              end=date(2022, 1, 31),
+          )
+          assert MAX_REQUESTED_SESSIONS == 8
+          assert dates == [
+              date(2022, 1, 3), date(2022, 1, 4),
+              date(2022, 1, 5), date(2022, 1, 6),
+              date(2022, 1, 7), date(2022, 1, 10),
+              date(2022, 1, 11), date(2022, 1, 12),
+          ], "Source candidate dates changed; refuse unreviewed requests"
+
+          last_requested = None
+          request_count = 0
+          def spaced_fetch(day):
+              global last_requested, request_count
+              assert day in dates
+              if last_requested is not None:
+                  wait_seconds = max(0, 4.0 - (time.monotonic() - last_requested))
+                  if wait_seconds:
+                      time.sleep(wait_seconds)
+              last_requested = time.monotonic()
+              request_count += 1
+              assert request_count <= MAX_REQUESTED_SESSIONS
+              return fetch_official_day(day)
+
+          counts = Counter()
+          for bar in _canonical_source_rows(spaced_fetch, dates, allowed):
+              assert bar["market"] == "twse"
+              assert bar["stock_id"] != "1589"
+              assert bar["trade_date"] in dates
+              counts[bar["trade_date"].isoformat()] += 1
+          assert request_count == MAX_REQUESTED_SESSIONS
+          assert len(counts) == MAX_REQUESTED_SESSIONS
+          assert all(500 <= n <= 1500 for n in counts.values())
+          print(json.dumps({
+              "scope": "TWSE_2022_EIGHT_DATES_OFFICIAL_RAM_ONLY",
+              "source_days": [d.isoformat() for d in dates],
+              "daily_eligible_current_listed_source_bars": dict(counts),
+              "official_source_requests": request_count,
+              "minimum_request_spacing_seconds": 4,
+              "historical_point_in_time_universe_proven": False,
+              "historical_five_year_source_completeness_proven": False,
+              "encrypted_price_archives_created": 0,
+              "neon_price_rows_written": 0,
+              "line_messages_sent": 0,
+              "paid_upgrade_requested": False,
+              "live_trading_approved": False
+          }, ensure_ascii=False, sort_keys=True))
+          PY
+      # RAM only: never upload row-level data or create GitHub artifacts.
