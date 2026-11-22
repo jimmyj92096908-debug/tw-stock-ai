@@ -32,6 +32,7 @@ YEAR = 2022
 MIN_FACTOR_SESSIONS = 240
 PREFIX_SESSIONS = 241
 MAX_FILES = 72
+MAX_SCANNED_FILES = 256
 MAX_ROWS = 600_000
 MAX_STOCKS = 1_500
 MAX_DAYS = 260
@@ -55,11 +56,19 @@ def _bar_ok(row):
         raise ValueError("Corrupt archived OHLCV or missing official stock session")
 
 
-def _ordered_paths(paths):
-    if (not isinstance(paths, (list, tuple)) or
-            not 1 <= len(paths) <= MAX_FILES):
-        raise ValueError("Must provide 1..72 local archive files")
+def _ordered_paths(paths, *, hex_key):
+    """Select 2022 only from a mixed private folder; authenticate skips.
+
+    The plaintext AES header is not itself trusted. Every excluded-year
+    archive is fully authenticated before exclusion; a corrupt/rewritten
+    header cannot quietly hide 2022 data from the audited source calendar.
+    Cross-year archives are not suitable for this fixed-year research audit.
+    """
+    if (not isinstance(paths, (list, tuple))
+            or not 1 <= len(paths) <= MAX_SCANNED_FILES):
+        raise ValueError("Must provide 1..256 bounded local archive files")
     verified = []
+    skipped = Counter()
     unique = set()
     for raw in paths:
         path = Path(raw).expanduser()
@@ -70,22 +79,34 @@ def _ordered_paths(paths):
                 or p.stat().st_size > MAX_ARCHIVE_BYTES or p in unique):
             raise ValueError("Public checkout/oversized/duplicate archive refused")
         unique.add(p)
-        start, end = _range_header(p)  # Header will be authenticated by verify_archive.
-        if (start.year != YEAR or end.year != YEAR or start > end):
-            raise ValueError("Expected frozen year-2022 private source archives")
+        start, end = _range_header(p)
+        if start > end or start.year != end.year:
+            raise ValueError("Cross-year or reversed private AES date range is unsupported")
+        if start.year != YEAR:
+            # A nominally different-year header must never silently hide a
+            # tampered/incomplete source archive. Authenticate entire ciphertext.
+            proof = verify_archive(p, hex_key=hex_key)
+            if not proof["archive_integrity_verified"]:
+                raise ValueError("Excluded-year AES source authentication failed")
+            skipped[start.year] += 1
+            continue
         verified.append((start, end, p))
+        if len(verified) > MAX_FILES:
+            raise ValueError("More than 72 2022 AES source archives")
+    if not verified:
+        raise ValueError("No authenticated year-2022 source archive candidates")
     verified.sort(key=lambda v: (v[0], v[1]))
     for (start, end, _), (next_start, _, _) in zip(verified, verified[1:]):
         if next_start <= end:
-            raise ValueError("Overlapping source archive date ranges")
-    return verified
+            raise ValueError("Overlapping 2022 source archive date ranges")
+    return verified, dict(sorted(skipped.items()))
 
 
 def audit(paths, *, hex_key, spotchecks=MAX_SPOTCHECKS):
     """Verify all AES footers before producing the aggregate research report."""
     if (type(spotchecks) is not int or not 0 <= spotchecks <= MAX_SPOTCHECKS):
         raise ValueError("Bounded 0..5 technical/SMC spotchecks required")
-    ordered = _ordered_paths(paths)
+    ordered, skipped = _ordered_paths(paths, hex_key=hex_key)
     day_counts = Counter()
     stock_counts = Counter()
     seen = set()
@@ -193,6 +214,8 @@ def audit(paths, *, hex_key, spotchecks=MAX_SPOTCHECKS):
         "schema_version": 1,
         "scope": "OWNER_LOCAL_2022_AES_TWSE_RAW_240_FACTOR_READINESS_RESEARCH_ONLY",
         "authenticated_archive_files": len(ordered),
+        "other_year_archives_authenticated_and_excluded": sum(skipped.values()),
+        "excluded_other_archive_year_counts": {str(k): v for k, v in skipped.items()},
         "authenticated_source_rows": total,
         "authentic_distinct_2022_source_sessions": available,
         "first_source_session": days[0].isoformat(),
@@ -245,6 +268,8 @@ def main():
     print(json.dumps({
         "scope": result["scope"],
         "authenticated_archive_files": result["authenticated_archive_files"],
+        "other_year_archives_authenticated_and_excluded":
+            result["other_year_archives_authenticated_and_excluded"],
         "authenticated_source_rows": result["authenticated_source_rows"],
         "actual_source_sessions": result["authentic_distinct_2022_source_sessions"],
         "missing_actual_sessions_to_240":
