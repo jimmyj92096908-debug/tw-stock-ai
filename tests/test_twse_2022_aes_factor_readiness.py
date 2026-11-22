@@ -140,6 +140,40 @@ class OwnerLocalAesFactorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _bar_ok(bar)
 
+    def test_mixed_year_folder_authenticates_and_excludes_2023(self):
+        old = create_files(self.tmp.name, self.key, count=4)
+        later = Path(self.tmp.name) / "other-year.twseenc"
+        encrypt_rows([fake_row(date(2023, 3, 3), "2330", 11)],
+                     later, start=date(2023, 3, 3),
+                     end=date(2023, 3, 3), hex_key=self.key)
+        report = audit(old + [later], hex_key=self.key)
+        self.assertEqual(report["authenticated_archive_files"], len(old))
+        self.assertEqual(report["other_year_archives_authenticated_and_excluded"], 1)
+        self.assertEqual(report["excluded_other_archive_year_counts"], {"2023": 1})
+        self.assertEqual(report["authentic_distinct_2022_source_sessions"], 4)
+        self.assertEqual(report["neon_rows_written"], 0)
+        self.assertEqual(report["live_model_release_decision"], "BLOCKED")
+
+    def test_corrupted_excluded_year_archive_is_not_silently_ignored(self):
+        old = create_files(self.tmp.name, self.key, count=3)
+        later = Path(self.tmp.name) / "other-year.twseenc"
+        encrypt_rows([fake_row(date(2023, 3, 3), "2330", 11)],
+                     later, start=date(2023, 3, 3),
+                     end=date(2023, 3, 3), hex_key=self.key)
+        later.write_bytes(later.read_bytes()[:-1])
+        with self.assertRaises(Exception):
+            audit(old + [later], hex_key=self.key)
+
+    def test_cross_year_archive_is_rejected_even_if_authenticated(self):
+        old = create_files(self.tmp.name, self.key, count=3)
+        crossing = Path(self.tmp.name) / "cross-year.twseenc"
+        records = [fake_row(date(2022, 12, 30), "2330", 2),
+                   fake_row(date(2023, 1, 3), "2330", 3)]
+        encrypt_rows(records, crossing, start=date(2022, 12, 30),
+                     end=date(2023, 1, 3), hex_key=self.key)
+        with self.assertRaisesRegex(ValueError, "Cross-year"):
+            audit(old + [crossing], hex_key=self.key)
+
     def test_no_public_stock_prices_in_aggregate_report(self):
         files = create_files(self.tmp.name, self.key, count=2)
         report = audit(files, hex_key=self.key)
