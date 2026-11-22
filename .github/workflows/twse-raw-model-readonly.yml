@@ -6,6 +6,8 @@ on:
       - 'src/raw_factor_walkforward.py'
       - 'src/raw_expanding_walkforward.py'
       - 'tests/test_raw_expanding_walkforward.py'
+      - 'scripts/twse_raw_model_release_audit.py'
+      - 'tests/test_twse_raw_model_release_audit.py'
       - 'scripts/twse_raw_model_readonly_experiment.py'
       - 'tests/test_twse_raw_model_readonly_experiment.py'
       - '.github/workflows/twse-raw-model-readonly.yml'
@@ -38,8 +40,8 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - name: Causal feature isolation, real forward labels and non-release regression
         run: |
-          python -m py_compile src/raw_factor_walkforward.py src/raw_expanding_walkforward.py scripts/twse_raw_model_readonly_experiment.py
-          python -m unittest -v tests.test_raw_factor_walkforward tests.test_raw_expanding_walkforward tests.test_twse_raw_model_readonly_experiment tests.test_raw_factor_feature_bridge
+          python -m py_compile src/raw_factor_walkforward.py src/raw_expanding_walkforward.py scripts/twse_raw_model_readonly_experiment.py scripts/twse_raw_model_release_audit.py
+          python -m unittest -v tests.test_raw_factor_walkforward tests.test_raw_expanding_walkforward tests.test_twse_raw_model_readonly_experiment tests.test_twse_raw_model_release_audit tests.test_raw_factor_feature_bridge
 
   actual-readonly:
     if: >-
@@ -64,6 +66,23 @@ jobs:
           python scripts/twse_raw_model_readonly_experiment.py \
             --label-cutoff 2026-11-20 --test-start 2026-08-10 \
             --max-signal-days 100 --output-dir twse-raw-research-proof
+      - name: Cross-check actual real folds and retain independent no-trade release blockers
+        run: |
+          python scripts/twse_raw_model_release_audit.py \
+            --report twse-raw-research-proof/research-safety-evidence.json \
+            --fixed twse-raw-research-proof/prototype-walkforward.json \
+            --expanding twse-raw-research-proof/expanding-purged-walkforward.json \
+            --saved models/tw-factor-ridge-1-evaluation.json \
+            --out twse-raw-research-proof/model-release-blockers.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('twse-raw-research-proof/model-release-blockers.json').read_text())
+          assert d['decision'] == 'BLOCKED'
+          assert not d['positive_alpha_approved'] and not d['live_trading_approved']
+          assert d['database_writes'] == 0
+          print('Real retrospective TWSE experiment cannot be promoted to trading')
+          PY
       - name: 'Fail closed: no live trading or production factor output'
         run: |
           python - <<'PY'
@@ -89,5 +108,6 @@ jobs:
             twse-raw-research-proof/research-safety-evidence.json
             twse-raw-research-proof/prototype-walkforward.json
             twse-raw-research-proof/expanding-purged-walkforward.json
+            twse-raw-research-proof/model-release-blockers.json
           retention-days: 14
           if-no-files-found: ignore
