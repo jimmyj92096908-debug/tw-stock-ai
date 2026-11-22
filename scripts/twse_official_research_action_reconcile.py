@@ -190,7 +190,7 @@ def inspect_month(report, expected_start: date, expected_end: date):
                 or not isinstance(sid, str) or not re.fullmatch(r"[0-9]{4}", sid)
                 or ex_date < expected_start or ex_date > expected_end
                 or kind not in ACTION_TYPES
-                or not any(ev.get("official_source") in s for (m, _), s in EXACT_SOURCES.items() if m == market)
+                or ev.get("official_source") not in EXACT_SOURCES[(market, "reduction" if kind == "CAPITAL_REDUCTION" else "ex")]
                 or not isinstance(ev.get("source_raw_record_sha256"), str)
                 or not SHA256_RE.fullmatch(ev["source_raw_record_sha256"])
                 or ev.get("issuer_original_announcement_time_verified") is not False
