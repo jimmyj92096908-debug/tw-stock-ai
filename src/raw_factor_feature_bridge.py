@@ -61,7 +61,7 @@ def validate_source(raw,*,stock_id,cutoff,market="tpex"):
     allowed_sources=(OFFICIAL_SOURCE_TAGS if market=="tpex"
                      else OFFICIAL_TWSE_SOURCE_TAGS)
     if not isinstance(stock_id,str) or not stock_id.isascii() or not (
-        stock_id.isdigit() and 4<=len(stock_id)<=6) or stock_id=="1808":
+        stock_id.isdigit() and 4<=len(stock_id)<=6) or stock_id=="1589":
         raise ValueError("Fixed real official stock code required")
     end=_day(cutoff)
     if not isinstance(raw,list) or not 1<=len(raw)<=MAX_BARS:
