@@ -148,7 +148,9 @@ operation can be treated as disaster recoverable.
 private bucket `tw-stock-ai-private-history` and exact key
 `market=twse/year=2026/twse-202611.twseenc`: one upload/PUT and one
 download/GET. Check that object key does **not already exist** to avoid
-replacing an earlier archive. Inject both URLs into the trusted runtime's
+replacing an earlier archive. Before PUT, the tool uses the signed GET and
+requires a definite HTTP 404 (missing key). An existing key, expired URL,
+or uncertain access status causes a safe stop instead of an overwrite. Inject both URLs into the trusted runtime's
 `NEON_PRIVATE_HISTORY_UPLOAD_URL` and
 `NEON_PRIVATE_HISTORY_DOWNLOAD_URL` environment variables. These URLs
 are short-lived bearer credentials; do not save them in GitHub files, logs
@@ -161,7 +163,7 @@ python -m scripts.twse_private_first_batch upload-check \
 ```
 
 Before uploading, the tool verifies the local archive still matches the
-manifest. After uploading only ciphertext, it downloads the same private
+manifest and that the remote key is demonstrably absent. After uploading only ciphertext, it downloads the same private
 object and performs a *remote-only* full AES-authenticated disaster-recovery
 check using the independent manifest. It reports success only on exact byte
 hash, canonical-source-row hash and source record-count equality.
