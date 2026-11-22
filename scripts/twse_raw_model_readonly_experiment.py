@@ -19,6 +19,7 @@ from src.raw_factor_feature_bridge import MAX_BARS
 from src.raw_factor_walkforward import (
     MAX_SIGNAL_DAYS, frozen_unadjusted_dataset, purged_ridge_prototype,
 )
+from src.raw_expanding_walkforward import expanding_purged_research
 
 # Frozen, current-official-listed small *research* roster, NOT all-market
 # model validation or an as-of historical survivor-free universe.
@@ -93,6 +94,7 @@ def execute(url, *, label_cutoff, test_start, max_signals=90, output_dir=None):
     if dataset["accepted_whole_cohort_days"] < 5:
         raise RuntimeError("Insufficient full-roster forward label maturity")
     evaluation = purged_ridge_prototype(dataset, test_start=test_start)
+    expanding = expanding_purged_research(dataset, test_start=test_start)
     report = {
         "scope": "TWSE_TWENTY_STOCK_CAUSAL_RAW_RESEARCH_ONLY",
         "feature_version": dataset["feature_version"],
@@ -106,6 +108,13 @@ def execute(url, *, label_cutoff, test_start, max_signals=90, output_dir=None):
             "mean_illustrative_net_excess_vs_equal_weight"),
         "research_window_count_sufficient": evaluation.get(
             "research_window_count_sufficient", False),
+        "expanding_purged_windows": expanding["count"],
+        "expanding_purged_status": expanding["status"],
+        "expanding_mean_net_excess_vs_equal_weight": expanding[
+            "mean_illustrative_net_excess_vs_equal_weight"],
+        "expanding_training_uses_only_mature_labels": expanding[
+            "expanding_refit_uses_only_mature_past_labels"],
+        "expanding_independent_future_validation_passed": False,
         "identical_illustrative_cost_assumptions_for_benchmark": evaluation.get(
             "benchmark_uses_identical_illustrative_cost_assumptions", False),
         "prototype_status": evaluation["status"],
@@ -126,6 +135,7 @@ def execute(url, *, label_cutoff, test_start, max_signals=90, output_dir=None):
         for filename, value in (
             ("research-dataset.json", dataset),
             ("prototype-walkforward.json", evaluation),
+            ("expanding-purged-walkforward.json", expanding),
             ("research-safety-evidence.json", report),
         ):
             (output / filename).write_text(
