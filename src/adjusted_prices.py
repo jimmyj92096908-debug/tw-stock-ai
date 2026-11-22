@@ -1,7 +1,27 @@
 """Apply verified corporate-action factors to historical OHLCV without mutating raw bars."""
 from __future__ import annotations
+from decimal import Decimal, InvalidOperation
 from math import isfinite
 from typing import Any, Iterable
+
+
+def _economic_number(value: Any, *, positive: bool = False) -> Decimal | None:
+    """Canonical economic terms: 0.9800, Decimal('0.98') and 0.98 match.
+
+    Missing optional amounts (absent or NULL) match; explicit zero does not
+    silently become missing. Reject non-finite/invalid values before dedup.
+    """
+    if value is None or value == "":
+        if positive:
+            raise ValueError("公司行動調整係數必須是有限正數")
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("公司行動數值無效") from exc
+    if not number.is_finite() or (positive and number <= 0):
+        raise ValueError("公司行動調整係數必須是有限正數" if positive else "公司行動數值無效")
+    return number.normalize()
 
 
 def _deduplicate_events(actions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -16,10 +36,10 @@ def _deduplicate_events(actions: Iterable[dict[str, Any]]) -> list[dict[str, Any
         key = (
             str(event["ex_date"]),
             str(event.get("action_type", "")),
-            str(event["price_factor"]),
-            str(event["share_factor"]),
-            str(event.get("cash_amount", "")),
-            str(event.get("stock_amount", "")),
+            _economic_number(event["price_factor"], positive=True),
+            _economic_number(event["share_factor"], positive=True),
+            _economic_number(event.get("cash_amount")),
+            _economic_number(event.get("stock_amount")),
         )
         unique.setdefault(key, event)
     return list(unique.values())
