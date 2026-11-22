@@ -54,6 +54,19 @@ REQUIRED_FIELDS = (
 )
 
 
+def parse_monthly_change(value):
+    """Non-comparable TWSE 'X' change is not a numeric daily return.
+
+    STOCK_DAY may mark first-price-after-corporate-action as X or X+amount.
+    Such a value cannot serve as raw price change and is never inferred.
+    Close/open/high/low validations remain strict and independent.
+    """
+    raw = str(value or "").strip()
+    if re.fullmatch(r"[Xx](?:[+-]?[0-9]+(?:,[0-9]{3})*(?:\\.[0-9]+)?)?", raw):
+        return None
+    return numeric(value)
+
+
 def parse_month(payload: dict, *, month: date, stock_id=STOCK_ID) -> list[dict]:
     """Reject wrong issuer/month, inconsistent columns and source OHLCV.
 
@@ -100,7 +113,7 @@ def parse_month(payload: dict, *, month: date, stock_id=STOCK_ID) -> list[dict]:
         volume = nonnegative_int(values[i["成交股數"]])
         turnover = numeric(values[i["成交金額"]])
         transactions = nonnegative_int(values[i["成交筆數"]])
-        change = numeric(values[i["漲跌價差"]])
+        change = parse_monthly_change(values[i["漲跌價差"]])
         if any(v is None for v in (op, hi, lo, cl, volume)):
             # Suspended/zero-trade quotes are NOT real factor bars.
             continue
