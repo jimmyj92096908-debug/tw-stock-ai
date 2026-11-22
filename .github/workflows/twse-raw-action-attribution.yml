@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Prepare offline numerical dependencies
-        run: python -m pip install 'numpy>=1.26,<3'
+        run: python -m pip install 'numpy>=1.26,<3' 'psycopg[binary]>=3.2,<4'
       - name: Compile and replay deterministic research baskets
         env:
           DATABASE_URL: ""
