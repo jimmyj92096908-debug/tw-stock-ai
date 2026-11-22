@@ -18,12 +18,39 @@ from scripts.twse_2022_dividend_exref_readonly import (
     EVENTS as DIV_EVENTS, verify_precise_cash_reference,
 )
 from scripts.twse_2022_known_dividend_gap_offline import classify_historical_dividend_gaps
+from scripts.twse_2021_22_traded_240_warmup_readonly import summarize_real_traded_warmup
+from scripts.twse_2022_cash_reduction_reference_readonly import prove_cash_reduction_references
 from tests.test_twse_2022_known_dividend_gap_offline import prior
 from tests.test_twse_2022_reduction_only_240_sma_readonly import make_input
 
 
 def evidence():
     original, market, bars21, bars22, warmup, reduction_ref = make_input()
+    # Existing synthetic frozen20 fixture ends 2022-12-13, whereas the
+    # owner's authenticated actual 2022 source ends 2022-12-30. Preserve
+    # EXACTLY 246 market dates and 239 real per-stock bars while extending
+    # synthetic calendar to the true 2022 year-end research cutoff.
+    removed = sorted(market)[1:14]
+    added = [date(2022, 12, d) for d in (14, 15, 16, 19, 20, 21, 22,
+                                            23, 26, 27, 28, 29, 30)]
+    assert len(removed) == len(added) == 13
+    market = sorted((set(market) - set(removed)) | set(added))
+    original["last_combined_session"] = "2022-12-30"
+    for sid in ("2327", "2603"):
+        for d in removed:
+            del bars22[sid][d]
+        for d in added:
+            bars22[sid][d] = Decimal("340") if sid == "2327" else Decimal("179")
+    warmup = summarize_real_traded_warmup(
+        original, dict(original), set(market), set(bars21["2327"]),
+        {sid: set(bars21[sid]) for sid in ("2327", "2603")},
+        {sid: set(bars22[sid]) for sid in ("2327", "2603")})
+    reduction_ref = prove_cash_reduction_references(
+        original, dict(original), set(market),
+        {(sid, d): bars22[sid][d] for sid, ev in
+         __import__("scripts.twse_2022_cash_reduction_reference_readonly",
+                    fromlist=["EVENTS"]).EVENTS.items()
+         for d in (ev["last_old_trade"], ev["first_new_trade"])})
     bars22["2327"][date(2022, 7, 1)] = Decimal("282")
     bars22["2327"][date(2022, 7, 4)] = Decimal("281")
     bars22["2603"][date(2022, 6, 28)] = Decimal("108.5")
@@ -149,7 +176,7 @@ class Two2022CashEventsOfflineTests(unittest.TestCase):
         fix = evidence()
         changed = dict(DIV_EVENTS["2603"], payout_scheduled=date(2022, 9, 30))
         with patch.dict(DIV_EVENTS, {"2603": changed}):
-            with self.assertRaisesRegex(ValueError, "entitlement or settlement order"):
+            with self.assertRaisesRegex(ValueError, "dividend ex-reference report drifted"):
                 run(fix)
 
     def test_pre_2022_event_backfill_does_not_create_stored_total_return(self):
