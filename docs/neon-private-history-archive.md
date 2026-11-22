@@ -250,6 +250,62 @@ the public Git checkout. This software can validate byte-level equality and
 decryptability, **not** verify different physical media or that the password
 has been independently backed up.
 
+### Windows PowerShell 5.1 cannot paste into getpass: hidden GUI option
+
+When `getpass.getpass` is using Windows console character input, Ctrl+V
+may not paste text. Do not paste a passphrase as a PowerShell command, put
+a password in the command line, or upload logs containing passwords.
+Use an **owner-local Tkinter password dialog**, which supports Ctrl+V and
+masks the text. On the trusted Windows desktop, run:
+
+```powershell
+cd "$HOME\tw-stock-ai"
+python -c "import tkinter; print('Windows password dialog available')"
+$env:TWSE_KEY_GUI_PROMPT = "1"
+```
+
+This environment variable contains **no secret**; it only opts in to a
+desktop dialog for all owner-local vault operations (`init`, `verify`,
+and using `--key-vault` for official archives/restores). The dialog
+does not print or persist passwords. Exit/cancel on failure and do not
+run commands that accidentally paste the secret into PowerShell. Keep
+the passphrase in a separate password manager or independent offline
+record. Previously pasted passwords must be retired.
+
+**No USB / free Google Drive option:** Until a remote copy is independently
+validated, creating two files on C: is NOT a durable recovery backup.
+Use two separate non-Git folders on C: as a short-lived staging layout:
+
+```powershell
+$vault = "$env:LOCALAPPDATA\tw-stock-private\history.twsekey"
+$recovery = "$env:LOCALAPPDATA\tw-stock-recovery-staging\history.twsekey"
+New-Item -ItemType Directory -Force (Split-Path $vault) | Out-Null
+New-Item -ItemType Directory -Force (Split-Path $recovery) | Out-Null
+Test-Path $vault
+Test-Path $recovery
+```
+
+**Both Test-Path results must be False before a first-time init.** If either
+is True, STOP and verify that existing vault; never overwrite or
+regenerate a working archive key. Then:
+
+```powershell
+python -m scripts.twse_archive_key_vault init --vault "$vault" --recovery "$recovery"
+python -m scripts.twse_archive_key_vault verify --vault "$vault" --recovery "$recovery"
+```
+
+Upload ONLY the encrypted staging `history.twsekey` to a **private**
+Google Drive folder using the user's browser; don't upload passphrase,
+plaintext key or Neon connection strings. Download that same remote file
+back to a private location and compare SHA-256 hashes with `$vault`.
+Verify remote download decryption, substituting the actual downloaded
+path, with `python -m scripts.twse_archive_key_vault verify --vault
+"$vault" --recovery "$download"`. Mark cloud key recovery proven
+ONLY after an independently downloaded file decrypts, the long
+passphrase is preserved elsewhere, and Google account recovery is
+protected. A remote encrypted key backup is NOT a remote history
+market data archive, and no production Postgres rows may be deleted.
+
 Example on the user's trusted Windows PowerShell, from project root
 (change the recovery drive letter to a real user-owned external drive):
 
