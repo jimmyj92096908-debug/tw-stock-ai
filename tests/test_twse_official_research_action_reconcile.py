@@ -203,6 +203,13 @@ class OfficialActionReconcileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect_month(p, date(2026, 11, 1), date(2026, 11, 14))
 
+    def test_corporate_action_kind_must_match_exact_market_feed(self):
+        d, f, e, ready, months = all_evidence()
+        p = deepcopy(months[-1])
+        p["candidates"][0]["official_source"] = "https://www.twse.com.tw/exchangeReport/TWTAUU"
+        with self.assertRaises(ValueError):
+            inspect_month(p, date(2026, 11, 1), date(2026, 11, 14))
+
     def test_month_bounds_no_gaps(self):
         v = month_windows(date(2026, 8, 11), date(2026, 11, 20))
         self.assertEqual([(a.isoformat(), b.isoformat()) for a, b in v], [
