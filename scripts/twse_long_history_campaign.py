@@ -85,6 +85,19 @@ def inspect_batch(rows, *, already_seen):
     return inserted, seen
 
 
+def choose_safe_batch_days(database_bytes: int) -> int:
+    """Largest date batch that keeps the *same* 800MB / 50MB reserve.
+
+    The dated importer still verifies available physical capacity immediately
+    before EACH day is written. A smaller batch merely avoids stopping a
+    research campaign while one or more dates still fit the unchanged reserve.
+    """
+    for days in range(MAX_DAYS_PER_ROUND, 0, -1):
+        if has_source_write_budget(database_bytes, days=days):
+            return days
+    return 0
+
+
 def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
     if type(max_rounds) is not int or not 0 <= max_rounds <= MAX_ROUNDS:
         raise ValueError("Unsafe TWSE long-history batch count")
@@ -114,16 +127,17 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
     seen=set()
     empty_batches=0
     for number in range(1,max_rounds+1):
-        if not has_source_write_budget(previous["database_bytes"], days=MAX_DAYS_PER_ROUND):
-            # Stop at a known safe batch boundary instead of raising after
-            # already successfully importing/committing earlier dates.
-            # The final receipt explicitly records that history is NOT done.
+        batch_days=choose_safe_batch_days(previous["database_bytes"])
+        if batch_days < 1:
+            # Keep the exact same Neon Free budget: 800MB stop, 50MB
+            # maintenance margin and pessimistic 600 bytes/bar per source day.
+            # Never delete, rewrite or lower the reserve just to continue.
             report["capacity_guard_blocked"]=True
             report["finished"]=False
             report["capacity_pause_reason"]="neon_free_maintenance_reserve"
             save(report_path,report)
             break
-        result=source_run(url,apply=True,batch_days=MAX_DAYS_PER_ROUND,
+        result=source_run(url,apply=True,batch_days=batch_days,
                           lookback_days=LOOKBACK_DAYS,pause_seconds=2)
         if not result:
             report["finished"]=True
@@ -141,6 +155,7 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
         empty_batches=empty_batches+1 if inserted==0 else 0
         report["batches"].append({
             "round":number, "dates":len(result),
+            "requested_max_dates":batch_days,
             "official_qualified_sum":sum(x["qualified"] for x in result),
             "new_valid_bars":inserted,
             "closed_sessions":sum(x["status"]=="closed" for x in result),

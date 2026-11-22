@@ -52,6 +52,17 @@ def audit(evidence: dict, *, missing_weekdays: int | None = None) -> dict:
     )
     room = max(0, protected_ceiling - after["database_bytes"])
     projected = math.floor(room / rate) if rate is not None else None
+    # A final single-day batch can use a little more of the *existing*
+    # safety budget than an eight-day batch, without reducing the reserve.
+    # The strict import-side capacity check still takes precedence.
+    one_day_ceiling = MAX_DATABASE_BYTES - (
+        MIN_MAINTENANCE_RESERVE_BYTES +
+        MAX_OFFICIAL_BARS_PER_DAY * STRESS_BYTES_PER_NEW_BAR
+    )
+    adaptive_room = max(0, one_day_ceiling - after["database_bytes"])
+    adaptive_projected = (
+        math.floor(adaptive_room / rate) if rate is not None else None
+    )
     return {
         "schema_version": 1,
         "scope": "TWSE_FREE_STORAGE_SOURCE_RUNWAY_OBSERVATION_ONLY",
@@ -64,6 +75,10 @@ def audit(evidence: dict, *, missing_weekdays: int | None = None) -> dict:
         "estimated_bytes_per_new_verified_day": round(rate, 1) if rate is not None else None,
         "existing_protected_campaign_start_ceiling_bytes": protected_ceiling,
         "protected_remaining_bytes": room,
+        "adaptive_one_day_capacity_ceiling_bytes": one_day_ceiling,
+        "adaptive_remaining_bytes": adaptive_room,
+        "illustrative_adaptive_additional_verified_source_days": adaptive_projected,
+        "preserved_neon_maintenance_margin_bytes": MIN_MAINTENANCE_RESERVE_BYTES,
         "outstanding_weekdays_not_equivalent_to_official_sessions": missing_weekdays,
         "illustrative_additional_verified_source_days": projected,
         "illustrative_runway_short_of_outstanding_weekdays": (

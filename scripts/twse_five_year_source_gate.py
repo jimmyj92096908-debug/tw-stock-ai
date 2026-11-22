@@ -15,7 +15,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
-from twse_dated_history import has_source_write_budget, MAX_DAYS_PER_RUN
+from twse_dated_history import has_source_write_budget
 
 MAX_DATABASE_BYTES = 800_000_000
 MIN_SOURCE_DAYS = 100
@@ -61,8 +61,10 @@ def snapshot(url):
 
 
 def decide(evidence):
+    # Adaptive-sized safe batches are permitted only if at least one official
+    # day fits the SAME 50MB maintenance reserve and pessimistic daily bound.
     return (
-        has_source_write_budget(evidence["database_bytes"],days=MAX_DAYS_PER_RUN)
+        has_source_write_budget(evidence["database_bytes"],days=1)
         and evidence["verified_source_days"] >= MIN_SOURCE_DAYS
         and evidence["active_twse"] >= MIN_ACTIVE_TWSE
         and evidence["missing_weekdays"] > 0
