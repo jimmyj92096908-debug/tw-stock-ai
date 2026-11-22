@@ -62,8 +62,8 @@ jobs:
         run: |
           test -n "$DATABASE_URL"
           python scripts/twse_raw_model_readonly_experiment.py \
-            --label-cutoff 2026-11-20 --test-start 2026-10-01 \
-            --max-signal-days 90 --output-dir twse-raw-research-proof
+            --label-cutoff 2026-11-20 --test-start 2026-08-10 \
+            --max-signal-days 100 --output-dir twse-raw-research-proof
       - name: 'Fail closed: no live trading or production factor output'
         run: |
           python - <<'PY'
@@ -73,7 +73,7 @@ jobs:
           assert d['neon_read_only'] and d['no_derived_database_rows_written']
           assert d['included_stocks'] == 20
           assert d['nonoverlapping_holdout_windows'] > 0
-          assert d['expanding_purged_windows'] > 0
+          assert d['expanding_purged_windows'] >= 8
           assert d['expanding_independent_future_validation_passed'] is False
           assert d['identical_illustrative_cost_assumptions_for_benchmark'] is True
           assert d['live_trading_approved'] is False
