@@ -1,0 +1,44 @@
+name: TWSE AES × Neon 240-Session Frozen Panel (Offline Tests)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/twse_2022_aes_neon_readonly_240_panel.py"
+      - "tests/test_twse_2022_aes_neon_readonly_240_panel.py"
+      - ".github/workflows/twse-aes-neon-readonly-240-panel.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/twse_2022_aes_neon_readonly_240_panel.py"
+      - "tests/test_twse_2022_aes_neon_readonly_240_panel.py"
+      - ".github/workflows/twse-aes-neon-readonly-240-panel.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-deterministic-replay:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install free local test dependencies
+        run: python -m pip install 'numpy>=1.26,<3' 'psycopg[binary]>=3.2,<4' 'cryptography>=43,<49' 'requests>=2.31,<3'
+      - name: Offline synthetic 2022 union and safety acceptance
+        env:
+          DATABASE_URL: ""
+          STOCK_ARCHIVE_KEY_HEX: ""
+          PYTHONPATH: ".:src"
+        run: |
+          python -m py_compile scripts/twse_2022_aes_neon_readonly_240_panel.py tests/test_twse_2022_aes_neon_readonly_240_panel.py
+          python -m unittest tests.test_twse_2022_aes_neon_readonly_240_panel -v
+      - name: Research-only release gate
+        if: always()
+        run: |
+          echo "### AES + existing Neon 2022 240-session frozen panel" >> "$GITHUB_STEP_SUMMARY"
+          echo "Only synthetic tests, no access to real owner archives, Neon credentials or LINE." >> "$GITHUB_STEP_SUMMARY"
+          echo "Real owner-PC read-only reconciliation is required; model remains BLOCKED." >> "$GITHUB_STEP_SUMMARY"
