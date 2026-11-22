@@ -79,9 +79,34 @@ class TWSELongHistoryCampaignTests(TestCase):
             patch.object(campaign,"snapshot",return_value=near),
             patch.object(campaign,"source_run",side_effect=AssertionError("unsafe fetch")) as run,
         ):
-            with self.assertRaisesRegex(RuntimeError,"maintenance reserve"):
-                campaign.execute("fake",apply=True,max_rounds=1)
+            report = campaign.execute("fake",apply=True,max_rounds=1)
         run.assert_not_called()
+        self.assertTrue(report["capacity_guard_blocked"])
+        self.assertFalse(report["finished"])
+        self.assertEqual(report["batches"],[])
+        self.assertEqual(report["capacity_pause_reason"],
+                         "neon_free_maintenance_reserve")
+
+    def test_pauses_safely_after_verified_insert_before_next_unsafe_round(self):
+        initial=state(bytes_=700_000_000)
+        near_limit=state(source_days=138, rows=173610, valid=173495,
+                         source_rows=146116, bytes_=745_000_000)
+        with (
+            patch.dict(os.environ,{
+                "STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED":"yes",
+                "STOCK_TWSE_HISTORY_WRITE_ENABLED":"yes",
+            }),
+            patch.object(campaign,"snapshot",side_effect=[initial,near_limit]),
+            patch.object(campaign,"source_run",
+                         return_value=[bar("2026-05-04",inserted=900)]) as importer,
+        ):
+            report=campaign.execute("fake",apply=True,max_rounds=20)
+        self.assertEqual(importer.call_count,1)
+        self.assertEqual(report["batches"][0]["new_valid_bars"],900)
+        self.assertEqual(report["latest"]["source_days"],138)
+        self.assertTrue(report["capacity_guard_blocked"])
+        self.assertFalse(report["finished"])
+        self.assertFalse(report["line_messages_sent"])
 
     def test_duplicate_source_date_refused(self):
         with self.assertRaisesRegex(RuntimeError,"Unverified"):
