@@ -114,7 +114,47 @@ class ReadonlyJoinTests(unittest.TestCase):
         result = reconcile(local, neon, days[160:], stocks=("1103", "2330"))
         self.assertEqual(result["frozen_stocks_with_complete_last_240_source_sessions"], 1)
         self.assertEqual(result["raw_12_factor_vectors_spotchecked"], 1)
+        self.assertTrue(result["sma240_stock_day_gap_diagnostics_available"])
+        self.assertEqual(result["missing_sma240_stock_count"], 1)
+        self.assertEqual(result["missing_sma240_stock_day_details"], [{
+            "stock_id": "2330",
+            "missing_observed_trade_day_count": 1,
+            "missing_observed_trade_dates": [days[-1].isoformat()],
+            "reason_unresolved_without_historical_listing_and_source_audit": True,
+            "source_refetch_or_neon_write_authorized": False,
+        }])
+        self.assertTrue(
+            result["missing_stock_day_not_independently_verified_as_exchange_or_listing_gap"])
         self.assertEqual(result["neon_write_operations"], 0)
+
+    def test_two_missing_stocks_are_limited_to_final_240_observed_sessions(self):
+        dates = sessions(246)
+        panel = two_stock_panel(dates, names=("1103", "2330", "2454"))
+        panel = [r for r in panel if not (
+            (r["stock_id"] == "2330" and r["trade_date"] == dates[-1])
+            or (r["stock_id"] == "2454" and r["trade_date"] == dates[-3])
+            or (r["stock_id"] == "2454" and r["trade_date"] == dates[0])
+        )]
+        report = reconcile(panel, [], [], stocks=("1103", "2330", "2454"))
+        self.assertEqual(report["frozen_stocks_with_complete_last_240_source_sessions"], 1)
+        self.assertEqual(report["missing_sma240_stock_count"], 2)
+        gaps = report["missing_sma240_stock_day_details"]
+        self.assertEqual([g["stock_id"] for g in gaps], ["2330", "2454"])
+        self.assertEqual(gaps[0]["missing_observed_trade_dates"], [dates[-1].isoformat()])
+        self.assertEqual(gaps[1]["missing_observed_trade_dates"], [dates[-3].isoformat()])
+        self.assertEqual(report["neon_write_operations"], 0)
+        self.assertEqual(report["live_model_release_decision"], "BLOCKED")
+
+    def test_short_market_calendar_does_not_invent_stock_day_gaps(self):
+        dates = sessions(239)
+        report = reconcile(two_stock_panel(dates), [], [],
+                           stocks=("1103", "2330"))
+        self.assertEqual(report["remaining_observed_sessions_to_240"], 1)
+        self.assertFalse(report["sma240_stock_day_gap_diagnostics_available"])
+        self.assertIsNone(report["missing_sma240_stock_count"])
+        self.assertEqual(report["missing_sma240_stock_day_details"], [])
+        self.assertEqual(report["frozen_stocks_with_complete_last_240_source_sessions"], 0)
+        self.assertEqual(report["live_model_release_decision"], "BLOCKED")
 
     def test_duplicate_neon_stock_day_refused(self):
         days = sessions(4)
