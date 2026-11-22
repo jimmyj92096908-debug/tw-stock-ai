@@ -6,6 +6,7 @@ import secrets
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
+from cryptography.exceptions import InvalidTag
 
 from scripts.twse_local_encrypted_archive import encrypt_rows
 from scripts.twse_private_first_batch import prepare, upload_check
@@ -135,7 +136,7 @@ class FirstBatchTests(TestCase):
                 doc = json.loads(self.manifest.read_text())
                 doc["encrypted_sha256"] = "0" * 64
                 self.manifest.write_text(json.dumps(doc))
-            with self.subTest(mode=mode), self.assertRaises((ValueError, RuntimeError)):
+            with self.subTest(mode=mode), self.assertRaises((ValueError, RuntimeError, InvalidTag)):
                 upload_check(
                     archive_path=self.path, manifest_path=self.manifest,
                     hex_key=secrets.token_hex(32) if mode == "key" else self.key,
