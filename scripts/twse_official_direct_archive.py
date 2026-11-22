@@ -39,13 +39,21 @@ SPARSE_THRESHOLD = 700
 # Must be an existing 2330 reference session, sparse and unprocessed. A low
 # count is a candidate to archive, NOT proof every issuer traded that day.
 GAP_SQL = """
-SELECT trade_date, COUNT(*)::int AS observed
-FROM public.daily_prices
-WHERE market='twse' AND trade_date BETWEEN %s AND %s
-GROUP BY trade_date
-HAVING COUNT(*) FILTER (WHERE stock_id='2330') > 0
-   AND COUNT(*) < 700
-ORDER BY trade_date
+WITH sparse AS (
+ SELECT trade_date, COUNT(*)::int AS observed
+ FROM public.daily_prices
+ WHERE market='twse' AND trade_date BETWEEN %s AND %s
+ GROUP BY trade_date
+ HAVING COUNT(*) FILTER (WHERE stock_id='2330') > 0
+    AND COUNT(*) < 700
+)
+SELECT s.trade_date, s.observed
+FROM sparse s
+WHERE NOT EXISTS (
+ SELECT 1 FROM public.twse_history_day_progress p
+ WHERE p.trade_date=s.trade_date AND p.status IN ('imported','closed')
+)
+ORDER BY s.trade_date
 LIMIT 8
 """
 
