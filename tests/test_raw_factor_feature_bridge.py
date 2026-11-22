@@ -101,7 +101,7 @@ class CausalRawFactorBridgeTests(TestCase):
             build_research_features(bars(1601),stock_id="5520",
                                     cutoff=date(2030,1,1),signal_dates=[cutoff])
         with self.assertRaises(ValueError):
-            build_research_features(data,stock_id="1808",cutoff=cutoff,signal_dates=[cutoff])
+            build_research_features(data,stock_id="1589",cutoff=cutoff,signal_dates=[cutoff])
 
     def test_official_twse_source_recalculates_causally_without_writing(self):
         data=[dict(item,market="twse",stock_id="2330",
@@ -158,3 +158,19 @@ class CausalRawFactorBridgeTests(TestCase):
         self.assertNotIn("INSERT",live.LAST_SOURCE_SQL.upper())
         with self.assertRaises(ValueError):
             live.preview("",stock_id="5520",cutoff=data[-1]["trade_date"])
+
+    def test_real_twse_1808_not_accidentally_banned_when_listed(self):
+        data=[dict(item,market="twse",stock_id="1808",
+                   source="TWSE_MI_INDEX_ALLBUT0999") for item in bars(320)]
+        result=build_research_features(
+            data, stock_id="1808", market="twse",
+            cutoff=data[-1]["trade_date"],signal_dates=[data[-1]["trade_date"]])
+        self.assertEqual(result["included_signals"],1)
+        self.assertEqual(len(result["signals"][0]["feature_vector"]),12)
+        self.assertFalse(result["live_trading_approved"])
+        for x in data:
+            x["stock_id"]="1589"
+        with self.assertRaises(ValueError):
+            build_research_features(
+                data,stock_id="1589",market="twse",
+                cutoff=data[-1]["trade_date"],signal_dates=[data[-1]["trade_date"]])
