@@ -1,0 +1,43 @@
+name: TWSE Raw Ex-Action Basket Attribution (Offline)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/twse_research_action_attribution.py"
+      - "tests/test_twse_research_action_attribution.py"
+      - ".github/workflows/twse-raw-action-attribution.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/twse_research_action_attribution.py"
+      - "tests/test_twse_research_action_attribution.py"
+      - ".github/workflows/twse-raw-action-attribution.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-offline-replay:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Prepare offline numerical dependencies
+        run: python -m pip install 'numpy>=1.26,<3'
+      - name: Compile and replay deterministic research baskets
+        env:
+          DATABASE_URL: ""
+          PYTHONPATH: "."
+        run: |
+          python -m py_compile scripts/twse_research_action_attribution.py tests/test_twse_research_action_attribution.py
+          python -m unittest tests.test_twse_research_action_attribution -v
+      - name: Record research-only gate
+        if: always()
+        run: |
+          echo "### TWSE RAW action-to-basket attribution" >> "$GITHUB_STEP_SUMMARY"
+          echo "Offline synthetic tests only, no external data, credentials, Neon, LINE, model updates, orders or paid source." >> "$GITHUB_STEP_SUMMARY"
+          echo "No approved total-return labels; model release BLOCKED." >> "$GITHUB_STEP_SUMMARY"
