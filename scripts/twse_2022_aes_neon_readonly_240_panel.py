@@ -255,12 +255,13 @@ def _read_neon_2022_frozen_panel():
     uri = os.environ.get("DATABASE_URL", "")
     if not uri.startswith(("postgres://", "postgresql://")):
         raise ValueError("DATABASE_URL must be locally configured, never printed")
-    with psycopg.connect(
-        uri, connect_timeout=15,
-        options="-c default_transaction_read_only=on -c statement_timeout=90000",
-    ) as conn:
+    # Neon pooled connections reject statement_timeout in startup options.
+    # Set the time limit only *inside* a server-enforced READ ONLY transaction;
+    # no session-level state or connection startup GUCs can leak across pooling.
+    with psycopg.connect(uri, connect_timeout=15) as conn:
         with conn.cursor() as cur:
             cur.execute("SET TRANSACTION READ ONLY")
+            cur.execute("SET LOCAL statement_timeout = '90s'")
             cur.execute(SQL_NEON_DAYS)
             days = [r[0] for r in cur.fetchall()]
             cur.execute(SQL_NEON_PANEL, (list(FROZEN_STOCKS),))
