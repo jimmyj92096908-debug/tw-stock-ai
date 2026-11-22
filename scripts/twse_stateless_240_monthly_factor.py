@@ -66,7 +66,7 @@ def parse_month(payload: dict, *, month: date, stock_id=STOCK_ID) -> list[dict]:
         raise ValueError("Official historical STOCK_DAY month or issuer invalid")
     title = str(payload.get("title") or "")
     expected_roc = f"{month.year - 1911}年{month.month}月"
-    if (expected_roc not in title or
+    if (re.search(rf"(?<![0-9]){month.year - 1911}年0?{month.month}月", title) is None or
         re.search(r"(?<![0-9])2330(?![0-9])", title) is None):
         raise ValueError("Official monthly source issuer/title/date mismatched")
     source_month = str(payload.get("date") or "")
@@ -160,8 +160,8 @@ def assess_months(monthly_bars: list[list[dict]], *, baseline_days=MIN_VALID_PRI
             last = row["trade_date"]
         monthly_counts.append(len(rows))
         series.extend(rows)
-    if len(series) < MIN_VALID_PRICE_SESSIONS:
-        raise ValueError("Official monthly price archive has <240 valid stock sessions")
+    if len(series) < MIN_VALID_PRICE_SESSIONS + 1:
+        raise ValueError("Official monthly price archive needs 240 plus prior-signal parity session")
     last = series[-1]["trade_date"]
     prior = series[-2]["trade_date"]
     # Reuse exact audited no-storage technical/SMC feature algorithms.
