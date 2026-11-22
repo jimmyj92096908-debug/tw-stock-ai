@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install free AES-GCM implementation, never Neon credentials
-        run: python -m pip install 'cryptography>=43,<49'
+        run: python -m pip install 'cryptography>=43,<49' 'psycopg[binary]>=3.2,<4'
       - name: Test exact source-recovery, tamper, replay, key and path safety
         run: |
           python -m py_compile scripts/twse_local_encrypted_archive.py scripts/twse_local_archive_custody_audit.py scripts/twse_local_archive_source_reconcile.py
