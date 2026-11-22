@@ -1,0 +1,44 @@
+name: TWSE 2022 Corporate-Action Halt Audit (Offline)
+
+on:
+  pull_request:
+    paths:
+      - scripts/twse_2022_capital_reduction_halt_audit.py
+      - tests/test_twse_2022_capital_reduction_halt_audit.py
+      - .github/workflows/twse-2022-capital-reduction-halt-audit.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/twse_2022_capital_reduction_halt_audit.py
+      - tests/test_twse_2022_capital_reduction_halt_audit.py
+      - .github/workflows/twse-2022-capital-reduction-halt-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit-nontrading-capital-reduction-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install only open-source local dependencies
+        run: python -m pip install 'numpy>=1.26,<3' 'psycopg[binary]>=3.2,<4' 'cryptography>=43,<49' 'requests>=2.31,<3'
+      - name: Syntax + 2022 capital-reduction fail-closed simulation
+        env:
+          DATABASE_URL: ""
+          STOCK_ARCHIVE_KEY_HEX: ""
+          PYTHONPATH: ".:src"
+        run: |
+          python -m py_compile scripts/twse_2022_capital_reduction_halt_audit.py tests/test_twse_2022_capital_reduction_halt_audit.py
+          python -m unittest tests.test_twse_2022_capital_reduction_halt_audit -v
+      - name: Model remains blocked
+        if: always()
+        run: |
+          echo "### 2022 actual non-trading windows, not source-data gaps" >> "$GITHUB_STEP_SUMMARY"
+          echo "Offline cases cover issuer 2327 (Oct 20-28) and 2603 (Sep 7-16); cash capital-reduction adjusted total returns NOT validated." >> "$GITHUB_STEP_SUMMARY"
+          echo "No access to Neon secrets, real owner archives, LINE or production model. Release remains BLOCKED." >> "$GITHUB_STEP_SUMMARY"
