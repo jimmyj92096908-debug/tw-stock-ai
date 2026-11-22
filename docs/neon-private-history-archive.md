@@ -177,6 +177,63 @@ pass. A successful first slice still does not prove five years are backed
 up, does not authorize SQL deletion or index drops, and cannot justify
 turning on trading or modifying LINE. The project will not incur new fees.
 
+## Direct-to-archive official five-year gap repair (no PostgreSQL growth)
+
+The original backup path exports **only prices already in Neon**. It cannot
+solve missing 2021–2022 history while the free PostgreSQL ceiling is tight.
+For owner-approved research on verified current-listed stocks, this additional
+path obtains missing whole-market TWSE trading sessions directly from the
+official dated `MI_INDEX` feed, validates their dates, codes, prices, coverage
+and current official survivor/exclusion roster, and produces a local AES-256
+source archive **without inserting a single row into PostgreSQL**.
+
+A real read-only Neon candidate query on 2026-11-22 found the first eight
+unprocessed 2022 January trading-day candidates, 2022-01-03 through
+2022-01-12 (excluding the weekend); each had 20 observed TWSE bars. These
+are **source-validation candidates**, not proof of complete market history.
+
+The tool is explicitly bounded to 8 source dates within a 35-calendar-day
+window in the rolling five-year horizon. It will refuse previously processed
+receipt dates, absent fresh official company-list snapshots, failed source
+fetches, and mixed/duplicate dates. It excludes 1589 and other currently
+excluded or delisted stocks. No historical point-in-time universe is claimed.
+
+**Preview: no TWSE requests and no Neon writes**
+
+```sh
+python -m scripts.twse_official_direct_archive preview \
+  --start 2022-01-01 --end 2022-01-31
+```
+
+**Owner-only archive: trusted private runtime with durable pre-backed-up
+`STOCK_ARCHIVE_KEY_HEX` and read-only `DATABASE_URL`**
+
+```sh
+python -m scripts.twse_official_direct_archive archive \
+  --start 2022-01-01 --end 2022-01-31 \
+  --archive /private/archive/twse-early-202201.twseenc \
+  --manifest /private/archive/twse-early-202201.manifest.json \
+  --object-key market=twse/year=2022/twse-early-202201.twseenc
+```
+
+The official source acquisition timestamp is the **current retrieval time**;
+it must not be used as a supposed historical trading-publication timestamp.
+The daily records contain exact source Decimal values, but current-survivor
+selection can introduce survivorship bias. Thus this archive is for storage
+and research, never stand-alone model approval.
+
+After separately securing the independent manifest and encryption key,
+upload/recover the private object using the existing two-stage
+`twse_private_first_batch upload-check` command with the matching
+`--archive` and `--manifest`. The authenticated remote-only restore
+must pass before treating any single slice as durably backed up. Never
+lower the original 800MB/50MB Neon guard, delete price records or write
+research results to LINE solely because this proof succeeds.
+
+This capability does **not** automatically archive in ChatGPT background
+or schedule a credential-bearing GitHub job. Local operator execution
+is required. All tests are offline and use synthetic bars only.
+
 ## Storage-ceiling decision
 
 The guarded TWSE importer currently uses an internal physical PostgreSQL ceiling of **800,000,000 bytes**, with a further **50,000,000-byte maintenance reserve** and pessimistic per-date growth allowance. Although the Neon Free project limit is 1 GiB, that provider limit and the physical PostgreSQL size are **not interchangeable**, and the project may contain other branch/storage overhead. Raising the internal ceiling to 900 MB would change automatic scheduled production import behavior. **Do not raise it before a real, durable, independently restored archive and a verified project-level allowance assessment.** Never change plans or incur paid charges to bypass these gates.
