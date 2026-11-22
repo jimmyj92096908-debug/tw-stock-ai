@@ -1,0 +1,38 @@
+name: TWSE 2022 Two Known Cash Events SMA240 (Offline)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2022_known_cash_events_sma240_readonly.py'
+      - 'tests/test_twse_2022_known_cash_events_sma240_readonly.py'
+      - '.github/workflows/twse-2022-known-cash-events-sma240-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2022_known_cash_events_sma240_readonly.py'
+      - 'tests/test_twse_2022_known_cash_events_sma240_readonly.py'
+      - '.github/workflows/twse-2022-known-cash-events-sma240-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-credentials-synthetic-two-event-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      STOCK_ARCHIVE_KEY_HEX: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original free dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test two cash events ordered SMA240 without release
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_2022_known_cash_events_sma240_readonly.py
+          python -m scripts.twse_2022_known_cash_events_sma240_readonly --help >/dev/null
+          python -m unittest tests.test_twse_2022_known_cash_events_sma240_readonly -v
