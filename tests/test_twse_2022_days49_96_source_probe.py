@@ -44,7 +44,7 @@ class HistoricSecondBatchTests(TestCase):
             DATES[:-1], DATES[::-1],
             (date(2022, 3, 22),) + DATES[1:],
             DATES[:12] + (date(2022, 4, 4),) + DATES[13:],
-            DATES[:12] + (DATES[12],) + DATES[13:],
+            DATES[:12] + (DATES[13],) + DATES[13:],
             DATES[:12] + (date(2022, 4, 11),) + DATES[13:],
         ):
             with self.subTest(altered=altered[:3]), self.assertRaises(ValueError):
