@@ -1,0 +1,41 @@
+name: TWSE Raw Research Total Return Gate (Offline Tests)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/twse_research_total_return_readiness.py"
+      - "tests/test_twse_research_total_return_readiness.py"
+      - ".github/workflows/twse-research-total-return-gate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/twse_research_total_return_readiness.py"
+      - "tests/test_twse_research_total_return_readiness.py"
+      - ".github/workflows/twse-research-total-return-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  independent-offline-guard:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Static compile and independent zero-secret unit tests
+        env:
+          DATABASE_URL: ""
+          PYTHONPATH: "."
+        run: |
+          python -m py_compile scripts/twse_research_total_return_readiness.py tests/test_twse_research_total_return_readiness.py
+          python -m unittest tests.test_twse_research_total_return_readiness -v
+      - name: Explain non-release state
+        if: always()
+        run: |
+          echo "### TWSE total-return readiness" >> "$GITHUB_STEP_SUMMARY"
+          echo "Offline tests only. This workflow does not read Neon, use secrets, alter LINE, or publish model weights." >> "$GITHUB_STEP_SUMMARY"
+          echo "Model remains BLOCKED pending official complete cash-dividend and PIT validation." >> "$GITHUB_STEP_SUMMARY"
