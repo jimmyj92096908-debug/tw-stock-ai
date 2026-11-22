@@ -139,6 +139,20 @@ def fetch_month(month: date, *, stock_id=STOCK_ID, session=None):
     return parse_month(response.json(), month=month, stock_id=stock_id)
 
 
+def exact_sma240(source_rows: list[dict], *, asof: date):
+    """No lookahead: Decimal 240-valid-trading-session closing-price SMA."""
+    if type(asof) is not date or not isinstance(source_rows, list):
+        raise ValueError("Actual source series and as-of date required")
+    past = [r for r in source_rows if r.get("trade_date") <= asof]
+    if (len(past) < MIN_VALID_PRICE_SESSIONS or
+        past[-1]["trade_date"] != asof):
+        raise ValueError("Fewer than 240 actually observed causal stock sessions")
+    closes = [r["close"] for r in past[-MIN_VALID_PRICE_SESSIONS:]]
+    if any(type(x) is not Decimal or not x.is_finite() or x <= 0 for x in closes):
+        raise ValueError("Unreliable full-precision source close")
+    return sum(closes, Decimal(0)) / Decimal(MIN_VALID_PRICE_SESSIONS)
+
+
 def assess_months(monthly_bars: list[list[dict]], *, baseline_days=MIN_VALID_PRICE_SESSIONS):
     if (not isinstance(monthly_bars, list) or len(monthly_bars) != MAX_SOURCE_REQUESTS
         or type(baseline_days) is not int or baseline_days != MIN_VALID_PRICE_SESSIONS):
@@ -164,6 +178,11 @@ def assess_months(monthly_bars: list[list[dict]], *, baseline_days=MIN_VALID_PRI
         raise ValueError("Official monthly price archive needs 240 plus prior-signal parity session")
     last = series[-1]["trade_date"]
     prior = series[-2]["trade_date"]
+    current_sma240 = exact_sma240(series, asof=last)
+    previous_sma240_with_future = exact_sma240(series, asof=prior)
+    previous_sma240_without_future = exact_sma240(series[:-1], asof=prior)
+    if previous_sma240_with_future != previous_sma240_without_future:
+        raise RuntimeError("240-session SMA changed when future raw bar was added")
     # Reuse exact audited no-storage technical/SMC feature algorithms.
     latest = build_research_features(
         series, stock_id=STOCK_ID, market="twse",
@@ -187,7 +206,8 @@ def assess_months(monthly_bars: list[list[dict]], *, baseline_days=MIN_VALID_PRI
     fingerprint = sha256(json.dumps(
         [latest["raw_source_fingerprint_sha256"],
          previous_with_future["raw_source_fingerprint_sha256"],
-         monthly_counts, last.isoformat()],
+         monthly_counts, last.isoformat(), str(current_sma240),
+         str(previous_sma240_without_future)],
         separators=(",", ":"), ensure_ascii=False,
     ).encode()).hexdigest()
     return {
@@ -203,6 +223,7 @@ def assess_months(monthly_bars: list[list[dict]], *, baseline_days=MIN_VALID_PRI
         "feature_version": latest["feature_version"],
         "feature_count": len(FEATURE_NAMES),
         "causal_previous_day_prefix_parity_passed": True,
+        "exact_decimal_sma240_causal_parity_passed": True,
         "actual_240_session_warmup_met": True,
         "all_market_240_day_coverage_proven": False,
         "five_year_official_market_data_complete": False,
