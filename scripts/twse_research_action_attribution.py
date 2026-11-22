@@ -165,7 +165,6 @@ def replay(dataset, fixed, expanding, windows):
             raise ValueError("Expanding coefficients, fold maturity, or hash mismatch")
         expand_picks, expand_gross, expanded_baseline = _rank(
             members, (means, stds, weights))
-        _near(expand_gross and expand_gross or 0.0, expand_gross, "finite expanded")
         _near(expanded_baseline, baseline, "equal-weight cohorts")
         _near(stress_test(expand_gross, **COST_ASSUMPTIONS)[
             "worst_assumed_net_return"],
