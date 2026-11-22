@@ -65,6 +65,51 @@ Streaming chunks are authenticated and the final encrypted footer includes a
 whole-export row count and SHA-256. No decrypted rows are written to disk
 during verification. The verifier **does not import any data to Neon**.
 
+## Check an independently copied private archive
+
+After verifying an encrypted period, copy it to an independently
+controlled device, e.g. a separate external drive. Then **re-read
+both copies and fully authenticate their AES-GCM source rows**, never
+just compare filenames. The example local-only manifest file
+`D:\\PrivateStocks\\private-copy-plan.json` (do not commit it) has
+the following content, with paths customized to your own devices:
+
+```json
+{
+  "start": "2026-11-01",
+  "end": "2026-11-20",
+  "pairs": [
+    {
+      "primary": "D:\\\\PrivateStocks\\\\TWSE-2026-11.twseenc",
+      "backup": "E:\\\\SeparateBackup\\\\TWSE-2026-11.twseenc"
+    }
+  ]
+}
+```
+
+```powershell
+python -m scripts.twse_local_archive_custody_audit `
+  --local-manifest "D:\\PrivateStocks\\private-copy-plan.json"
+```
+
+This compares the **entire encrypted bytes** and verifies **both** full
+archives using the local AES key, including exact DECIMAL fields, source
+vintage, authenticated per-chunk data, row count and SHA-256. It refuses
+a symlink or hardlink pointing to the same file, corrupted copies, and
+overlapping, duplicated or nonchronological monthly periods. More pairs
+can be added to the manifest to verify a continuous calendar date range;
+weekends and holidays are included in date-range boundaries.
+
+The report states whether two files reside on different filesystem device
+identifiers, but even that is **not proof of independently retained
+physical media or a separately recoverable encryption key**. A continuous
+calendar range is not proof that every market trading date, official listed
+issuer, corporate action or excluded-historical period has been backed up.
+It does not check the live Neon source-row totals against the archive and
+does not permit deleting or migrating production prices. All reports are
+intended for local custody only; no original or encrypted data is sent to
+GitHub.
+
 ## Limitations and hard stop
 
 This is a validated *local file-format and read-only export tool*, not a
