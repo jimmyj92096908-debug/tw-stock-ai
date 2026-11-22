@@ -58,7 +58,7 @@ WHERE market='twse' AND stock_id=%s AND trade_date<=%s
 ORDER BY trade_date DESC LIMIT %s"""
 
 
-def execute(url, *, label_cutoff, test_start, max_signals=90, output_dir=None):
+def execute(url, *, label_cutoff, test_start, max_signals=100, output_dir=None):
     if (not url or type(label_cutoff) is not date or type(test_start) is not date
             or test_start >= label_cutoff
             or type(max_signals) is not int
@@ -115,6 +115,7 @@ def execute(url, *, label_cutoff, test_start, max_signals=90, output_dir=None):
         "expanding_training_uses_only_mature_labels": expanding[
             "expanding_refit_uses_only_mature_past_labels"],
         "expanding_independent_future_validation_passed": False,
+        "retrospective_test_split_previously_reviewed": True,
         "identical_illustrative_cost_assumptions_for_benchmark": evaluation.get(
             "benchmark_uses_identical_illustrative_cost_assumptions", False),
         "prototype_status": evaluation["status"],
@@ -149,7 +150,7 @@ def main():
     p = argparse.ArgumentParser(description="TWSE twenty-stock read-only raw research")
     p.add_argument("--label-cutoff", type=date.fromisoformat, required=True)
     p.add_argument("--test-start", type=date.fromisoformat, required=True)
-    p.add_argument("--max-signal-days", type=int, default=90)
+    p.add_argument("--max-signal-days", type=int, default=100)
     p.add_argument("--output-dir", type=Path, default=Path("twse-raw-research-proof"))
     args = p.parse_args()
     print(json.dumps(execute(
