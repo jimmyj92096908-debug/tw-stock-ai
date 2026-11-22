@@ -33,7 +33,7 @@ class Real241DaySourceSafetyTests(TestCase):
             CALENDAR[::-1],
             CALENDAR[:10]+(CALENDAR[9],)+CALENDAR[11:],
             CALENDAR[:10]+(date(2022,1,15),)+CALENDAR[11:],
-            CALENDAR[:10]+(date(2022,1,18),)+CALENDAR[11:],
+            CALENDAR[:10]+(date(2022,1,19),)+CALENDAR[11:],
             CALENDAR+(date(2022,12,27),),
         ):
             with self.subTest(bad_size=len(bad)), self.assertRaises(ValueError):
