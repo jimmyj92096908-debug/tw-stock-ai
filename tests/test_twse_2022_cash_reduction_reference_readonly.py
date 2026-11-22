@@ -68,7 +68,7 @@ class CashReductionReferenceOfflineTests(unittest.TestCase):
     def test_witness_wrong_old_close_fail_closed(self):
         report, market, closes = fixture()
         closes[("2603", date(2022, 9, 6))] = Decimal("81")
-        with self.assertRaisesRegex(ValueError, "contemporaneous old close"):
+        with self.assertRaisesRegex(ValueError, "Contemporaneous old close"):
             prove_cash_reduction_references(report, dict(report), set(market), closes)
 
     def test_source_evidence_drift_must_fail(self):
