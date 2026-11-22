@@ -62,7 +62,7 @@ def parse_monthly_change(value):
     Close/open/high/low validations remain strict and independent.
     """
     raw = str(value or "").strip()
-    if re.fullmatch(r"[Xx](?:[+-]?[0-9]+(?:,[0-9]{3})*(?:\\.[0-9]+)?)?", raw):
+    if re.fullmatch(r"[Xx](?:[+-]?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)?", raw):
         return None
     return numeric(value)
 
