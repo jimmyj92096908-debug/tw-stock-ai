@@ -113,12 +113,74 @@ deleting production data, loosening the 800 MB current storage guard, or
 enabling live model releases. A manifest and separately retained key must
 actually exist before considering the private bucket a durable backup.
 
+## First real source batch: two-stage safe operator workflow
+
+To avoid having signed S3 URLs expire while streaming Neon rows, this project
+has a two-stage command. **Only a trusted owner-run machine with a durable,
+separately retained AES-256 key** can start a real archive. No key is generated
+by public CI and the first real production upload is not yet completed.
+
+Choose a private directory **outside Git** which exists and will not be
+automatically deleted. Set `DATABASE_URL` and `STOCK_ARCHIVE_KEY_HEX` in
+that private runtime (never print them or commit them). The key must be
+backed up independently in a secured password manager / offline vault
+before archiving. Reuse exactly the same key for remote recovery.
+
+**Stage 1: prepare from official Neon source, SELECT only:**
+
+```sh
+python -m scripts.twse_private_first_batch prepare \
+  --start 2026-11-02 --end 2026-11-20 \
+  --archive /private/archive/twse-202611.twseenc \
+  --manifest /private/archive/twse-202611.manifest.json \
+  --object-key market=twse/year=2026/twse-202611.twseenc
+```
+
+The tool validates the exact official current-issuer roster and the owner's
+exclusions via the existing exporter; creates only AES-GCM ciphertext
+locally; verifies all rows with exact decimals and source timestamps; and
+writes a nonsecret, non-overwritable SHA-256 manifest alongside it.
+An archive without verified source rows is rejected. The manifest still
+**must be copied to a durable independent location** before any archiving
+operation can be treated as disaster recoverable.
+
+**Stage 2: request two new short-lived signed URLs from Neon** for the
+private bucket `tw-stock-ai-private-history` and exact key
+`market=twse/year=2026/twse-202611.twseenc`: one upload/PUT and one
+download/GET. Check that object key does **not already exist** to avoid
+replacing an earlier archive. Inject both URLs into the trusted runtime's
+`NEON_PRIVATE_HISTORY_UPLOAD_URL` and
+`NEON_PRIVATE_HISTORY_DOWNLOAD_URL` environment variables. These URLs
+are short-lived bearer credentials; do not save them in GitHub files, logs
+or chat.
+
+```sh
+python -m scripts.twse_private_first_batch upload-check \
+  --archive /private/archive/twse-202611.twseenc \
+  --manifest /private/archive/twse-202611.manifest.json
+```
+
+Before uploading, the tool verifies the local archive still matches the
+manifest. After uploading only ciphertext, it downloads the same private
+object and performs a *remote-only* full AES-authenticated disaster-recovery
+check using the independent manifest. It reports success only on exact byte
+hash, canonical-source-row hash and source record-count equality.
+If upload or download fails, the original local encrypted file and manifest
+remain available for a safe retry with newly issued signed URLs.
+
+**Acceptance gate:** Keep the protected 800 MB/50 MB importer thresholds
+unchanged until the first owner-keyed real batch, independently retained
+manifest and key, remote restore, and model read-path regression checks all
+pass. A successful first slice still does not prove five years are backed
+up, does not authorize SQL deletion or index drops, and cannot justify
+turning on trading or modifying LINE. The project will not incur new fees.
+
 ## Storage-ceiling decision
 
 The guarded TWSE importer currently uses an internal physical PostgreSQL ceiling of **800,000,000 bytes**, with a further **50,000,000-byte maintenance reserve** and pessimistic per-date growth allowance. Although the Neon Free project limit is 1 GiB, that provider limit and the physical PostgreSQL size are **not interchangeable**, and the project may contain other branch/storage overhead. Raising the internal ceiling to 900 MB would change automatic scheduled production import behavior. **Do not raise it before a real, durable, independently restored archive and a verified project-level allowance assessment.** Never change plans or incur paid charges to bypass these gates.
 
 ## Tests
 
-`python -m unittest tests.test_twse_neon_private_object_archive tests.test_twse_local_encrypted_archive -v`
+`python -m unittest tests.test_twse_private_first_batch tests.test_twse_neon_private_object_archive tests.test_twse_neon_remote_restore tests.test_twse_local_encrypted_archive -v`
 
 Offline tests also exercise remote-only recovery after removal of the original local encrypted file. They simulate transport and never upload synthetic rows to the actual bucket. Real upload and download have not passed until the operator runs the complete procedure and validates independent private storage receipts.
