@@ -16,9 +16,7 @@ import re
 import tempfile
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from scripts.twse_local_encrypted_archive import (
-    _safe_output, verify_archive,
-)
+from scripts.twse_local_encrypted_archive import verify_archive
 
 BUCKET = "tw-stock-ai-private-history"
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
@@ -27,7 +25,7 @@ UPLOAD_ENV = "NEON_PRIVATE_HISTORY_UPLOAD_URL"
 DOWNLOAD_ENV = "NEON_PRIVATE_HISTORY_DOWNLOAD_URL"
 KEY_ENV = "STOCK_ARCHIVE_KEY_HEX"
 NEON_HOST = re.compile(
-    r"br-[a-z0-9-]+\\.storage\\.c-[0-9]+\\.[a-z0-9-]+\\.aws\\.neon\\.tech"
+    r"br-[a-z0-9-]+\.storage\.c-[0-9]+\.[a-z0-9-]+\.aws\.neon\.tech"
 )
 
 
@@ -103,7 +101,7 @@ def upload_encrypted_archive(path, *, hex_key, url, session=None):
 def verify_remote_copy(path, *, hex_key, url, session=None):
     """Download into a private temporary directory, authenticate and compare."""
     approved_signed_url(url)
-    src, expected_length, expected_proof, expected_sha = _inspect_source_archive(path, hex_key)
+    _, expected_length, expected_proof, expected_sha = _inspect_source_archive(path, hex_key)
     if session is None:
         import requests
         session = requests
