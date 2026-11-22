@@ -63,7 +63,12 @@ class LocalEncryptedArchiveTests(TestCase):
         self.assertFalse(proof["independent_second_backup_verified"])
         encrypted = self.file.read_bytes()
         self.assertNotIn(b"11993788.000000", encrypted)
-        self.assertNotIn(b"2026-11-19", encrypted[512:])
+        from struct import unpack
+        offset = len(tool.MAGIC)
+        header_len = unpack(">I", encrypted[offset:offset+4])[0]
+        ciphertext_only = encrypted[offset+4+header_len:]
+        self.assertNotIn(b"2026-11-19", ciphertext_only)
+        self.assertNotIn(b"11993788.000000", ciphertext_only)
         self.assertEqual(created["production_neon_deleted_rows"], 0)
 
     def test_wrong_key_and_tampering_refused(self):
