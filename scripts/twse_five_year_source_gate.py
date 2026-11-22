@@ -60,23 +60,36 @@ def snapshot(url):
     return evidence
 
 
+def blocking_reasons(evidence):
+    """Machine-readable reasons for a safe pause, never a completion claim."""
+    reasons = []
+    # A single-day official batch uses the existing 50MB maintenance reserve
+    # and pessimistic 900kB/day allowance; do not relax those constraints.
+    if not has_source_write_budget(evidence["database_bytes"], days=1):
+        reasons.append("neon_free_maintenance_reserve")
+    if evidence["verified_source_days"] < MIN_SOURCE_DAYS:
+        reasons.append("too_few_verified_official_source_days")
+    if evidence["active_twse"] < MIN_ACTIVE_TWSE:
+        reasons.append("official_current_listing_unverified")
+    if evidence["missing_weekdays"] <= 0:
+        reasons.append("no_unprocessed_weekday_candidates")
+    return reasons
+
+
 def decide(evidence):
-    # Adaptive-sized safe batches are permitted only if at least one official
-    # day fits the SAME 50MB maintenance reserve and pessimistic daily bound.
-    return (
-        has_source_write_budget(evidence["database_bytes"],days=1)
-        and evidence["verified_source_days"] >= MIN_SOURCE_DAYS
-        and evidence["active_twse"] >= MIN_ACTIVE_TWSE
-        and evidence["missing_weekdays"] > 0
-    )
+    return not blocking_reasons(evidence)
 
 
 def main():
     state = snapshot(os.getenv("DATABASE_URL", ""))
-    ready = decide(state)
+    reasons = blocking_reasons(state)
+    ready = not reasons
     result = {
         "scope": "TWSE_5Y_OFFICIAL_ACTIVE_ONLY",
         "should_run": ready, "evidence": state, "read_only": True,
+        "gate_status": "ready" if ready else "paused",
+        "blocking_reasons": reasons,
+        "safe_to_claim_five_year_completion": False,
         "line_messages_sent": False, "trading_enabled": False,
         "paid_upgrade_requested": False,
     }
@@ -85,6 +98,17 @@ def main():
     if output:
         with Path(output).open("a", encoding="utf-8") as stream:
             stream.write("should_run=" + str(ready).lower() + "\n")
+    summary = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary:
+        with Path(summary).open("a", encoding="utf-8") as stream:
+            stream.write("### Official TWSE five-year import preflight\n")
+            stream.write("- Gate: " + result["gate_status"] + "\n")
+            stream.write("- Pause reasons: " +
+                         (", ".join(reasons) if reasons else "none") + "\n")
+            stream.write("- Candidate weekdays (not verified sessions): " +
+                         str(state["missing_weekdays"]) + "\n")
+            stream.write("- Five-year completion proven: no\n")
+            stream.write("- Neon Free storage reserve unchanged; no paid upgrade or LINE changes\n")
 
 
 if __name__ == "__main__":

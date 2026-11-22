@@ -55,3 +55,22 @@ class TWSEFiveYearSourceGateTests(TestCase):
         self.assertEqual(history.schedule_dates(
             today=today, already=set(), batch_days=8,
             lookback_days=1830)[0], date(2026,11,20))
+
+
+    def test_gate_pause_reasons_are_explicit_and_never_completion(self):
+        self.assertEqual(gate.blocking_reasons(evidence()), [])
+        self.assertIn("neon_free_maintenance_reserve",
+                      gate.blocking_reasons(evidence(database_bytes=749_100_000)))
+        self.assertEqual(gate.blocking_reasons(evidence(
+            database_bytes=800_000_000,
+            active_twse=699,
+            verified_source_days=99,
+            missing_weekdays=0,
+        )), [
+            "neon_free_maintenance_reserve",
+            "too_few_verified_official_source_days",
+            "official_current_listing_unverified",
+            "no_unprocessed_weekday_candidates",
+        ])
+        self.assertTrue(gate.decide(evidence(database_bytes=743_071_744)))
+        self.assertFalse(gate.decide(evidence(database_bytes=749_500_000)))
