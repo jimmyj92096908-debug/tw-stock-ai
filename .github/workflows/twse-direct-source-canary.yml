@@ -1,0 +1,101 @@
+name: TWSE Direct Private Archive Official Source Canary (READ ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_official_direct_archive.py'
+      - 'tests/test_twse_official_direct_archive.py'
+      - '.github/workflows/twse-direct-source-canary.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_official_direct_archive.py'
+      - '.github/workflows/twse-direct-source-canary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-2022-direct-archive-source-canary
+  cancel-in-progress: false
+
+jobs:
+  synthetic-no-storage-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test private AES direct-history source and fail-closed calendar
+        run: |
+          python -m py_compile scripts/twse_official_direct_archive.py
+          python -m unittest tests.test_twse_official_direct_archive -v
+
+  real-official-two-day-ram-only:
+    needs: synthetic-no-storage-safety
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimal free official-source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Fetch exactly two verified sparse 2022 sessions (RAM only, READ ONLY)
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python - <<'PY'
+          import json
+          import os
+          from collections import Counter
+          from datetime import date
+          from scripts.twse_official_direct_archive import (
+              preflight, _canonical_source_rows,
+          )
+          from src.twse_dated_history import fetch_official_day
+
+          selected, allowed = preflight(
+              os.environ["DATABASE_URL"],
+              start=date(2022, 1, 1),
+              end=date(2022, 1, 31),
+          )
+          assert len(selected) >= 2, "Two verified missing market dates required"
+          source_days = selected[:2]
+          assert all(d.year == 2022 for d in source_days)
+          counts = Counter()
+          for bar in _canonical_source_rows(fetch_official_day, source_days, allowed):
+              assert bar["market"] == "twse"
+              assert bar["stock_id"] != "1589"
+              assert bar["trade_date"] in source_days
+              counts[bar["trade_date"].isoformat()] += 1
+          assert set(counts) == {d.isoformat() for d in source_days}
+          assert all(500 <= n <= 1500 for n in counts.values())
+          print(json.dumps({
+              "scope": "TWSE_TWO_SPARSE_REAL_OFFICIAL_DAYS_RAM_ONLY",
+              "dates": [d.isoformat() for d in source_days],
+              "verified_eligible_bars_per_date": dict(counts),
+              "neon_price_rows_written": 0,
+              "source_ohlcv_archives_or_artifacts_created": 0,
+              "line_messages_sent": 0,
+              "five_year_coverage_proven": False,
+              "live_model_release_approved": False,
+              "paid_upgrade_requested": False,
+          }, sort_keys=True))
+          PY
+      # No artifact upload: source values remain in runner memory only.
