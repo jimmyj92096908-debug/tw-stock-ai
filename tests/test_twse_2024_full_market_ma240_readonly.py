@@ -88,12 +88,12 @@ class CurrentTWSEMarketReadOnlyTests(TestCase):
         cursor.__enter__.return_value=cursor
         cursor.fetchmany.side_effect=[rows[:800],rows[800:],[]]
         conn.cursor.return_value=cursor
+        audit=m.audit_ordered_stock_rows
         with (
             TemporaryDirectory() as td,
             patch("psycopg.connect",return_value=conn) as connected,
             patch.object(m,"audit_ordered_stock_rows",
-                         side_effect=lambda source:
-                         m.audit_ordered_stock_rows(source,minimum=5)),
+                         side_effect=lambda source:audit(source,minimum=5)),
         ):
             path=Path(td)/"aggregate-only.json"
             report=m.execute("postgresql://fake",output=path)
