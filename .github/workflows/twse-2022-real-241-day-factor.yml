@@ -1,0 +1,95 @@
+name: TWSE 2022 Real 241 Session MA240 (RAM Only, No Trades)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2022_real_241_day_market_factor.py'
+      - 'tests/test_twse_2022_real_241_day_market_factor.py'
+      - '.github/workflows/twse-2022-real-241-day-factor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2022_real_241_day_market_factor.py'
+      - '.github/workflows/twse-2022-real-241-day-factor.yml'
+
+permissions:
+  contents: read
+
+# Same group as prior 48-day live canary: no overlapping official source calls.
+concurrency:
+  group: twse-2022-second-48-session-official-source
+  cancel-in-progress: false
+
+jobs:
+  synthetic-replay-and-no-write-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Verify immutable 241-source calendar, quotas, full raw 240-SMA and causal 12-SMC
+        run: |
+          python -m py_compile scripts/twse_2022_real_241_day_market_factor.py
+          python -m unittest -v tests.test_twse_2022_real_241_day_market_factor
+
+  real-historical-market-241-source:
+    needs: synthetic-replay-and-no-write-gate
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 38
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Replay up to 241 dated official TWSE full market days in ephemeral RAM
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python scripts/twse_2022_real_241_day_market_factor.py \
+            --output twse-2022-241-aggregate-only.json
+      - name: Require true 241 market dates, source quota, no leakage and blocked trading
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('twse-2022-241-aggregate-only.json')
+          d=json.loads(p.read_text())
+          assert p.stat().st_size < 8192
+          assert d['scope']=='TWSE_2022_REAL_241_SESSION_SOURCE_MA240_UNADJUSTED_RESEARCH_ONLY'
+          assert d['authentic_source_days_evaluated']==241
+          assert d['source_content_sha256']
+          assert d['real_2022_241_session_source_replayed']
+          assert not d['synthetic_full_241_session_stress_verified']
+          assert d['earliest_official_source_date']=='2022-01-04'
+          assert d['last_official_source_date']=='2022-12-26'
+          assert d['actual_official_http_requests']==241
+          assert d['maximum_official_http_requests']==241
+          assert d['minimum_interval_between_requests_seconds']>=4
+          assert d['stock_ma240_passes']>=500
+          assert d['technical_smc_240_prefix_checks']==5
+          assert not d['current_issuer_survivorship_unbiased']
+          assert not d['total_return_corporate_actions_adjusted']
+          assert not d['independent_forward_cost_stressed_model_alpha_validated']
+          assert not d['full_five_year_historical_source_coverage_proven']
+          assert not d['model_retraining_and_live_signals_approved']
+          assert d['neon_rows_written']==0
+          assert d['raw_price_or_factor_rows_persisted']==0
+          assert not d['raw_price_or_feature_artifacts_uploaded']
+          assert d['line_messages_sent']==0
+          assert not d['live_trading_approved']
+          print(json.dumps(d,ensure_ascii=False,sort_keys=True))
+          PY
+      # Deliberately NO raw OHLCV/feature artefacts and no manual dispatch/schedule.
