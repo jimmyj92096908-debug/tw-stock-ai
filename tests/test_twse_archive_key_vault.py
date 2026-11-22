@@ -154,3 +154,74 @@ class ArchiveKeyVaultTests(TestCase):
         bad["n"] = 2**24
         with self.assertRaises(ValueError):
             _open_vault(json.dumps(bad).encode(), self.pwd)
+
+    def test_gui_passphrase_supports_hidden_paste_without_console_output(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from scripts.twse_archive_key_vault import _prompt_secret
+
+        root = Mock()
+        dialog = Mock(return_value=self.pwd)
+        fake_tk = SimpleNamespace(
+            Tk=Mock(return_value=root),
+            simpledialog=SimpleNamespace(askstring=dialog),
+        )
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+            with patch.dict("sys.modules", {"tkinter": fake_tk}):
+                with patch("scripts.twse_archive_key_vault.getpass.getpass",
+                           side_effect=AssertionError("must not read console")):
+                    got = _prompt_secret("Private vault passphrase: ")
+        self.assertEqual(got, self.pwd)
+        root.withdraw.assert_called_once()
+        root.attributes.assert_called_once_with("-topmost", True)
+        dialog.assert_called_once_with(
+            "Private TWSE archive key", "Private vault passphrase",
+            show="*", parent=root,
+        )
+        root.destroy.assert_called_once()
+
+    def test_gui_cancellation_and_missing_desktop_fail_closed(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from scripts.twse_archive_key_vault import _prompt_secret
+
+        root = Mock()
+        fake_tk = SimpleNamespace(
+            Tk=Mock(return_value=root),
+            simpledialog=SimpleNamespace(askstring=Mock(return_value=None)),
+        )
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+            with patch.dict("sys.modules", {"tkinter": fake_tk}):
+                with self.assertRaisesRegex(ValueError, "cancelled"):
+                    _prompt_secret("Private vault passphrase: ")
+        root.destroy.assert_called_once()
+        fake_tk.Tk.side_effect = RuntimeError("desktop error with secret")
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+            with patch.dict("sys.modules", {"tkinter": fake_tk}):
+                with self.assertRaisesRegex(ValueError, "^Private graphical password input unavailable$"):
+                    _prompt_secret("Private vault passphrase: ")
+
+    def test_gui_never_asks_for_secret_in_public_ci(self):
+        from scripts.twse_archive_key_vault import _prompt_secret
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1", "CI": "true"}):
+            with patch("scripts.twse_archive_key_vault.getpass.getpass",
+                       side_effect=AssertionError("no CI prompts")):
+                with self.assertRaisesRegex(ValueError, "cannot run in CI"):
+                    _prompt_secret("Secret: ")
+
+    def test_gui_vault_load_uses_dialog_without_key_or_password_in_logs(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        self._make()
+        ask = Mock(return_value=self.pwd)
+        root = Mock()
+        fake_tk = SimpleNamespace(
+            Tk=Mock(return_value=root),
+            simpledialog=SimpleNamespace(askstring=ask),
+        )
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+            with patch.dict("sys.modules", {"tkinter": fake_tk}):
+                secret_hex = resolve_archive_key(vault_path=self.primary, env_key="")
+        self.assertEqual(len(secret_hex), 64)
+        self.assertNotIn(secret_hex, self.primary.read_text())
+        self.assertEqual(ask.call_count, 1)
