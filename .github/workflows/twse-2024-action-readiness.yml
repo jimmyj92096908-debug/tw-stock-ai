@@ -1,0 +1,78 @@
+name: TWSE 2024 Corporate Action Readiness (Read-Only Model Gate)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2024_corporate_action_readiness.py'
+      - 'tests/test_twse_2024_corporate_action_readiness.py'
+      - '.github/workflows/twse-2024-action-readiness.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2024_corporate_action_readiness.py'
+      - '.github/workflows/twse-2024-action-readiness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-write-offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Test explicit company-action completeness blockers
+        run: |
+          python -m py_compile scripts/twse_2024_corporate_action_readiness.py
+          python -m unittest -v tests.test_twse_2024_corporate_action_readiness
+
+  protected-real-neon-readonly:
+    needs: no-write-offline-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Audit exact 2024 company action/adjusted-price coverage read-only
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python scripts/twse_2024_corporate_action_readiness.py \
+            --output twse-2024-corporate-action-aggregate.json
+      - name: Keep unproven historical total returns and model blocked
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path('twse-2024-corporate-action-aggregate.json')
+          d=json.loads(f.read_text())
+          assert f.stat().st_size < 7000
+          assert 800<=d['eligible_current_listed_242_day_cohort']<=1000
+          assert d['total_eligible_raw_price_bars']==242*d['eligible_current_listed_242_day_cohort']
+          assert not d['independently_complete_historical_dividend_ledger_verified']
+          assert not d['dividend_and_split_factors_independently_verified']
+          assert not d['source_announcement_vintage_asof_each_signal_proven']
+          assert not d['all_stocks_total_return_labels_validated']
+          assert not d['production_live_signal_release_approved']
+          assert not d['research_model_allowed_to_train_on_unverified_total_return_labels']
+          assert d['neon_database_writes']==0
+          assert d['line_messages_sent']==0
+          print(json.dumps(d,ensure_ascii=False,sort_keys=True))
+          PY
+      # Aggregate CI logs only. No issuer events or raw stock rows uploaded.
