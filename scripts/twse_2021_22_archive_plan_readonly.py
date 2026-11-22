@@ -17,7 +17,18 @@ from datetime import date, datetime, timedelta
 from itertools import groupby
 import json
 import os
+from pathlib import Path
+import sys
 from zoneinfo import ZoneInfo
+
+# Owner-local `python -m scripts.twse_2021_22_archive_plan_readonly` starts
+# with the checkout root but not necessarily src/ on sys.path. Shared legacy
+# utilities use top-level imports such as official_market_feed. Match the
+# guarded direct-archive entrypoint without requiring a custom PYTHONPATH.
+# No network access, database writes, or file writes occur in this bootstrap.
+BOOTSTRAP_SRC_DIR = str(Path(__file__).resolve().parents[1] / "src")
+if BOOTSTRAP_SRC_DIR not in sys.path:
+    sys.path.insert(0, BOOTSTRAP_SRC_DIR)
 
 from scripts.twse_history_gap_audit import CALENDAR_SQL
 from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
