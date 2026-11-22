@@ -128,9 +128,6 @@ class FirstBatchTests(TestCase):
                 )
             self.assertEqual(remote.put_calls, 0)
             if mode == "manifest":
-                doc["encrypted_sha256"] = json.loads(
-                    self._original_manifest
-                )["encrypted_sha256"] if hasattr(self, "_original_manifest") else None
                 # Regenerate the existing manifest without making a new archive.
                 from scripts.twse_neon_remote_restore import create_backup_manifest
                 self.manifest.write_text(json.dumps(create_backup_manifest(
