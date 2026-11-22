@@ -130,4 +130,4 @@ class TWSEStatelessSourceProofTests(TestCase):
                              "TRUNCATE public."):
             self.assertNotIn(sql_mutation,
                 p.source_fingerprint.__code__.co_consts)
-        self.assertIn("2022",p.__doc__)
+        self.assertEqual(p.DAYS, (date(2022, 1, 4), date(2022, 1, 5)))
