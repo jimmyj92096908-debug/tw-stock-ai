@@ -166,7 +166,7 @@ class ArchiveKeyVaultTests(TestCase):
             Tk=Mock(return_value=root),
             simpledialog=SimpleNamespace(askstring=dialog),
         )
-        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1", "CI": "", "GITHUB_ACTIONS": ""}):
             with patch.dict("sys.modules", {"tkinter": fake_tk}):
                 with patch("scripts.twse_archive_key_vault.getpass.getpass",
                            side_effect=AssertionError("must not read console")):
@@ -190,13 +190,13 @@ class ArchiveKeyVaultTests(TestCase):
             Tk=Mock(return_value=root),
             simpledialog=SimpleNamespace(askstring=Mock(return_value=None)),
         )
-        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1", "CI": "", "GITHUB_ACTIONS": ""}):
             with patch.dict("sys.modules", {"tkinter": fake_tk}):
                 with self.assertRaisesRegex(ValueError, "cancelled"):
                     _prompt_secret("Private vault passphrase: ")
         root.destroy.assert_called_once()
         fake_tk.Tk.side_effect = RuntimeError("desktop error with secret")
-        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1", "CI": "", "GITHUB_ACTIONS": ""}):
             with patch.dict("sys.modules", {"tkinter": fake_tk}):
                 with self.assertRaisesRegex(ValueError, "^Private graphical password input unavailable$"):
                     _prompt_secret("Private vault passphrase: ")
@@ -219,7 +219,7 @@ class ArchiveKeyVaultTests(TestCase):
             Tk=Mock(return_value=root),
             simpledialog=SimpleNamespace(askstring=ask),
         )
-        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1"}):
+        with patch.dict(os.environ, {"TWSE_KEY_GUI_PROMPT": "1", "CI": "", "GITHUB_ACTIONS": ""}):
             with patch.dict("sys.modules", {"tkinter": fake_tk}):
                 secret_hex = resolve_archive_key(vault_path=self.primary, env_key="")
         self.assertEqual(len(secret_hex), 64)
