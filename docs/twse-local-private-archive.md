@@ -42,11 +42,11 @@ New-Item -ItemType Directory -Force "D:\PrivateStocks"
 # $env:DATABASE_URL = <your read-only Neon URL>
 # $env:STOCK_ARCHIVE_KEY_HEX = <your locally secured 64-hex-character key>
 
-python scripts/twse_local_encrypted_archive.py export `
+python -m scripts.twse_local_encrypted_archive export `
   --start 2026-11-01 --end 2026-11-20 `
   --archive "D:\PrivateStocks\TWSE-2026-11.twseenc"
 
-python scripts/twse_local_encrypted_archive.py verify `
+python -m scripts.twse_local_encrypted_archive verify `
   --archive "D:\PrivateStocks\TWSE-2026-11.twseenc"
 
 Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue
