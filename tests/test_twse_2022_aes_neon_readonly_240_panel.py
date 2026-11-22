@@ -11,9 +11,9 @@ from scripts.twse_2022_aes_neon_readonly_240_panel import (
 from tests.test_twse_2022_aes_factor_readiness import fake_row, sessions
 
 
-def two_stock_panel(dates, names=("1103", "2330")):
+def two_stock_panel(dates, names=("1103", "2330"), offset=0):
     return [
-        fake_row(day, sid, i)
+        fake_row(day, sid, i + offset)
         for i, day in enumerate(dates)
         for sid in names
     ]
@@ -49,7 +49,7 @@ class ReadonlyJoinTests(unittest.TestCase):
         local = days[:162]
         # Ten official source dates overlap; only 236 unique market days.
         other = days[152:236]
-        result = reconcile(two_stock_panel(local), two_stock_panel(other),
+        result = reconcile(two_stock_panel(local), two_stock_panel(other, offset=152),
                            other, stocks=("1103", "2330"))
         self.assertEqual(result["overlapping_source_sessions"], 10)
         self.assertEqual(result["unique_observed_2022_source_sessions"], 236)
