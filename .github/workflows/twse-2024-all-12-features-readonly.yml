@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/twse_2024_all_12_features_readonly.py'
+      - 'src/raw_factor_feature_bridge.py'
       - 'tests/test_twse_2024_all_12_features_readonly.py'
       - '.github/workflows/twse-2024-all-12-features-readonly.yml'
   push:
