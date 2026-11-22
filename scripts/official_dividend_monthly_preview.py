@@ -19,7 +19,7 @@ import requests
 from src.corporate_actions_data import (
     TWSE_EX_URL,TWSE_REDUCTION_URL,TPEX_EX_URL,TPEX_REDUCTION_URL,
     TPEX_EX_LEGACY_URL,TPEX_EX_COLUMNS,
-    _pick,_number,parse_date,unpack
+    _pick,_number,unpack
 )
 
 SOURCES={
@@ -82,6 +82,42 @@ def fetch_month(start,end,*,fetcher=_read_rows):
         raise ValueError("Unbounded or malformed exchange ex-right/reduction feed")
     return groups
 
+def _parse_official_event_date(value, *, market, kind, symbol):
+    """Parse whole-day official event dates; never guess month/day from partial dates.
+
+    Exchange feeds contain both ROC and Gregorian dates, including unseparated
+    7-/8-digit numbers. The shared historic parser's regex can misinterpret
+    compact ROC dates by greedily reading four year digits.
+    """
+    raw=str(value or "").strip()
+    separated=re.fullmatch(
+        r"([0-9]{2,4})[年./-]([0-9]{1,2})[月./-]([0-9]{1,2})日?",raw)
+    if separated:
+        y,m,d=map(int,separated.groups())
+    elif re.fullmatch(r"[0-9]{6,8}",raw):
+        y,m,d=int(raw[:-4]),int(raw[-4:-2]),int(raw[-2:])
+    else:
+        raise ValueError(
+            f"Unsupported {market}/{kind} official event date for stock "
+            f"{symbol}: {raw[:48]!r} (requires complete Y/M/D)")
+    if not 1<=y<=2100:
+        raise ValueError(
+            f"Invalid {market}/{kind} official event year for stock "
+            f"{symbol}: {raw[:48]!r}")
+    if y<1911:
+        y+=1911
+    if y>2100:
+        raise ValueError(
+            f"Out-of-range {market}/{kind} event year for stock "
+            f"{symbol}: {raw[:48]!r}")
+    try:
+        return date(y,m,d)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid {market}/{kind} official event calendar date for stock "
+            f"{symbol}: {raw[:48]!r}") from exc
+
+
 def _candidate(raw,*,market,kind,source,observed_at,start,end,current_set):
     if not isinstance(raw,dict):
         raise ValueError("Official event row not a map")
@@ -94,7 +130,7 @@ def _candidate(raw,*,market,kind,source,observed_at,start,end,current_set):
         "恢復交易日期","資料日期","日期","Date"])
     if day_raw is None:
         raise ValueError("Official issuer event lacks effective date")
-    actual=date.fromisoformat(parse_date(day_raw))
+    actual=_parse_official_event_date(day_raw,market=market,kind=kind,symbol=sym)
     if actual<start or actual>end:
         raise ValueError("Official response has event outside requested month")
     if kind=="ex":
@@ -177,7 +213,7 @@ def assess(groups,*,start,end,observed_at,current_stocks,existing_counts):
                                     "恢復交易日期","資料日期","日期","Date"])
                 if date_raw is None:
                     raise ValueError("Official event missing effective date")
-                raw_day=date.fromisoformat(parse_date(date_raw))
+                raw_day=_parse_official_event_date(date_raw,market=market,kind=kind,symbol=symbol)
                 if not start<=raw_day<=end:
                     # Some public endpoints ignore their query parameters.
                     # Reject out-of-window rows from the requested evidence
