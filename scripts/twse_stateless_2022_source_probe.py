@@ -44,7 +44,7 @@ def validate_dates(days, *, today=None):
     if (not isinstance(days, (list, tuple)) or
         not 1 <= len(days) <= MAX_DAYS or
         any(type(d) is not date for d in days) or
-        days != tuple(sorted(set(days))) and days != list(sorted(set(days))) or
+        tuple(days) != tuple(sorted(set(days))) or
         any(d.weekday() >= 5 or d >= today or d < date(2021, 11, 22)
             or d >= date(2023, 2, 24) for d in days)):
         raise ValueError("Require 1-2 unique ordered unprocessed 2021-2023 weekdays")
@@ -106,7 +106,7 @@ def execute(database_url, *, days=DAYS, fetcher=fetch_official_day,
         processed = _processed_days(conn)
         if len(allowed) < 700:
             raise ValueError("Official current TWSE roster unexpectedly incomplete")
-        if any(("twse","1589") in allowed for _ in (0,)):
+        if ("twse","1589") in allowed:
             raise ValueError("Owner excluded 1589 found in current research roster")
         if any(d in processed for d in ordered):
             raise ValueError("One or more proposed source dates are no longer missing")
