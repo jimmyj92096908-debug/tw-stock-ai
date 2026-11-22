@@ -45,7 +45,7 @@ jobs:
           s=Path('scripts/twse_local_encrypted_archive.py').read_text()
           w=Path('.github/workflows/twse-local-encrypted-archive-tests.yml').read_text()
           audit=Path('scripts/twse_local_archive_custody_audit.py').read_text()
-          assert 'delete_or_migrate_neon_authorized' in audit
+          assert 'neon_delete_or_migrate_authorized' in audit
           assert 'verify_archive' in audit
           assert 'default_transaction_read_only=on' in s
           assert 'REPEATABLE READ, READ ONLY' in s
