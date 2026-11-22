@@ -234,6 +234,82 @@ This capability does **not** automatically archive in ChatGPT background
 or schedule a credential-bearing GitHub job. Local operator execution
 is required. All tests are offline and use synthetic bars only.
 
+## Windows/PowerShell: durable owner-owned archive key custody
+
+Previous storage work is deliberately blocked until an AES-256 key can be
+restored after disk loss. The encrypted vault helper provides **two matching,
+password-protected files**, rather than a short-lived CI-generated secret.
+No plaintext archive key, passphrase, database URL or signed object URL goes
+into public GitHub or logs.
+
+**Owner-only prerequisites:** Choose a long unique passphrase, preserve it in
+a password manager/offline record, and provide a genuinely **independent**
+recovery destination (for example a removable offline drive, not merely a
+second directory on the same physical disk). Keep both storage paths outside
+the public Git checkout. This software can validate byte-level equality and
+decryptability, **not** verify different physical media or that the password
+has been independently backed up.
+
+Example on the user's trusted Windows PowerShell, from project root
+(change the recovery drive letter to a real user-owned external drive):
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\tw-stock-private" | Out-Null
+New-Item -ItemType Directory -Force "E:\tw-stock-recovery" | Out-Null
+python -m scripts.twse_archive_key_vault init `
+  --vault "$env:LOCALAPPDATA\tw-stock-private\history.twsekey" `
+  --recovery "E:\tw-stock-recovery\history.twsekey"
+```
+
+The helper prompts privately for the passphrase twice, generates 32 random
+key bytes in memory, and stores the SAME encrypted vault in both locations.
+It refuses any existing vault and any path inside Git. **Do not repeat init**
+after starting to archive: making a different key will make earlier archives
+unreadable. Test recovering both copies before using production:
+
+```powershell
+python -m scripts.twse_archive_key_vault verify `
+  --vault "$env:LOCALAPPDATA\tw-stock-private\history.twsekey" `
+  --recovery "E:\tw-stock-recovery\history.twsekey"
+```
+
+No archive key is printed by either command. If one device is lost, decrypt
+using the independently held encrypted key file and preserved passphrase.
+If BOTH files and their backups are lost, the archives cannot be recovered.
+Keep a separately stored copy of the nonsecret archive manifest too.
+
+A private 2022 source gap archive can then be prepared without exposing
+plaintext key material in environment variables or command history:
+
+```powershell
+# DATABASE_URL must already be configured privately in this trusted shell.
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\tw-stock-private\prices" | Out-Null
+python -m scripts.twse_official_direct_archive archive `
+  --start 2022-01-01 --end 2022-01-31 `
+  --archive "$env:LOCALAPPDATA\tw-stock-private\prices\twse-early-202201.twseenc" `
+  --manifest "$env:LOCALAPPDATA\tw-stock-private\prices\twse-early-202201.manifest.json" `
+  --object-key "market=twse/year=2022/twse-early-202201.twseenc" `
+  --key-vault "$env:LOCALAPPDATA\tw-stock-private\history.twsekey"
+```
+
+For the actual private Neon upload, obtain short-lived PUT and GET URLs from
+the authorized Neon storage console for exactly this object. **Never paste
+these URLs into public code or chats**. In the trusted shell, run:
+
+```powershell
+python -m scripts.twse_private_first_batch upload-check `
+  --archive "$env:LOCALAPPDATA\tw-stock-private\prices\twse-early-202201.twseenc" `
+  --manifest "$env:LOCALAPPDATA\tw-stock-private\prices\twse-early-202201.manifest.json" `
+  --key-vault "$env:LOCALAPPDATA\tw-stock-private\history.twsekey"
+```
+
+The resulting archive is considered **remote backed up only** after the
+manifest-bound private PUT and separately downloaded remote-only AES restore
+have actually passed, the manifest is backed up independently, and the
+recovery vault/long unique passphrase can be recovered. This must not lead
+to deletion of historical PostgreSQL rows, provider payment, or model release.
+Do not run owner vault creation in GitHub Actions or an ephemeral runner.
+
 ## Storage-ceiling decision
 
 The guarded TWSE importer currently uses an internal physical PostgreSQL ceiling of **800,000,000 bytes**, with a further **50,000,000-byte maintenance reserve** and pessimistic per-date growth allowance. Although the Neon Free project limit is 1 GiB, that provider limit and the physical PostgreSQL size are **not interchangeable**, and the project may contain other branch/storage overhead. Raising the internal ceiling to 900 MB would change automatic scheduled production import behavior. **Do not raise it before a real, durable, independently restored archive and a verified project-level allowance assessment.** Never change plans or incur paid charges to bypass these gates.
