@@ -1,0 +1,80 @@
+name: Official Exchange Source Quote Quality (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/exchange_source_ohlcv_quality.py'
+      - 'tests/test_exchange_source_ohlcv_quality.py'
+      - '.github/workflows/exchange-source-ohlcv-quality.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/exchange_source_ohlcv_quality.py'
+      - '.github/workflows/exchange-source-ohlcv-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exchange-source-quality-readonly
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and test no-price placeholder classification
+        run: |
+          python -m py_compile scripts/exchange_source_ohlcv_quality.py
+          python -m unittest tests.test_exchange_source_ohlcv_quality -v
+
+  source-audit:
+    needs: test
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - name: Audit current listed stock source rows without Neon writes
+        run: |
+          test -n "$DATABASE_URL"
+          python scripts/exchange_source_ohlcv_quality.py \
+            --start 2021-11-22 --end 2026-11-20 \
+            --output official-source-ohlcv-quality.json
+      - name: Verify unpriced legacy bars are never called valid model bars
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('official-source-ohlcv-quality.json').read_text())
+          assert d['status']=='PASS_UNPRICED_OLD_ROWS_EXPLICIT'
+          assert d['null_ohlc_is_not_usable_model_history']
+          assert d['database_rows_written']==0
+          assert d['trading_approved'] is False
+          print('Current official roster price-source quality audit verified')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: official-listed-ohlcv-quality-readonly
+          path: official-source-ohlcv-quality.json
+          retention-days: 14
+          if-no-files-found: ignore
