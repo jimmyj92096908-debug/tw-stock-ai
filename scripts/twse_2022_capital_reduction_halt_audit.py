@@ -108,11 +108,12 @@ def assess(market_dates, stock_source_rows):
         source_count[source] += 1
         observed.add((sid, d))
 
-    documented_halt_days = _halt_trade_dates()
-    if not documented_halt_days.issubset({
+    # Exchange holidays (e.g. 2022-09-09) are *not* stock halt days.
+    # A halt window may span an exchange-closed weekday; intersect with
+    # actual official market-session dates before comparing source holes.
+    documented_halt_days = _halt_trade_dates() & {
         (sid, d) for sid in HALTS for d in day_set
-    }):
-        raise ValueError("Published halt contains a non-observed market weekday")
+    }
 
     actual_missing = {
         (sid, d) for sid in FROZEN_STOCKS for d in day_set
