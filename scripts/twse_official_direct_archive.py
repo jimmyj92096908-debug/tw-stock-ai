@@ -23,6 +23,7 @@ from scripts.twse_local_encrypted_archive import (
     _key, _safe_output, encrypt_rows, verify_archive,
 )
 from scripts.twse_neon_remote_restore import create_backup_manifest, _object_key
+from scripts.twse_archive_key_vault import resolve_archive_key
 from scripts.twse_private_first_batch import _manifest_path, _save_manifest_exclusive
 from src.twse_dated_history import (
     MIN_COVERAGE_SHARE, fetch_official_day,
@@ -195,6 +196,7 @@ def main():
     cli.add_argument("--end", type=date.fromisoformat, required=True)
     cli.add_argument("--archive", type=Path)
     cli.add_argument("--manifest", type=Path)
+    cli.add_argument("--key-vault", type=Path)
     cli.add_argument("--object-key")
     options = cli.parse_args()
     try:
@@ -219,7 +221,10 @@ def main():
                 archive_path=options.archive,
                 manifest_path=options.manifest,
                 object_key=options.object_key,
-                hex_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX", ""),
+                hex_key=resolve_archive_key(
+                    vault_path=options.key_vault,
+                    env_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX", ""),
+                ),
             )
     except Exception:
         # Hide provider URLs/DSN and transient source rows from public CI logs.
