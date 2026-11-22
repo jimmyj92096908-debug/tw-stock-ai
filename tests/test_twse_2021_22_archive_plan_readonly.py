@@ -116,7 +116,7 @@ class ArchiveBatchPlannerTests(TestCase):
         self.assertIn("SET LOCAL statement_timeout", statements[1])
         self.assertIn("official_current_listed", statements[2])
         self.assertIn("stock_id='1589'", statements[2])
-        self.assertIn("stock_id = '2330'", audit.CALENDAR_SQL.replace("=", " = "))
+        self.assertIn("p.stock_id = '2330'", audit.CALENDAR_SQL)
         for query in (audit.METADATA_SQL, audit.CALENDAR_SQL):
             self.assertNotIn("INSERT INTO", query.upper())
             self.assertNotIn("DELETE FROM", query.upper())
