@@ -19,7 +19,7 @@ from scripts.twse_2022_dividend_exref_readonly import (
 )
 from scripts.twse_2022_known_dividend_gap_offline import classify_historical_dividend_gaps
 from scripts.twse_2021_22_traded_240_warmup_readonly import summarize_real_traded_warmup
-from scripts.twse_2022_cash_reduction_reference_readonly import prove_cash_reduction_references
+from scripts.twse_2022_cash_reduction_reference_readonly import EVENTS as RED_EVENTS, prove_cash_reduction_references
 from tests.test_twse_2022_known_dividend_gap_offline import prior
 from tests.test_twse_2022_reduction_only_240_sma_readonly import make_input
 
@@ -48,8 +48,7 @@ def evidence():
     reduction_ref = prove_cash_reduction_references(
         original, dict(original), set(market),
         {(sid, d): bars22[sid][d] for sid, ev in
-         __import__("scripts.twse_2022_cash_reduction_reference_readonly",
-                    fromlist=["EVENTS"]).EVENTS.items()
+         RED_EVENTS.items()
          for d in (ev["last_old_trade"], ev["first_new_trade"])})
     bars22["2327"][date(2022, 7, 1)] = Decimal("282")
     bars22["2327"][date(2022, 7, 4)] = Decimal("281")
