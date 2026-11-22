@@ -51,8 +51,8 @@ EVENTS = {
             "https://www.moneydj.com/kmdj/news/newsviewer.aspx?"
             "a=85c1b885-37e6-4918-81a4-5f1919977754",
         "contemporary_reference_report":
-            "https://tw.stock.yahoo.com/news/"
-            "%E5%9C%8B%E5%B7%A8%E6%9C%88%E5%BA%95%E6%81%A2%E5%BE%A9%E4%BA%A4%E6%98%93",
+            "https://www.moneydj.com/kmdj/news/newsviewer.aspx?"
+            "a=d7bb005a-ee91-478f-98a3-de9151b0defc",
         "old_close_evidence":
             "https://tw.stock.yahoo.com/news/"
             "%E5%9C%8B%E5%B7%A831%E6%97%A5%E6%81%A2%E5%BE%A9%E4%BA%A4%E6%98%93-"
