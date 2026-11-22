@@ -21,6 +21,7 @@ from scripts.twse_neon_private_object_archive import (
     DOWNLOAD_ENV, UPLOAD_ENV, _inspect_source_archive, approved_signed_url,
     upload_encrypted_archive,
 )
+from scripts.twse_archive_key_vault import resolve_archive_key
 from scripts.twse_neon_remote_restore import (
     BUCKET, EXPECTED_HOST, _object_key, _validate_manifest,
     create_backup_manifest, recover_remote_archive,
@@ -162,6 +163,7 @@ def main():
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument("--start", type=date.fromisoformat)
     ap.add_argument("--end", type=date.fromisoformat)
+    ap.add_argument("--key-vault", type=Path)
     ap.add_argument("--object-key")
     args = ap.parse_args()
     try:
@@ -170,7 +172,10 @@ def main():
                 ap.error("prepare requires --start, --end and --object-key")
             result = prepare(
                 database_url=os.environ.get("DATABASE_URL", ""),
-                hex_key=os.environ.get(KEY_ENV, ""),
+                hex_key=resolve_archive_key(
+                    vault_path=args.key_vault,
+                    env_key=os.environ.get(KEY_ENV, ""),
+                ),
                 start=args.start, end=args.end,
                 archive_path=args.archive, manifest_path=args.manifest,
                 object_key=args.object_key,
@@ -179,7 +184,10 @@ def main():
             result = upload_check(
                 archive_path=args.archive,
                 manifest_path=args.manifest,
-                hex_key=os.environ.get(KEY_ENV, ""),
+                hex_key=resolve_archive_key(
+                    vault_path=args.key_vault,
+                    env_key=os.environ.get(KEY_ENV, ""),
+                ),
                 upload_url=os.environ.get(UPLOAD_ENV, ""),
                 download_url=os.environ.get(DOWNLOAD_ENV, ""),
             )

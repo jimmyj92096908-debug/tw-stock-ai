@@ -16,6 +16,7 @@ import re
 import tempfile
 
 from scripts.twse_local_encrypted_archive import verify_archive
+from scripts.twse_archive_key_vault import resolve_archive_key
 from scripts.twse_neon_private_object_archive import (
     BUCKET, DOWNLOAD_ENV, KEY_ENV, MAX_ARCHIVE_BYTES,
     _inspect_source_archive, approved_signed_url, load_verified_research_slice,
@@ -164,10 +165,13 @@ def main():
     )
     cli.add_argument("action", choices=("manifest", "recover"))
     cli.add_argument("--archive", type=Path)
+    cli.add_argument("--key-vault", type=Path)
     cli.add_argument("--object-key")
     cli.add_argument("--manifest", type=Path)
     args = cli.parse_args()
-    hex_key = os.environ.get(KEY_ENV, "")
+    hex_key = resolve_archive_key(
+        vault_path=args.key_vault, env_key=os.environ.get(KEY_ENV, ""),
+    )
     if args.action == "manifest":
         if not args.archive or not args.object_key:
             cli.error("Manifest needs a verified local encrypted archive and object key")
