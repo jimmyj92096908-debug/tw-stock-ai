@@ -93,7 +93,7 @@ class TWSEIndependentReleaseBlockerTests(TestCase):
                       out["blocking_reasons"])
 
     def test_tampering_with_future_labels_and_actual_windows_is_rejected(self):
-        for bad in ("dataset", "arithmetic", "overlap", "purge", "approval"):
+        for bad in ("dataset", "arithmetic", "overlap", "purge", "missing_purge", "mismatched_holding_period", "approval"):
             p, f, e, saved = fixture()
             if bad == "dataset":
                 e["dataset_rows_sha256"] = "b" * 64
@@ -103,6 +103,10 @@ class TWSEIndependentReleaseBlockerTests(TestCase):
                 e["nonoverlap_windows"][1]["signal_date"] = "2026-09-10"
             elif bad == "purge":
                 e["nonoverlap_windows"][0]["last_mature_training_exit"] = "2026-09-01"
+            elif bad == "missing_purge":
+                del e["nonoverlap_windows"][0]["last_mature_training_exit"]
+            elif bad == "mismatched_holding_period":
+                e["nonoverlap_windows"][1]["entry_date"] = "2026-09-15"
             else:
                 p["live_trading_approved"] = True
             with self.subTest(bad=bad), self.assertRaises(ValueError):
