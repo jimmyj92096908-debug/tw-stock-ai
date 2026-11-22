@@ -20,6 +20,15 @@ class OfficialStorageRunwayTests(TestCase):
         self.assertEqual(report["existing_protected_campaign_start_ceiling_bytes"],
                          742_800_000)
         self.assertTrue(report["illustrative_runway_short_of_outstanding_weekdays"])
+        self.assertEqual(report["adaptive_one_day_capacity_ceiling_bytes"],
+                         749_100_000)
+        self.assertEqual(report["preserved_neon_maintenance_margin_bytes"],
+                         50_000_000)
+        self.assertGreater(report["adaptive_remaining_bytes"],
+                           report["protected_remaining_bytes"])
+        self.assertGreaterEqual(
+            report["illustrative_adaptive_additional_verified_source_days"],
+            report["illustrative_additional_verified_source_days"])
         self.assertGreater(report["illustrative_additional_verified_source_days"], 0)
         self.assertFalse(report["five_year_storage_feasibility_proven"])
         self.assertFalse(report["historical_source_data_modified"])
@@ -32,6 +41,7 @@ class OfficialStorageRunwayTests(TestCase):
         estimate = audit(evidence(after_bytes=632_750_080, end_days=550),
                          missing_weekdays=601)
         self.assertIsNone(estimate["illustrative_additional_verified_source_days"])
+        self.assertIsNone(estimate["illustrative_adaptive_additional_verified_source_days"])
         self.assertIsNone(estimate["illustrative_runway_short_of_outstanding_weekdays"])
         estimate = audit(evidence(after_bytes=625_000_000))
         self.assertIsNone(estimate["estimated_bytes_per_new_verified_day"])
