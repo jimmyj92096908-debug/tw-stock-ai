@@ -1,5 +1,6 @@
 """Safety regression for one-time source-verified TWSE long-history campaign."""
 import os
+from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -29,6 +30,15 @@ class TWSELongHistoryCampaignTests(TestCase):
         self.assertFalse(report["trading_enabled"])
         self.assertFalse(report["line_messages_sent"])
         run.assert_not_called()
+
+    def test_live_workflow_always_uses_actual_twenty_round_cap(self):
+        workflow=(Path(__file__).resolve().parents[1]/
+                  ".github/workflows/twse-long-history-campaign.yml").read_text()
+        self.assertIn("--apply --max-rounds 20 --report",workflow)
+        self.assertNotIn("--apply --max-rounds 14",workflow)
+        self.assertIn("if: steps.gate.outputs.should_run == 'true'",workflow)
+        self.assertIn("capacity_guard_blocked",workflow)
+        self.assertEqual(campaign.MAX_ROUNDS,20)
 
     def test_both_apply_gates_and_strict_20_rounds(self):
         with patch.dict(os.environ,{},clear=True):
