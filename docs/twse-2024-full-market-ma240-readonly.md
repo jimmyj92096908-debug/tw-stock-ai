@@ -27,7 +27,7 @@ MA240 and technical/SMC verification counts are logged. The code never
 writes source rows, financial output rows, composite scores or archives,
 never sends LINE, and never issues real or hypothetical orders.
 
-The workflow requires green offline CI before real main-branch read-only
+No live exchange HTTP requests are made by this benchmark; the 2024\nmarket quotes were already sourced and validated in Neon. This avoids\ncompeting for TWSE source bandwidth with the separate 2022 replay.\n\nThe workflow requires green offline CI before real main-branch read-only
 execution and uses a standard free GitHub Actions runner without
 uploaded artifacts. It is separate from the **2022 historical HTTP
 request pilot**, so two different verification dimensions remain clear:
