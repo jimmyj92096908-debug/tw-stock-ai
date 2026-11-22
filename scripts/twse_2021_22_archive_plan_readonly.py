@@ -54,7 +54,7 @@ def rolling_start(today: date) -> date:
         return today.replace(year=today.year - 5, day=28)
 
 
-def plan(rows, metadata: dict, *, today: date) -> dict:
+def plan(rows, metadata: dict, *, today: date, owner_aes_evidence=None) -> dict:
     """Build exact month-bounded archive previews, never a write instruction."""
     start = rolling_start(today)
     end = min(today, FIVE_YEAR_RESEARCH_END)
@@ -73,6 +73,20 @@ def plan(rows, metadata: dict, *, today: date) -> dict:
         raise ValueError("Fresh official issuer roster, exclusion and actual size required")
     if not isinstance(rows, (tuple, list)) or not rows or len(rows) > MAX_ANCHOR_DAYS:
         raise ValueError("Missing or unbounded 2330-anchored official candidate dates")
+
+    aes_days = frozenset()
+    aes_files = 0
+    if owner_aes_evidence is not None:
+        if (not isinstance(owner_aes_evidence, dict)
+                or owner_aes_evidence.get("full_file_integrity_verified") is not True
+                or type(owner_aes_evidence.get("authenticated_private_files")) is not int
+                or not 1 <= owner_aes_evidence["authenticated_private_files"] <= 72
+                or not isinstance(owner_aes_evidence.get("days"), frozenset)
+                or any(type(d) is not date or not start <= d < end
+                       for d in owner_aes_evidence["days"])):
+            raise ValueError("Complete authenticated local AES day evidence required")
+        aes_days = owner_aes_evidence["days"]
+        aes_files = owner_aes_evidence["authenticated_private_files"]
 
     sparse = []
     annual = defaultdict(lambda: {"reference_market_days": 0,
@@ -100,8 +114,15 @@ def plan(rows, metadata: dict, *, today: date) -> dict:
                 status["sparse_unprocessed_days"] += 1
                 sparse.append(day)
 
+    # Only confirmed 2330 anchors count. Never call an archive a source-day
+    # substitute when the Neon official reference ledger cannot align it.
+    referenced = {item[0] for item in rows}
+    if not aes_days <= referenced:
+        raise ValueError("Authenticated AES date does not match Neon trade-day anchor")
+    already_archived = aes_days & set(sparse)
+    pending = [d for d in sparse if d not in already_archived]
     batches = []
-    for (year, month), iterator in groupby(sparse, key=lambda d: (d.year, d.month)):
+    for (year, month), iterator in groupby(pending, key=lambda d: (d.year, d.month)):
         dates = list(iterator)
         for i in range(0, len(dates), MAX_DAYS_PER_ARCHIVE):
             group = dates[i:i + MAX_DAYS_PER_ARCHIVE]
@@ -131,6 +152,10 @@ def plan(rows, metadata: dict, *, today: date) -> dict:
         "owner_exclusion_1589_enforced": True,
         "anchored_days_scanned": len(rows),
         "sparse_unprocessed_days_to_independently_source_verify": len(sparse),
+        "authenticated_existing_owner_aes_source_days_within_sparse_gaps": len(already_archived),
+        "remaining_sparse_days_without_authenticated_owner_aes": len(pending),
+        "owner_aes_files_fully_authenticated_on_local_machine": aes_files,
+        "existing_archive_source_not_independently_rechecked_at_exchange_here": True,
         "years": dict(sorted(annual.items())),
         "bounded_private_archive_batch_count": len(batches),
         "batch_previews": batches,
@@ -148,7 +173,8 @@ def plan(rows, metadata: dict, *, today: date) -> dict:
     }
 
 
-def read_only_plan(database_url: str, *, today: date | None = None) -> dict:
+def read_only_plan(database_url: str, *, today: date | None = None,
+                   owner_aes_evidence=None) -> dict:
     today = today or datetime.now(ZoneInfo("Asia/Taipei")).date()
     start = rolling_start(today)
     end = min(today, FIVE_YEAR_RESEARCH_END)
@@ -164,14 +190,38 @@ def read_only_plan(database_url: str, *, today: date | None = None) -> dict:
             cur.execute(CALENDAR_SQL, (start, end))
             rows = cur.fetchall()
         conn.rollback()
-    return plan(rows, metadata, today=today)
+    return plan(rows, metadata, today=today,
+                owner_aes_evidence=owner_aes_evidence)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="READ ONLY 2021-22 TWSE encrypted archive priority windows")
-    parser.parse_args()
-    report = read_only_plan(os.environ.get("DATABASE_URL", ""))
+    parser.add_argument("--archive-dir", help="Existing owner-private .twseenc folder")
+    parser.add_argument("--key-vault", help="Existing owner-private AES key vault")
+    args = parser.parse_args()
+    if bool(args.archive_dir) != bool(args.key_vault):
+        parser.error("--archive-dir and --key-vault must be supplied together")
+    today = datetime.now(ZoneInfo("Asia/Taipei")).date()
+    evidence = None
+    if args.archive_dir:
+        from pathlib import Path
+        from scripts.twse_archive_key_vault import resolve_archive_key
+        from scripts.twse_local_aes_gap_dedup import authenticated_archive_days
+        directory = Path(args.archive_dir).expanduser()
+        if (directory.is_symlink() or not directory.is_dir()
+                or any((p / ".git").exists() for p in
+                       (directory, *directory.parents))):
+            raise ValueError("Use a private local archive directory outside Git")
+        paths = sorted(directory.glob("*.twseenc"))
+        evidence = authenticated_archive_days(
+            paths,
+            hex_key=resolve_archive_key(
+                vault_path=Path(args.key_vault),
+                env_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX", "")),
+            start=rolling_start(today), end=min(today, FIVE_YEAR_RESEARCH_END))
+    report = read_only_plan(os.environ.get("DATABASE_URL", ""), today=today,
+                            owner_aes_evidence=evidence)
     print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
 
 
