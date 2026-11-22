@@ -69,7 +69,7 @@ def validate_disposable_target(url: str) -> None:
             and parsed.username == DISPOSABLE_NAME
             and parsed.path == "/" + DISPOSABLE_NAME
             and not parsed.query and not parsed.fragment
-            and not parsed.params if hasattr(parsed, "params") else True
+            and parsed.password is not None
         )
     except ValueError as e:
         raise ValueError("Invalid local Postgres target address") from e
