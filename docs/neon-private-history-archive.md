@@ -32,6 +32,28 @@ Prerequisites: Python requirements installed in a trusted local runtime, a safe 
 
 **Strict boundaries:** This workflow does not modify Neon PostgreSQL, LINE, model signals, exclusions, or historical price records. A matching remote SHA-256 proves byte-level delivery and successful archive decoding, **not** that five-year coverage is complete or that an unbiased historical stock universe has been reconstructed. Do not delete or migrate source rows until explicit separate authorization and end-to-end model regression checks.
 
+## Read-only historical research loading
+
+After fully authenticated archive verification, a bounded slice can be loaded
+into Python for offline model feature computations without a Neon SQL write:
+
+```python
+from scripts.twse_neon_private_object_archive import load_verified_research_slice
+import os
+rows = load_verified_research_slice(
+    "/private/archive/twse-202611.twseenc",
+    hex_key=os.environ["STOCK_ARCHIVE_KEY_HEX"],
+    max_rows=50000,
+)
+# rows contain exact Decimal OHLCV fields and timezone-aware source timestamps.
+# Use only for research; do not publish model outputs or trading signals.
+```
+
+The adapter returns nothing unless every encrypted chunk and footer check
+passes, and it refuses unbounded memory use. A multi-year production model
+still needs a separate, fully validated cross-archive index, correct as-of
+feature joins, and full regression validation before any migration.
+
 ## Storage-ceiling decision
 
 The guarded TWSE importer currently uses an internal physical PostgreSQL ceiling of **800,000,000 bytes**, with a further **50,000,000-byte maintenance reserve** and pessimistic per-date growth allowance. Although the Neon Free project limit is 1 GiB, that provider limit and the physical PostgreSQL size are **not interchangeable**, and the project may contain other branch/storage overhead. Raising the internal ceiling to 900 MB would change automatic scheduled production import behavior. **Do not raise it before a real, durable, independently restored archive and a verified project-level allowance assessment.** Never change plans or incur paid charges to bypass these gates.
