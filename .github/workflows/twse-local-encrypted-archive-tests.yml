@@ -5,6 +5,8 @@ on:
     paths:
       - 'scripts/twse_local_encrypted_archive.py'
       - 'tests/test_twse_local_encrypted_archive.py'
+      - 'scripts/twse_local_archive_custody_audit.py'
+      - 'tests/test_twse_local_archive_custody_audit.py'
       - 'scripts/twse_lossless_archive_feasibility.py'
       - 'requirements.txt'
       - 'docs/twse-local-private-archive.md'
@@ -34,14 +36,17 @@ jobs:
         run: python -m pip install 'cryptography>=43,<49'
       - name: Test exact source-recovery, tamper, replay, key and path safety
         run: |
-          python -m py_compile scripts/twse_local_encrypted_archive.py
-          python -m unittest tests.test_twse_local_encrypted_archive -v
+          python -m py_compile scripts/twse_local_encrypted_archive.py scripts/twse_local_archive_custody_audit.py
+          python -m unittest tests.test_twse_local_encrypted_archive tests.test_twse_local_archive_custody_audit -v
       - name: Assert no production deletions or public artifact output
         run: |
           python - <<'PY'
           from pathlib import Path
           s=Path('scripts/twse_local_encrypted_archive.py').read_text()
           w=Path('.github/workflows/twse-local-encrypted-archive-tests.yml').read_text()
+          audit=Path('scripts/twse_local_archive_custody_audit.py').read_text()
+          assert 'delete_or_migrate_neon_authorized' in audit
+          assert 'verify_archive' in audit
           assert 'default_transaction_read_only=on' in s
           assert 'REPEATABLE READ, READ ONLY' in s
           assert "p.stock_id<>'1589'" in s
