@@ -117,6 +117,19 @@ def upload_check(*, archive_path, manifest_path, hex_key,
             or authenticated["canonical_rows_sha256"] !=
             manifest["canonical_rows_sha256"]):
         raise ValueError("Local encrypted archive no longer matches manifest")
+    # A successful GET means an object already exists. Refuse to replace it.
+    # A 403 or unexpected response is not proof of absence: fail closed.
+    if session is None:
+        import requests
+        session = requests
+    try:
+        with session.get(download_url, stream=True, timeout=(10, 20),
+                         allow_redirects=False) as probe:
+            if probe.status_code != 404:
+                raise RuntimeError("Existing or inaccessible private archive: refuse overwrite")
+    except Exception:
+        # Avoid leaking temporary bearer URLs in provider exception output.
+        raise RuntimeError("Cannot prove destination is a new private object") from None
     uploaded = upload_encrypted_archive(
         archive, hex_key=hex_key, url=upload_url, session=session,
     )
