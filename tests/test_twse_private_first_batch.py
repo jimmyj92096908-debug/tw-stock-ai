@@ -19,9 +19,9 @@ GET = BASE + "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=120&X-Amz-Signatur
 
 
 class Response:
-    status_code = 200
-    def __init__(self, payload=b""):
+    def __init__(self, payload=b"", status_code=200):
         self.payload = payload
+        self.status_code = status_code
 
     def __enter__(self):
         return self
@@ -49,6 +49,8 @@ class Transfer:
     def get(self, url, *, stream, timeout, allow_redirects):
         assert url == GET and stream and not allow_redirects
         self.get_calls += 1
+        if self.payload is None:
+            return Response(status_code=404)
         return Response(self.payload)
 
 
@@ -109,7 +111,21 @@ class FirstBatchTests(TestCase):
         self.assertEqual(result["source_rows"], 2)
         self.assertEqual(result["production_neon_rows_written_or_deleted"], 0)
         self.assertFalse(result["production_deletion_authorized"])
-        self.assertEqual((remote.put_calls, remote.get_calls), (1, 1))
+        self.assertEqual((remote.put_calls, remote.get_calls), (1, 2))
+
+    def test_existing_private_object_is_never_overwritten(self):
+        self._prepare()
+        remote = Transfer()
+        remote.payload = b"original-private-object"
+        with self.assertRaisesRegex(RuntimeError, "Cannot prove destination"):
+            upload_check(
+                archive_path=self.path, manifest_path=self.manifest,
+                hex_key=self.key, upload_url=PUT, download_url=GET,
+                session=remote,
+            )
+        self.assertEqual(remote.payload, b"original-private-object")
+        self.assertEqual(remote.put_calls, 0)
+        self.assertEqual(remote.get_calls, 1)
 
     def test_wrong_manifest_or_key_fails_before_upload(self):
         self._prepare()
