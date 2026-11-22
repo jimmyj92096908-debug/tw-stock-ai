@@ -21,6 +21,7 @@ if SRC not in sys.path:
 
 from scripts.twse_2021_owner_local_fast_archive import ALL_2021_DAYS
 from scripts.twse_local_aes_gap_dedup import authenticated_archive_days
+from scripts.twse_local_archive_custody_audit import MAX_ARCHIVE_BYTES
 from scripts.twse_local_encrypted_archive import verify_archive
 from scripts.twse_archive_key_vault import resolve_archive_key
 from scripts.twse_2022_aes_factor_readiness import audit as audit_2022
@@ -64,7 +65,10 @@ def _private_archives(raw):
     if any((a / ".git").exists() for a in (folder, *folder.parents)):
         raise ValueError("No AES archives under Git checkout")
     archives = sorted(folder.glob("*.twseenc"))
-    if not 1 <= len(archives) <= 72 or any(p.is_symlink() for p in archives):
+    if (not 1 <= len(archives) <= 72
+            or any(p.is_symlink() or not p.is_file()
+                   or not 0 < p.stat().st_size <= MAX_ARCHIVE_BYTES
+                   for p in archives)):
         raise ValueError("Bounded non-symlink private AES archives required")
     return archives
 
