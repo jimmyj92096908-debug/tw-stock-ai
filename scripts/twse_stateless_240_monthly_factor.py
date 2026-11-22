@@ -211,7 +211,7 @@ def assess_months(monthly_bars: list[list[dict]], *, baseline_days=MIN_VALID_PRI
         separators=(",", ":"), ensure_ascii=False,
     ).encode()).hexdigest()
     return {
-        "scope": "TWSE_2330_240_SESSION_MEMORY_ONLY_MONTHLY_FACTOR_RESEARCH",
+        "scope": "TWSE_SINGLE_STOCK_240_SESSION_MEMORY_ONLY_MONTHLY_FACTOR_RESEARCH",
         "stock_count": 1,
         "official_months_fetched": len(MONTHS),
         "market_source": SOURCE_TAG,
