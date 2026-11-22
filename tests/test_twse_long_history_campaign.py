@@ -80,7 +80,7 @@ class TWSELongHistoryCampaignTests(TestCase):
                                lookback_days=1830,pause_seconds=2)
 
     def test_stops_before_fetch_when_free_storage_reserve_insufficient(self):
-        near=state(bytes_=745_000_000)
+        near=state(bytes_=749_500_000)
         with (
             patch.dict(os.environ,{
                 "STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED":"yes",
@@ -100,7 +100,7 @@ class TWSELongHistoryCampaignTests(TestCase):
     def test_pauses_safely_after_verified_insert_before_next_unsafe_round(self):
         initial=state(bytes_=700_000_000)
         near_limit=state(source_days=138, rows=173610, valid=173495,
-                         source_rows=146116, bytes_=745_000_000)
+                         source_rows=146116, bytes_=749_500_000)
         with (
             patch.dict(os.environ,{
                 "STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED":"yes",
@@ -117,6 +117,30 @@ class TWSELongHistoryCampaignTests(TestCase):
         self.assertTrue(report["capacity_guard_blocked"])
         self.assertFalse(report["finished"])
         self.assertFalse(report["line_messages_sent"])
+
+    def test_adapts_to_smaller_batches_without_changing_storage_guard(self):
+        self.assertEqual(campaign.choose_safe_batch_days(700_000_000),8)
+        self.assertEqual(campaign.choose_safe_batch_days(745_000_000),5)
+        self.assertEqual(campaign.choose_safe_batch_days(749_000_000),1)
+        self.assertEqual(campaign.choose_safe_batch_days(749_100_000),0)
+        self.assertEqual(campaign.choose_safe_batch_days(749_500_000),0)
+        self.assertEqual(campaign.MAX_DATABASE_BYTES,800_000_000)
+
+        first=state(bytes_=745_000_000)
+        second=state(source_days=138,rows=173610,valid=173495,
+                     source_rows=146116,bytes_=747_500_000)
+        with (
+            patch.dict(os.environ,{
+                "STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED":"yes",
+                "STOCK_TWSE_HISTORY_WRITE_ENABLED":"yes",
+            }),
+            patch.object(campaign,"snapshot",side_effect=[first,second]),
+            patch.object(campaign,"source_run",
+                         return_value=[bar("2026-05-04",inserted=900)]) as source,
+        ):
+            campaign.execute("fake",apply=True,max_rounds=1)
+        source.assert_called_once_with(
+            "fake",apply=True,batch_days=5,lookback_days=1830,pause_seconds=2)
 
     def test_duplicate_source_date_refused(self):
         with self.assertRaisesRegex(RuntimeError,"Unverified"):
