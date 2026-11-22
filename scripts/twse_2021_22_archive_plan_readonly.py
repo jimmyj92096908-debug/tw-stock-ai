@@ -155,12 +155,12 @@ def read_only_plan(database_url: str, *, today: date | None = None) -> dict:
     if not database_url or start >= end:
         raise ValueError("Existing owner database access and eligible 2021-22 window required")
     import psycopg
-    from psycopg.rows import dict_row
+    from psycopg.rows import dict_row, tuple_row
     with psycopg.connect(database_url, connect_timeout=20, row_factory=dict_row) as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         conn.execute("SET LOCAL statement_timeout = '45000ms'")
         metadata = dict(conn.execute(METADATA_SQL).fetchone())
-        with conn.cursor(row_factory=None) as cur:
+        with conn.cursor(row_factory=tuple_row) as cur:
             cur.execute(CALENDAR_SQL, (start, end))
             rows = cur.fetchall()
         conn.rollback()
