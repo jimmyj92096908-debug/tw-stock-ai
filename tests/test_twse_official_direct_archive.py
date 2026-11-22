@@ -3,7 +3,10 @@ from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import os
 import secrets
+import subprocess
+import sys
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
@@ -205,3 +208,20 @@ class DirectOfficialEncryptedArchiveTests(TestCase):
         self.assertNotIn("requests.put", direct.prepare_official_archive.__code__.co_names)
         self.assertEqual(direct.MAX_REQUESTED_SESSIONS, 8)
         self.assertEqual(direct.MAX_CALENDAR_SPAN_DAYS, 35)
+
+
+class OwnerLocalCliImportTests(TestCase):
+    def test_owner_local_cli_import_without_pythonpath(self):
+        """Windows PowerShell owner path must work without CI-only PYTHONPATH=.:src."""
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        # `--help` imports the real package graph without connecting to Neon,
+        # requesting official source data, or writing encrypted artifacts.
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.twse_official_direct_archive", "--help"],
+            cwd=Path(__file__).resolve().parents[1],
+            env=env, capture_output=True, text=True, timeout=25,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("preview", completed.stdout)
+        self.assertIn("archive", completed.stdout)
