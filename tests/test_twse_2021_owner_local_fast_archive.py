@@ -41,7 +41,7 @@ class OwnerOneCommandArchiveTests(TestCase):
         planned,_=m.plan_private_batches(frozenset(),today=self.today)
         def preflight(db,*,start,end,today):
             batch=next(b for b in planned if b[0]==start)
-            return list(batch),{("twse",str(i)) for i in range(1100,1810)}
+            return list(batch),{("twse",str(i)) for i in range(1100,1810) if i!=1589}
         def prepare(db,*,start,end,archive_path,manifest_path,object_key,
                     hex_key,fetcher,today):
             dates=next(b for b in planned if b[0]==start)
@@ -84,7 +84,7 @@ class OwnerOneCommandArchiveTests(TestCase):
             return {"days":covered,"full_file_integrity_verified":True}
         def preflight(db,*,start,end,today):
             batch=next(b for b in planned if b[0]==start)
-            return list(batch),{("twse",str(i)) for i in range(1100,1810)}
+            return list(batch),{("twse",str(i)) for i in range(1100,1810) if i!=1589}
         def prepare(db,*,start,end,archive_path,manifest_path,object_key,
                     hex_key,fetcher,today):
             batch=next(b for b in planned if b[0]==start)
