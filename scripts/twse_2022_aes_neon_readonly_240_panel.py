@@ -152,10 +152,23 @@ def reconcile(local_rows, neon_rows, neon_days, *,
     spotchecks = 0
     prior_parity = 0
     sma_count = 0
+    # Diagnose *only* after 240 authenticated/anchored market sessions exist.
+    # A missing (stock, day) in the combined panel may be source coverage,
+    # suspension, or historical listing status; it is NOT a verified exchange
+    # outage or a request to insert a synthetic zero-price observation.
+    missing_sma240_stock_day_details = []
     if len(calendar) >= SMA_DAYS:
-        last240 = set(calendar[-SMA_DAYS:])
+        last240 = calendar[-SMA_DAYS:]
         for sid in sorted(target):
-            if not all((day, sid) in panel for day in last240):
+            missing = [d.isoformat() for d in last240 if (d, sid) not in panel]
+            if missing:
+                missing_sma240_stock_day_details.append({
+                    "stock_id": sid,
+                    "missing_observed_trade_day_count": len(missing),
+                    "missing_observed_trade_dates": missing,
+                    "reason_unresolved_without_historical_listing_and_source_audit": True,
+                    "source_refetch_or_neon_write_authorized": False,
+                })
                 continue
             ordered = sorted((row for (day, stock), row in panel.items()
                               if stock == sid and day <= last),
@@ -213,6 +226,11 @@ def reconcile(local_rows, neon_rows, neon_days, *,
         "exact_duplicate_stock_day_ohlcv_matches": overlap,
         "frozen_current_research_stock_count": len(stocks),
         "frozen_stocks_with_complete_last_240_source_sessions": len(eligible),
+        "sma240_stock_day_gap_diagnostics_available": len(calendar) >= SMA_DAYS,
+        "missing_sma240_stock_count":
+            len(missing_sma240_stock_day_details) if len(calendar) >= SMA_DAYS else None,
+        "missing_sma240_stock_day_details": missing_sma240_stock_day_details,
+        "missing_stock_day_not_independently_verified_as_exchange_or_listing_gap": True,
         "exact_decimal_sma240_computed_in_ram": sma_count,
         "raw_12_factor_vectors_spotchecked": spotchecks,
         "causal_prefix_parity_checks": prior_parity,
