@@ -166,7 +166,7 @@ def prove_cash_reduction_references(original, recomputed, market_days, closes):
             "first_resumed_stock_trade": ev["first_new_trade"].isoformat(),
             "known_halt_market_days_without_synthetic_bars":
                 len(EXPECTED_HALT_SESSIONS[stock]),
-            "authenticated_old_close_equals_preexisting_2022_report": True,
+            "authenticated_old_close_matches_contemporaneous_report": True,
             "cash_reduction_exchange_ratio_independent_source_parity": True,
             "theoretical_exchange_reference_price_parity_within_0_01": True,
             "post_resume_trade_close_authenticated_but_not_disclosed": True,
@@ -185,7 +185,7 @@ def prove_cash_reduction_references(original, recomputed, market_days, closes):
         "scope": "OWNER_ONLY_2022_TWSE_CASH_REDUCTION_OFFICIAL_REFERENCE_PARITY",
         "stocks_with_2022_actual_source_and_historical_reference_parity": len(results),
         "frozen20_market_day_sma240_complete_unchanged": 18,
-        "traded_240_warmup_current_stocks_unchanged": 2,
+        "previous_2021_2022_warmup_result_not_reverified_here": True,
         "halt_market_days_not_rewritten_as_trades": 14,
         "stock_action_research_witnesses": results,
         "no_observation_time_future_leakage_claim": True,
