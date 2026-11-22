@@ -141,6 +141,45 @@ key, or an isolated database restoration. The tool contains no Neon
 writing or deletion functions. Do not treat any of these reports as
 permission to delete a price row or index.
 
+## Isolated PostgreSQL restoration drill
+
+A separate offline rehearsal can restore an AES archive into a **session-only
+temporary table in a disposable local PostgreSQL 16 database**, then compare
+every original decimal and timezone-bearing source timestamp to the recovered
+record and canonical SHA-256. The temporary table is destroyed on commit;
+the rehearsal never inserts any row into Neon or even a persistent local
+table.
+
+**Safety requirement:** the supplied PostgreSQL URL must be explicitly
+`127.0.0.1:5432/stock_ci_restore` or
+`localhost:5432/stock_ci_restore`, using the account
+`stock_ci_restore`. Remote hosts, port overrides, conninfo URL queries,
+implicit databases, other users and production names are refused before
+opening a connection. Use a disposable local Postgres instance with that
+database and user; do not tunnel this address into Neon or any production
+service.
+
+Run from your private workstation only, with the existing locally held AES
+key and an archive from a previous owner-approved export. For example:
+
+```powershell
+# STOCK_ARCHIVE_KEY_HEX and STOCK_CI_RESTORE_URL should be set only in
+# this private terminal, using your password/key manager.
+python -m scripts.twse_local_archive_postgres_restore_drill `
+  --archive "D:\\PrivateStocks\\TWSE-2026-11.twseenc"
+```
+
+The GitHub CI uses an isolated **disposable postgres:16 service**, synthetic
+test-only records and no Neon credentials. It checks exact PostgreSQL numeric,
+timezone, record-count and SHA-256 roundtrips, malformed private archive
+rejection, remote URL rejection and `ON COMMIT DROP` cleanup.
+
+**Important:** this is a temporary-table restore drill, **not** durable
+production-grade restoration, independent backup/key recovery or evidence
+that five years are archived. The original production Neon must still be
+kept intact, and restoring data into a real permanent database would require
+a separately reviewed, permissioned plan.
+
 ## Limitations and hard stop
 
 This is a validated *local file-format and read-only export tool*, not a
