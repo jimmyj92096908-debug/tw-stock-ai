@@ -114,7 +114,6 @@ def preflight(database_url, *, start, end, today=None):
     import psycopg
     with psycopg.connect(
         database_url, connect_timeout=20,
-        options="-c default_transaction_read_only=on",
     ) as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         conn.execute("SET LOCAL statement_timeout='45000ms'")
