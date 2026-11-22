@@ -63,6 +63,7 @@ class TWSEReadOnlyRawPrototypeTests(TestCase):
         self.assertIsNotNone(report["mean_illustrative_net_excess_vs_equal_weight"])
         self.assertTrue(report["identical_illustrative_cost_assumptions_for_benchmark"])
         self.assertFalse(report["research_window_count_sufficient"])
+        self.assertTrue(report["retrospective_test_split_previously_reviewed"])
         self.assertFalse(report["live_trading_approved"])
         self.assertFalse(report["independent_future_validation_passed"])
         self.assertIn("default_transaction_read_only=on", connected.call_args.kwargs["options"])
