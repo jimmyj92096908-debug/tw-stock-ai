@@ -1,0 +1,64 @@
+name: TWSE 2021 Two-Day Original Official Source Proof (Zero Storage)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_two_day_official_source_canary.py'
+      - 'tests/test_twse_2021_two_day_official_source_canary.py'
+      - '.github/workflows/twse-2021-two-day-official-source.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2021_two_day_official_source_canary.py'
+      - '.github/workflows/twse-2021-two-day-official-source.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-2021-dec-two-day-original-source-zero-storage
+  cancel-in-progress: false
+
+jobs:
+  no-secret-python-source-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free source parser dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify explicit 2021 source date budget, read-only anchor and OHLCV guards
+        run: |
+          python -m py_compile scripts/twse_2021_two_day_official_source_canary.py
+          python -m unittest tests.test_twse_2021_two_day_official_source_canary -v
+
+  real-2021-two-days-aggregate-only:
+    needs: no-secret-python-source-tests
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free official source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify actual Dec 2021 TWSE source against independent Neon 2330 closes
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m scripts.twse_2021_two_day_official_source_canary
+      # Intentional: no artifact uploads, no market OHLCV row prints or storage,
+      # no LINE steps, no write-enabled credentials or billing workflows.
