@@ -80,12 +80,12 @@ jobs:
           from pathlib import Path
           r=json.loads(Path('twse-long-evidence.json').read_text())
           assert not (r['finished'] and r['capacity_guard_blocked'])
-          reason = 'Free Neon's protected margin reached; continue only after free capacity is available' if r['capacity_guard_blocked'] else 'Completed safe source batch'
+          reason = 'Protected Neon Free storage reserve reached; resume only if capacity becomes available' if r['capacity_guard_blocked'] else 'Completed safe source batch'
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as out:
-              out.write('### Official five-year backfill status\\n')
-              out.write('- '+reason+'\\n')
-              out.write('- New verified bars this run: '+str(sum(b['new_valid_bars'] for b in r['batches']))+'\\n')
-              out.write('- All five-year dates completed: '+str(r['finished'])+'\\n')
+              out.write('### Official five-year backfill status\n')
+              out.write('- '+reason+'\n')
+              out.write('- New verified bars this run: '+str(sum(b['new_valid_bars'] for b in r['batches']))+'\n')
+              out.write('- All five-year dates completed: '+str(r['finished'])+'\n')
           PY
       - name: Audit currently listed stock maturity and remaining source scope (read only)
         if: steps.gate.outputs.should_run == 'true' && success()
