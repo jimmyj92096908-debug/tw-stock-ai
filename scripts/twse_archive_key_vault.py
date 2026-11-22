@@ -204,10 +204,40 @@ def verify_vault(*, vault_path, recovery_path, passphrase):
     }
 
 
+def _prompt_secret(prompt):
+    """Owner-local hidden input: optional native Tk dialog supports Ctrl+V.
+
+    The opt-in environment variable selects input UI only; it MUST NOT hold
+    a passphrase. The Tk dialog never writes the secret to stdout, files, or
+    command history, unlike running a password generator in the terminal.
+    """
+    if os.environ.get("TWSE_KEY_GUI_PROMPT") != "1":
+        return getpass.getpass(prompt)
+    if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+        raise ValueError("Graphical owner-only passphrase prompts cannot run in CI")
+    try:
+        from tkinter import Tk, simpledialog
+        root = Tk()
+        try:
+            root.withdraw()
+            root.attributes("-topmost", True)
+            value = simpledialog.askstring(
+                "Private TWSE archive key", prompt.rstrip(": "),
+                show="*", parent=root,
+            )
+        finally:
+            root.destroy()
+    except Exception:
+        raise ValueError("Private graphical password input unavailable") from None
+    if value is None:
+        raise ValueError("Private graphical password input cancelled")
+    return value
+
+
 def load_archive_key_hex(vault_path, *, passphrase=None):
     """Load only in owner-local process memory, not stdout or GitHub outputs."""
     if passphrase is None:
-        passphrase = getpass.getpass("Private archive vault passphrase: ")
+        passphrase = _prompt_secret("Private archive vault passphrase: ")
     p = _private_existing_path(vault_path)
     return _open_vault(p.read_bytes(), passphrase).hex()
 
@@ -234,9 +264,9 @@ def main():
     if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
         cli.error("Never generate or verify owner archive keys on public CI")
     try:
-        pwd = getpass.getpass("Private vault passphrase (>=16 chars): ")
+        pwd = _prompt_secret("Private vault passphrase (>=16 chars): ")
         if opts.action == "init":
-            if pwd != getpass.getpass("Confirm vault passphrase: "):
+            if pwd != _prompt_secret("Confirm vault passphrase: "):
                 raise ValueError("Vault passphrase confirmation mismatch")
             result = initialize_vault(
                 vault_path=opts.vault, recovery_path=opts.recovery,
