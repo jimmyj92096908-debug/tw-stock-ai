@@ -17,7 +17,17 @@ from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import sys
 from zoneinfo import ZoneInfo
+
+# Owner-local `python -m scripts.twse_official_direct_archive` starts with only
+# the checkout root on sys.path. Legacy `src` utilities still use top-level
+# imports (official_market_feed, official_snapshot_ingest, etc.). Add this
+# checkout's own src directory, without needing PYTHONPATH or changing the
+# public CI/importer entrypoints. No database or network access occurs here.
+BOOTSTRAP_SRC_DIR = str(Path(__file__).resolve().parents[1] / "src")
+if BOOTSTRAP_SRC_DIR not in sys.path:
+    sys.path.insert(0, BOOTSTRAP_SRC_DIR)
 
 from scripts.twse_local_encrypted_archive import (
     _key, _safe_output, encrypt_rows, verify_archive,
