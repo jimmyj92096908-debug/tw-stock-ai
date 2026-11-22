@@ -46,9 +46,11 @@ jobs:
           assert 'REPEATABLE READ, READ ONLY' in s
           assert "p.stock_id<>'1589'" in s
           assert 'model_stock_exclusions' in s
-          assert 'upload-artifact' not in w
-          assert 'secrets.DATABASE_URL' not in w
-          assert 'workflow_dispatch' not in w
-          assert 'live_trading_approved' not in w
+          # Avoid self-referential literal tests: these assertions are
+          # themselves part of the workflow file under inspection.
+          assert ('uses: actions/upload-' + 'artifact@') not in w
+          assert ('secrets.' + 'DATABASE_URL') not in w
+          assert ('workflow_' + 'dispatch') not in w
+          assert ('live_trading_' + 'approved') not in w
           print('Offline-only AES-GCM safety CI; no private data exports')
           PY
