@@ -124,6 +124,24 @@ class MonthlyStateless240Tests(TestCase):
             with self.subTest(wrong=wrong),self.assertRaises(ValueError):
                 m.parse_month(p,month=dt)
 
+    def test_twse_noncomparable_X_change_is_explicitly_not_a_return(self):
+        month=m.MONTHS[0]
+        for value in ("X", "X0.00", "X+5.50", "X-10.5",
+                      "x0.00"):
+            with self.subTest(source_change=value):
+                source=payload(month)
+                source["data"][0][7]=value
+                bars=m.parse_month(source,month=month)
+                self.assertEqual(bars[0]["trade_date"],days(month)[0])
+                self.assertIsNone(bars[0]["price_change"])
+                self.assertTrue(bars[0]["close"] > 0)
+        for bad in ("Xerror", "X+nan", "???", "bad-change"):
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                m.parse_month(payload(month,bad_numeric=(7,bad)),
+                              month=month)
+        self.assertEqual(m.parse_monthly_change("+2.50"),Decimal("2.50"))
+        self.assertEqual(m.parse_monthly_change("-1.00"),Decimal("-1.00"))
+
     def test_insufficient_240_session_rejected(self):
         cases=[
             [monthly_bars(dt)[:18] for dt in m.MONTHS],
