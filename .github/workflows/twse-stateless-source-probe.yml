@@ -1,0 +1,81 @@
+name: TWSE 2022 Official Memory-only Source Feasibility
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_stateless_2022_source_probe.py'
+      - 'tests/test_twse_stateless_2022_source_probe.py'
+      - '.github/workflows/twse-stateless-source-probe.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_stateless_2022_source_probe.py'
+      - '.github/workflows/twse-stateless-source-probe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-early-source-nostorage-probe
+  cancel-in-progress: false
+
+jobs:
+  bounded-offline-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4' 'requests>=2.31,<3'
+      - name: Verify exact early dates, issuer exclusions and aggregate-only proof
+        run: |
+          python -m py_compile scripts/twse_stateless_2022_source_probe.py
+          python -m unittest tests.test_twse_stateless_2022_source_probe -v
+
+  real-official-memory-only:
+    needs: bounded-offline-test
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4' 'requests>=2.31,<3'
+      - name: Probe only two authentic pre-2023 TWSE daily sources in memory
+        run: |
+          test -n "$DATABASE_URL"
+          python scripts/twse_stateless_2022_source_probe.py --output twse-stateless-source-proof.json
+      - name: Verify old official source availability with zero Neon writes
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('twse-stateless-source-proof.json').read_text())
+          assert d['historical_dates_requested']==2
+          assert d['twse_historical_source_on_demand_observed'] is True
+          assert d['official_current_listed_and_user_excluded_only']
+          assert d['raw_ohlcv_files_or_archives_written']==0
+          assert d['neon_storage_bytes_written']==0
+          assert not d['complete_five_year_price_history_proven']
+          assert not d['model_live_trading_approved']
+          print('Two early official days fetched and verified without Neon price writes')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: twse-2022-official-aggregate-source-proof
+          path: twse-stateless-source-proof.json
+          retention-days: 14
+          if-no-files-found: error
