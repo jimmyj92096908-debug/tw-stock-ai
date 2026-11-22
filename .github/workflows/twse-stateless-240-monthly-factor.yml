@@ -1,0 +1,90 @@
+name: TWSE 240-Session Monthly Factor Research (No Neon Writes)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_stateless_240_monthly_factor.py'
+      - 'tests/test_twse_stateless_240_monthly_factor.py'
+      - '.github/workflows/twse-stateless-240-monthly-factor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_stateless_240_monthly_factor.py'
+      - '.github/workflows/twse-stateless-240-monthly-factor.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-240-monthly-source-nostorage-research
+  cancel-in-progress: false
+
+jobs:
+  offline-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Use only existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check 13-month causal 240-session factor and exact decimal
+        run: |
+          python -m py_compile scripts/twse_stateless_240_monthly_factor.py
+          python -m unittest tests.test_twse_stateless_240_monthly_factor -v
+
+  protected-official-monthly:
+    needs: offline-test
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies only
+        run: python -m pip install -r requirements.txt
+      - name: Fetch exactly thirteen historical TWSE STOCK_DAY months in RAM
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python scripts/twse_stateless_240_monthly_factor.py \
+            --output twse-240-monthly-aggregate-research.json
+      - name: Verify real 240 day warmup and block live model release
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('twse-240-monthly-aggregate-research.json').read_text())
+          assert d['stock_count']==1
+          assert d['official_months_fetched']==13
+          assert d['actual_valid_stock_sessions']>=241
+          assert d['feature_count']==12
+          assert d['exact_decimal_sma240_causal_parity_passed']
+          assert d['causal_previous_day_prefix_parity_passed']
+          assert d['raw_rows_persisted']==0 and d['neon_derived_rows_written']==0
+          assert d['github_raw_market_price_artifacts']==0
+          assert d['all_market_240_day_coverage_proven'] is False
+          assert d['dividend_adjusted_total_return_proven'] is False
+          assert d['independent_future_model_validation_passed'] is False
+          assert d['model_live_trading_approved'] is False
+          print('Official 240-session factor proof; no production write or alpha release')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: twse-240-monthly-factor-aggregate-only
+          path: twse-240-monthly-aggregate-research.json
+          retention-days: 14
+          if-no-files-found: error
