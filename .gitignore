@@ -1,0 +1,6 @@
+# Local private TWSE encrypted history archives and credentials must never be committed.
+*.twseenc
+*.partial.twseenc
+.twse-local/
+**/.env
+**/.env.local
