@@ -143,6 +143,65 @@ class ReadonlyJoinTests(unittest.TestCase):
             reconcile(rows, [], [], stocks=("1103", "2330"),
                       local_audit=mismatch)
 
+    def test_neon_pooler_connect_has_no_startup_gucs_and_sets_local_timeout(self):
+        # Pooled Neon rejects 'statement_timeout' within libpq startup options.
+        # Keep the read-only transaction guard and short timeout at SQL level.
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        import sys
+        from scripts.twse_2022_aes_neon_readonly_240_panel import (
+            _read_neon_2022_frozen_panel,
+        )
+
+        statements = []
+        connection_args = []
+        class FakeCursor:
+            description = None
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def execute(self, sql, params=None):
+                statements.append((sql.strip(), params))
+                if sql.strip() == SQL_NEON_PANEL.strip():
+                    self.description = [
+                        SimpleNamespace(name=n) for n in
+                        ("market", "stock_id", "trade_date", "open", "high",
+                         "low", "close", "volume", "turnover", "price_change",
+                         "transactions", "source", "retrieved_at")
+                    ]
+            def fetchall(self):
+                return []
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def cursor(self):
+                return FakeCursor()
+            def rollback(self):
+                statements.append(("ROLLBACK", None))
+
+        def connect(*args, **kwargs):
+            connection_args.append((args, kwargs))
+            return FakeConnection()
+
+        with patch.dict(sys.modules, {"psycopg": SimpleNamespace(connect=connect)}):
+            with patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake"}, clear=False):
+                dates, rows = _read_neon_2022_frozen_panel()
+
+        self.assertEqual((dates, rows), ([], []))
+        self.assertEqual(len(connection_args), 1)
+        self.assertEqual(connection_args[0][1], {"connect_timeout": 15})
+        self.assertEqual([sql for sql, _ in statements],
+                         ["SET TRANSACTION READ ONLY",
+                          "SET LOCAL statement_timeout = '90s'",
+                          SQL_NEON_DAYS.strip(),
+                          SQL_NEON_PANEL.strip(),
+                          "ROLLBACK"])
+        self.assertEqual(statements[3][1], (list(FROZEN_STOCKS),))
+
     def test_raw_same_price_and_readonly_sql_contract(self):
         original = fake_row(sessions(1)[0], "2330", 0)
         equal = dict(original)
