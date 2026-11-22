@@ -212,10 +212,12 @@ def _gunzip_bounded(payload):
     return data
 
 
-def verify_archive(archive_path, *, hex_key):
-    """Authenticate ALL frames, exact DECIMAL strings, keys and final footer.
+def verify_archive(archive_path, *, hex_key, on_verified_row=None):
+    """Authenticate every chunk and source row plus encrypted final footer.
 
-    Restore is verification-only: this intentionally has no SQL writes.
+    Optional callback consumes rows only after per-chunk authentication;
+    callers must keep all effects inside a rollback-safe isolated transaction
+    until the final footer is verified. This function never writes SQL itself.
     """
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -294,6 +296,8 @@ def verify_archive(archive_path, *, hex_key):
                     raise ValueError("Duplicate, excluded or nonchronological archive row")
                 previous = k
                 sample_hash.update(line)
+                if on_verified_row is not None:
+                    on_verified_row(recovered)
                 total += 1
             chunks += 1
             index += 1
