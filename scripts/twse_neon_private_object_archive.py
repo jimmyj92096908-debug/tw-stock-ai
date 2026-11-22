@@ -69,6 +69,31 @@ def _inspect_source_archive(path, hex_key):
     return src, length, verified, fingerprint.hexdigest()
 
 
+def load_verified_research_slice(path, *, hex_key, max_rows=50000):
+    """Read a bounded AES archive into memory only after full footer validation.
+
+    Research-only adapter: exact Decimal/timestamp provenance is preserved.
+    Nothing is exposed to a strategy until all encrypted chunks and the final
+    authenticated row SHA have passed. This NEVER publishes live signals.
+    """
+    if type(max_rows) is not int or not 1 <= max_rows <= 50000:
+        raise ValueError("Read-only research slice capacity must be bounded")
+    src, _, baseline, _ = _inspect_source_archive(path, hex_key)
+    rows = []
+
+    def collect(row):
+        if len(rows) >= max_rows:
+            raise ValueError("Research slice exceeds safe in-memory size")
+        rows.append(row)
+
+    final = verify_archive(src, hex_key=hex_key, on_verified_row=collect)
+    if (len(rows) != baseline["sample_rows"]
+        or len(rows) != final["sample_rows"]
+        or baseline["canonical_rows_sha256"] != final["canonical_rows_sha256"]):
+        raise RuntimeError("Research archive changed between full integrity checks")
+    return rows
+
+
 def upload_encrypted_archive(path, *, hex_key, url, session=None):
     """Upload only a previously AES-authenticated complete encrypted file."""
     approved_signed_url(url)
