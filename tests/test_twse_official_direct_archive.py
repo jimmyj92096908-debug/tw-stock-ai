@@ -92,8 +92,8 @@ class DirectOfficialEncryptedArchiveTests(TestCase):
             )
         self.assertEqual(days, list(DAYS))
         self.assertEqual(len(allowed), len(self.allowed))
-        self.assertIn("default_transaction_read_only=on",
-                      connected.call_args.kwargs["options"])
+        self.assertNotIn("options", connected.call_args.kwargs)
+        self.assertEqual(connected.call_args.kwargs["connect_timeout"], 20)
         self.assertEqual(
             conn.execute.call_args_list[0].args[0],
             "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
