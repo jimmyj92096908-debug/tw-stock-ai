@@ -97,7 +97,7 @@ class FirstBatchTests(TestCase):
         self.assertEqual(manifest["object_key"], KEY)
         self.assertNotIn(self.key, str(manifest))
         self.assertNotIn("postgresql://", str(manifest))
-        self.assertNotIn("TWSE_MI_INDEX_ALLBUT0999", self.path.read_bytes().decode("latin-1"))
+        self.assertNotIn(b"11993788.000000", self.path.read_bytes())
 
     def test_upload_and_independent_remote_recovery_verifies_exact_source(self):
         self._prepare()
