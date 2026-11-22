@@ -1,0 +1,41 @@
+name: TWSE Official Action Research Reconciliation (Offline)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/twse_official_research_action_reconcile.py"
+      - "tests/test_twse_official_research_action_reconcile.py"
+      - ".github/workflows/twse-official-research-action-reconcile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/twse_official_research_action_reconcile.py"
+      - "tests/test_twse_official_research_action_reconcile.py"
+      - ".github/workflows/twse-official-research-action-reconcile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-no-secret-test:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile and run pure Python offline evidence reconciler tests
+        env:
+          DATABASE_URL: ""
+          PYTHONPATH: "."
+        run: |
+          python -m py_compile scripts/twse_official_research_action_reconcile.py tests/test_twse_official_research_action_reconcile.py
+          python -m unittest tests.test_twse_official_research_action_reconcile -v
+      - name: Document non-release evidence boundary
+        if: always()
+        run: |
+          echo "### TWSE official action reconciliation: offline, no credentials" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tests do not fetch official sources, read Neon, alter prices, send LINE, or update model weights." >> "$GITHUB_STEP_SUMMARY"
+          echo "Model remains BLOCKED without complete true total return and independent future evidence." >> "$GITHUB_STEP_SUMMARY"
