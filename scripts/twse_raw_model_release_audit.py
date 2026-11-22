@@ -26,7 +26,7 @@ def _numeric(value, name):
     return float(value)
 
 
-def _windows(windows, metric):
+def _windows(windows, metric, *, require_training_purge=False):
     if not isinstance(windows, list) or not windows:
         raise ValueError("Missing actual purged research windows")
     prev_exit = None
@@ -44,10 +44,15 @@ def _windows(windows, metric):
             prev_exit is not None and signal <= prev_exit
         ):
             raise ValueError("Overlapping, noncausal or reversed holding window")
-        if "last_mature_training_exit" in w and (
-            date.fromisoformat(w["last_mature_training_exit"]) >= signal
-        ):
-            raise ValueError("Unpurged expanding regression training labels")
+        if require_training_purge:
+            if not isinstance(w.get("last_mature_training_exit"), str):
+                raise ValueError("Missing per-fold actual matured training exit")
+            try:
+                train_end = date.fromisoformat(w["last_mature_training_exit"])
+            except ValueError as e:
+                raise ValueError("Malformed matured training exit date") from e
+            if train_end >= signal:
+                raise ValueError("Unpurged expanding regression training labels")
         observed.append(_numeric(w.get(metric), "window excess return"))
         prev_exit = exit_day
     return observed
@@ -95,8 +100,16 @@ def review(probe, fixed, expanding, saved):
     )
     expanding_excess = _windows(
         expanding.get("nonoverlap_windows"),
-        "assumed_net_excess_vs_equal_weight",
+        "assumed_net_excess_vs_equal_weight", require_training_purge=True,
     )
+    # Both comparisons must be performed on precisely the same holding
+    # periods; changing test windows after seeing outcomes is not valid.
+    for left, right in zip(fixed["nonoverlap_test_windows"],
+                           expanding["nonoverlap_windows"]):
+        if any(left.get(k) != right.get(k) for k in (
+            "signal_date", "entry_date", "exit_date"
+        )):
+            raise ValueError("Fixed and expanding model evaluated different windows")
     n_fixed, n_expanding = len(fixed_excess), len(expanding_excess)
     if (n_fixed != probe.get("nonoverlapping_holdout_windows") or
         n_expanding != probe.get("expanding_purged_windows") or
