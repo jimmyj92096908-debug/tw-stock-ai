@@ -1,0 +1,64 @@
+name: TWSE 2021 Remaining 26 Official Source Days (RAM Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_remaining_26_official_source_audit.py'
+      - 'tests/test_twse_2021_remaining_26_official_source_audit.py'
+      - '.github/workflows/twse-2021-remaining-26-source-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2021_remaining_26_official_source_audit.py'
+      - '.github/workflows/twse-2021-remaining-26-source-audit.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-2021-remaining-26-authentic-readonly-source-proof
+  cancel-in-progress: false
+
+jobs:
+  verify-source-bounds-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free source parser dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test four exact 2021 groups, 26-source cap, price parity and no writes
+        run: |
+          python -m py_compile scripts/twse_2021_remaining_26_official_source_audit.py
+          python -m unittest tests.test_twse_2021_remaining_26_official_source_audit -v
+
+  actual-26-official-dates-aggregate-only:
+    needs: verify-source-bounds-offline
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free market-source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Independently verify 26 unchanged 2021 market-source dates at 4-second spacing
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python -m scripts.twse_2021_remaining_26_official_source_audit
+      # No uploaded artifacts, secrets in logs, row-level OHLCV, Neon mutation,
+      # local private archive key, extra paid resources, or LINE notification.
