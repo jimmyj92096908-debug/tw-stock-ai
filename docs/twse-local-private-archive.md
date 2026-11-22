@@ -110,6 +110,37 @@ does not permit deleting or migrating production prices. All reports are
 intended for local custody only; no original or encrypted data is sent to
 GitHub.
 
+## Reconcile private archive rows with the live Neon source
+
+After the same private manifest has passed the two-copy AES verification,
+recompute a matching SHA-256 of *every currently allowed, official-source
+Neon price row* over those archived date periods. The live comparison uses
+the very same SQL issuer-roster and owner-exclusion conditions as the
+original export, streamed in **one REPEATABLE READ, READ ONLY database
+snapshot**. Neither prices nor archive contents are uploaded or printed.
+
+On the owner's private computer (with the usual locally held
+`DATABASE_URL` and `STOCK_ARCHIVE_KEY_HEX` environment variables):
+
+```powershell
+python -m scripts.twse_local_archive_source_reconcile `
+  --local-manifest "D:\\PrivateStocks\\private-copy-plan.json"
+```
+
+Any missing original row, changed numeric value, change in source-vintage
+timestamp, changed currently-official-listed survivor population,
+inconsistent date span or corrupt AES copy causes the comparison to
+**fail closed**. Do not bypass this validation if the market roster has
+changed; first investigate the roster and source-vintage evidence.
+
+Passing the source comparison is **not** proof that historic delisted
+stocks, every original five-year trading date, corporate actions, all
+model factors, or a durable independent restore path are covered. It
+does not prove physical separation, retained access to the encryption
+key, or an isolated database restoration. The tool contains no Neon
+writing or deletion functions. Do not treat any of these reports as
+permission to delete a price row or index.
+
 ## Limitations and hard stop
 
 This is a validated *local file-format and read-only export tool*, not a
