@@ -34,7 +34,7 @@ class ExchangeSourceQualityTests(TestCase):
         for case in (
             row(total=10, usable=9, bad_range=1),
             row(total=10, usable=9, bad_price=1),
-            row("tpex", "TPEX_FAKE_SOURCE", total=10),
+            row("tpex", "TPEX_FAKE_SOURCE", total=10, usable=10),
             row(total=10, usable=9, bad_volume=1),
         ):
             self.assertEqual(
