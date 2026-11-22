@@ -66,6 +66,45 @@ class ReadonlyJoinTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "discrepancy"):
             reconcile(local, neon, [dates[0]], stocks=("1103", "2330"))
 
+    def test_other_official_twse_stock_day_fills_neon_primary_source_gap(self):
+        days = sessions(246)
+        local = two_stock_panel(days[:162])
+        primary = two_stock_panel(days[162:], names=("1103",), offset=162)
+        secondary = [
+            dict(fake_row(d, "2330", idx + 162), source="TWSE_STOCK_DAY")
+            for idx, d in enumerate(days[162:])
+        ]
+        secondary.append(dict(
+            fake_row(days[161], "2330", 161), source="TWSE_STOCK_DAY"
+        ))
+        report = reconcile(local, primary + secondary, days[162:],
+                           stocks=("1103", "2330"))
+        self.assertEqual(report["neon_source_sessions"], 84)
+        self.assertEqual(report["unique_observed_2022_source_sessions"], 246)
+        self.assertEqual(report["neon_frozen_cohort_source_counts"],
+                         {"TWSE_MI_INDEX_ALLBUT0999": 84, "TWSE_STOCK_DAY": 85})
+        self.assertEqual(report["exact_duplicate_stock_day_ohlcv_matches"], 1)
+        self.assertEqual(report["frozen_stocks_with_complete_last_240_source_sessions"], 2)
+        self.assertEqual(report["live_model_release_decision"], "BLOCKED")
+        self.assertEqual(report["neon_write_operations"], 0)
+
+    def test_secondary_official_source_must_match_local_aes_stock_day(self):
+        d = sessions(3)[-1]
+        local = [fake_row(d, "2330", 2)]
+        secondary = dict(fake_row(d, "2330", 2), source="TWSE_STOCK_DAY")
+        secondary["volume"] += 1
+        with self.assertRaisesRegex(ValueError, "discrepancy"):
+            reconcile(local, [secondary], [], stocks=("2330",))
+
+    def test_secondary_official_source_cannot_invent_unseen_market_day(self):
+        d = sessions(1)[0]
+        secondary = dict(fake_row(d, "2330", 0), source="TWSE_STOCK_DAY")
+        with self.assertRaisesRegex(ValueError, "absent market source day"):
+            reconcile([], [secondary], [], stocks=("2330",))
+        secondary["source"] = "FAKE_OFFICIAL"
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            reconcile([], [secondary], [], stocks=("2330",))
+
     def test_missing_last_day_for_one_stock_refuses_its_sma(self):
         days = sessions(241)
         local = two_stock_panel(days[:160])
