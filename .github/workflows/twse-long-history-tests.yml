@@ -8,6 +8,8 @@ on:
       - 'scripts/twse_five_year_source_integrity.py'
       - 'tests/test_twse_five_year_source_integrity.py'
       - 'scripts/twse_five_year_maturity_audit.py'
+      - 'scripts/twse_storage_runway_audit.py'
+      - 'tests/test_twse_storage_runway_audit.py'
       - 'tests/test_twse_five_year_maturity_audit.py'
       - 'src/twse_dated_history.py'
       - 'src/current_official_listing.py'
@@ -34,7 +36,7 @@ jobs:
       - name: Verify no-overwrite and official date-source batch accounting
         run: |
           python -m py_compile scripts/twse_long_history_campaign.py src/twse_dated_history.py scripts/twse_five_year_source_integrity.py
-          python -m unittest tests.test_twse_long_history_campaign tests.test_twse_dated_history tests.test_twse_five_year_source_gate tests.test_twse_five_year_maturity_audit tests.test_twse_five_year_source_integrity tests.test_official_market_feed -v
+          python -m unittest tests.test_twse_long_history_campaign tests.test_twse_dated_history tests.test_twse_five_year_source_gate tests.test_twse_five_year_maturity_audit tests.test_twse_storage_runway_audit tests.test_twse_five_year_source_integrity tests.test_official_market_feed -v
 
   postgres-source-integration:
     runs-on: ubuntu-latest

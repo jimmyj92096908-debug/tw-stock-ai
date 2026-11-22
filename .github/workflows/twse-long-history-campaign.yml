@@ -78,6 +78,11 @@ jobs:
       - name: Independently verify every dated source receipt and actual OHLCV in Neon (read only)
         if: steps.gate.outputs.should_run == 'true' && success()
         run: python scripts/twse_five_year_source_integrity.py --report twse-verified-source-integrity.json
+      - name: Audit observed free storage runway without writing to Neon
+        if: steps.gate.outputs.should_run == 'true' && success()
+        run: |
+          python -m unittest tests.test_twse_storage_runway_audit -v
+          python scripts/twse_storage_runway_audit.py --evidence twse-long-evidence.json --live-readonly --output twse-source-storage-runway.json
       - name: Preserve official source and no-overwrite accounting evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,5 +93,6 @@ jobs:
             twse-long-evidence.json
             twse-five-year-maturity.json
             twse-verified-source-integrity.json
+            twse-source-storage-runway.json
           retention-days: 14
           if-no-files-found: ignore
