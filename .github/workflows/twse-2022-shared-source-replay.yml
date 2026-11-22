@@ -1,0 +1,97 @@
+name: TWSE 2022 Shared Official Source Replay (No Storage)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2022_shared_source_stream.py'
+      - 'tests/test_twse_2022_shared_source_stream.py'
+      - '.github/workflows/twse-2022-shared-source-replay.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2022_shared_source_stream.py'
+      - '.github/workflows/twse-2022-shared-source-replay.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-2022-shared-official-source-replay-zero-storage
+  cancel-in-progress: false
+
+jobs:
+  offline-241-session-source-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free tests dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate 241 synthetic dates and protected source request cap
+        run: |
+          python -m py_compile scripts/twse_2022_shared_source_stream.py
+          python -m unittest tests.test_twse_2022_shared_source_stream -v
+
+  real-official-twelve-days-memory-only:
+    needs: offline-241-session-source-stress
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install free existing project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify twelve actual 2022 exchange source days in runner memory
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python scripts/twse_2022_shared_source_stream.py \
+            --output twse-2022-shared-source-pilot-aggregate.json
+      - name: Fail closed on request budget, issuer coverage and model release
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path('twse-2022-shared-source-pilot-aggregate.json')
+          d=json.loads(f.read_text())
+          assert f.stat().st_size <= 8192
+          assert d['authentic_source_days_evaluated']==12
+          assert d['actual_official_http_requests']==12
+          assert d['maximum_official_http_requests']==12
+          assert d['complete_common_stock_cohort']>=500
+          assert len(d['daily_current_eligible_source_bar_counts'])==12
+          assert min(d['daily_current_eligible_source_bar_counts'])>=500
+          assert d['one_official_market_source_per_day']
+          assert d['stock_ma240_passes']==0
+          assert not d['synthetic_full_241_session_stress_verified']
+          assert not d['stock_ma240_historical_proof']
+          assert not d['full_five_year_market_history_complete']
+          assert not d['survivorship_free_historical_universe_verified']
+          assert d['raw_price_or_factor_rows_persisted']==0
+          assert d['neon_rows_written']==0
+          assert d['line_messages_sent']==0
+          assert not d['live_trading_approved']
+          assert not d['paid_upgrade_requested']
+          print('Twelve authentic old TWSE days verified for many stocks without storage')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: twse-2022-twelve-day-aggregate-only
+          path: twse-2022-shared-source-pilot-aggregate.json
+          retention-days: 14
+          if-no-files-found: error
