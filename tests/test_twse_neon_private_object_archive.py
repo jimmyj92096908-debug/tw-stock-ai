@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 from scripts.twse_neon_private_object_archive import (
     approved_signed_url, upload_encrypted_archive, verify_remote_copy,
+    load_verified_research_slice,
 )
 from scripts.twse_local_encrypted_archive import encrypt_rows
 from tests.test_twse_local_encrypted_archive import fake_row
@@ -124,6 +125,25 @@ class NeonPrivateArchiveSafetyTests(TestCase):
             )
         self.assertEqual(remote.uploaded, 0)
         self.assertEqual(remote.downloaded, 0)
+
+    def test_research_loader_releases_only_fully_verified_rows(self):
+        rows = load_verified_research_slice(
+            self.archive, hex_key=self.key, max_rows=2
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["stock_id"], "2330")
+        self.assertEqual(rows[0]["close"], fake_row(date(2026, 11, 19), "2330")["close"])
+        self.assertEqual(rows[0]["trade_date"], date(2026, 11, 19))
+        with self.assertRaises(ValueError):
+            load_verified_research_slice(
+                self.archive, hex_key=self.key, max_rows=1
+            )
+        altered = self.archive.read_bytes()[:-7]
+        self.archive.write_bytes(altered)
+        with self.assertRaises(Exception):
+            load_verified_research_slice(
+                self.archive, hex_key=self.key, max_rows=2
+            )
 
     def test_remote_redirect_is_never_followed(self):
         class RedirectTransport(OfflineTransport):
