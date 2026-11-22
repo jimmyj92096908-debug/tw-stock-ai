@@ -1,0 +1,37 @@
+name: TWSE 2022 Known Dividend Gaps (Offline No-Secret Tests)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2022_known_dividend_gap_offline.py'
+      - 'tests/test_twse_2022_known_dividend_gap_offline.py'
+      - '.github/workflows/twse-2022-known-dividend-gap-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2022_known_dividend_gap_offline.py'
+      - 'tests/test_twse_2022_known_dividend_gap_offline.py'
+      - '.github/workflows/twse-2022-known-dividend-gap-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-offline-known-dividend-gaps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      STOCK_ARCHIVE_KEY_HEX: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test contemporary 2022 dividend evidence vs absent stored events
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_2022_known_dividend_gap_offline.py
+          python -m unittest tests.test_twse_2022_known_dividend_gap_offline -v
