@@ -6,7 +6,8 @@ review, not proof that every issuer traded on each date. No paid resources.
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, timedelta, datetime
+from zoneinfo import ZoneInfo
 import json
 import os
 
@@ -38,6 +39,20 @@ def summarize(rows, *, minimum=700, limit=30):
         for day, n, imported, closed in parsed
         if not imported and not closed and n < minimum
     ]
+    years = {}
+    for day, n, imported, closed in parsed:
+        yr = str(day.year)
+        group = years.setdefault(yr, {
+            "reference_dates": 0,
+            "unprocessed_undercovered_dates": 0,
+            "processed_but_sparse_dates": 0,
+        })
+        group["reference_dates"] += 1
+        if n < minimum:
+            if imported:
+                group["processed_but_sparse_dates"] += 1
+            elif not closed:
+                group["unprocessed_undercovered_dates"] += 1
     return {
         "scope": "TWSE_READ_ONLY_COVERAGE_TRIAGE_NOT_COMPLETION_PROOF",
         "reference": "existing_2330_trade_dates_only",
@@ -46,15 +61,28 @@ def summarize(rows, *, minimum=700, limit=30):
         "receipt_closed_dates": sum(closed for _, _, _, closed in parsed),
         "unprocessed_undercovered_dates": len(candidates),
         "minimum_count_heuristic": minimum,
+        "by_year": years,
         "priority_dates": candidates[:limit],
         "writes": 0,
         "line_messages": 0,
         "does_not_prove_listing_history_or_five_year_completion": True,
     }
 
-def run(database_url, *, start=date(2021, 11, 22),
-        end=date(2026, 11, 23), minimum=700, limit=30):
-    if not database_url or not start < end:
+def default_window(today):
+    """A rolling five-year window, including today's date but no future days."""
+    try:
+        start = today.replace(year=today.year - 5)
+    except ValueError:
+        start = today.replace(year=today.year - 5, day=28)
+    return start, today + timedelta(days=1)
+
+
+def run(database_url, *, start=None, end=None, minimum=700, limit=30):
+    today = datetime.now(ZoneInfo("Asia/Taipei")).date()
+    default_start, default_end = default_window(today)
+    start = start if start is not None else default_start
+    end = end if end is not None else default_end
+    if not database_url or not isinstance(start, date) or not isinstance(end, date) or not start < end:
         raise ValueError("Read-only database URL and valid dates required")
     import psycopg
     with psycopg.connect(
@@ -69,8 +97,8 @@ def run(database_url, *, start=date(2021, 11, 22),
 
 def main():
     parser = argparse.ArgumentParser(description="Read-only TWSE gap triage")
-    parser.add_argument("--start", type=date.fromisoformat, default=date(2021, 11, 22))
-    parser.add_argument("--end", type=date.fromisoformat, default=date(2026, 11, 23))
+    parser.add_argument("--start", type=date.fromisoformat)
+    parser.add_argument("--end", type=date.fromisoformat)
     parser.add_argument("--minimum", type=int, default=700)
     parser.add_argument("--limit", type=int, default=30)
     args = parser.parse_args()
