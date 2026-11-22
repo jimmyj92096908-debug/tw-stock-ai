@@ -106,6 +106,18 @@ class RawFactorOfflineWalkforwardTests(TestCase):
         self.assertFalse(r["may_update_production_model_weights"])
         self.assertFalse(r["may_release_positive_alpha_or_trade_signals"])
         self.assertFalse(r["live_trading_approved"])
+        self.assertTrue(r["benchmark_uses_identical_illustrative_cost_assumptions"])
+        self.assertFalse(r["research_window_count_sufficient"])
+        self.assertEqual(r["min_nonoverlapping_windows_for_research_comparison"],10)
+        expected=sum(x["illustrative_net_excess_vs_equal_weight"]
+                     for x in r["nonoverlap_test_windows"]) / r["nonoverlap_count"]
+        self.assertAlmostEqual(r["mean_illustrative_net_excess_vs_equal_weight"],
+                               expected, places=9)
+        for window in r["nonoverlap_test_windows"]:
+            self.assertAlmostEqual(
+                window["illustrative_net_excess_vs_equal_weight"],
+                window["illustrative_worst_cost_net_return"] -
+                window["equal_weight_illustrative_worst_cost_net_return"], places=9)
         for n,a in enumerate(r["nonoverlap_test_windows"]):
             self.assertLess(a["signal_date"],a["entry_date"])
             self.assertLess(a["entry_date"],a["exit_date"])

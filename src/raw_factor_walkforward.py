@@ -222,16 +222,25 @@ def purged_ridge_prototype(dataset,*,test_start):
         count=max(1,math.ceil(len(members)*TOP_FRACTION))
         selected=np.argsort(-rank,kind="stable")[:count]
         gross=float(np.mean([members[i]["raw_unadjusted_gross_return"] for i in selected]))
-        stress=stress_test(gross,fee_bps=14.25,sell_tax_bps=30,
-                           slippage_bps_scenarios=(10,30,60))
+        universe_gross=float(np.mean([
+            member["raw_unadjusted_gross_return"] for member in members]))
+        # Apply identical *illustrative* cost scenarios to the selected and
+        # equal-weight benchmark. These are not verified execution costs.
+        cost_assumptions=dict(fee_bps=14.25,sell_tax_bps=30,
+                              slippage_bps_scenarios=(10,30,60))
+        stress=stress_test(gross,**cost_assumptions)
+        benchmark_stress=stress_test(universe_gross,**cost_assumptions)
+        net=stress["worst_assumed_net_return"]
+        baseline_net=benchmark_stress["worst_assumed_net_return"]
         outcomes.append({
             "signal_date":signal.isoformat(),
             "entry_date":members[0]["entry_date"],
             "exit_date":exit_,"selected_count":count,
             "raw_price_only_gross_return":round(gross,10),
-            "illustrative_worst_cost_net_return":stress["worst_assumed_net_return"],
-            "universe_raw_mean_return":round(float(np.mean([
-                v["raw_unadjusted_gross_return"] for v in members])),10)
+            "illustrative_worst_cost_net_return":net,
+            "universe_raw_mean_return":round(universe_gross,10),
+            "equal_weight_illustrative_worst_cost_net_return":baseline_net,
+            "illustrative_net_excess_vs_equal_weight":round(net-baseline_net,10),
         })
         last_exit=_day(exit_)
     result.update({
@@ -240,6 +249,13 @@ def purged_ridge_prototype(dataset,*,test_start):
         "prototype_weights_from_mature_development_only":[round(float(v),12) for v in weights],
         "nonoverlap_test_windows":outcomes,
         "nonoverlap_count":len(outcomes),
+        "mean_illustrative_net_excess_vs_equal_weight":(
+            round(float(np.mean([
+                x["illustrative_net_excess_vs_equal_weight"] for x in outcomes])),10)
+            if outcomes else None),
+        "min_nonoverlapping_windows_for_research_comparison":10,
+        "research_window_count_sufficient":len(outcomes)>=10,
+        "benchmark_uses_identical_illustrative_cost_assumptions":True,
         "label_is_adjusted_total_return":False,
         "positive_alpha_conclusion_permitted":False
     })

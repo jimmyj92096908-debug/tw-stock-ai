@@ -1,6 +1,6 @@
 """Bounded TWSE raw-price research model: no Neon derived writes or LINE.
 
-This is an exploratory, unadjusted-price-only six-stock cohort. Neither the
+This is an exploratory, unadjusted-price-only twenty-stock cohort. Neither the
 saved original Ridge model nor any production score or trading flag changes.
 """
 from __future__ import annotations
@@ -22,7 +22,12 @@ from src.raw_factor_walkforward import (
 
 # Frozen, current-official-listed small *research* roster, NOT all-market
 # model validation or an as-of historical survivor-free universe.
-PROTOTYPE_STOCKS = ("1301", "1303", "2303", "2317", "2330", "2454")
+PROTOTYPE_STOCKS = (
+    "1103", "1201", "1216", "1301", "1303",
+    "2002", "2207", "2303", "2308", "2317",
+    "2327", "2330", "2357", "2379", "2382",
+    "2412", "2454", "2603", "2881", "6505",
+)
 MAX_STOCK_BARS = 400
 assert MAX_STOCK_BARS <= MAX_BARS
 
@@ -52,7 +57,7 @@ WHERE market='twse' AND stock_id=%s AND trade_date<=%s
 ORDER BY trade_date DESC LIMIT %s"""
 
 
-def execute(url, *, label_cutoff, test_start, max_signals=50, output_dir=None):
+def execute(url, *, label_cutoff, test_start, max_signals=90, output_dir=None):
     if (not url or type(label_cutoff) is not date or type(test_start) is not date
             or test_start >= label_cutoff
             or type(max_signals) is not int
@@ -89,7 +94,7 @@ def execute(url, *, label_cutoff, test_start, max_signals=50, output_dir=None):
         raise RuntimeError("Insufficient full-roster forward label maturity")
     evaluation = purged_ridge_prototype(dataset, test_start=test_start)
     report = {
-        "scope": "TWSE_SIX_STOCK_CAUSAL_RAW_RESEARCH_ONLY",
+        "scope": "TWSE_TWENTY_STOCK_CAUSAL_RAW_RESEARCH_ONLY",
         "feature_version": dataset["feature_version"],
         "included_stocks": len(PROTOTYPE_STOCKS),
         "source_price_rows": dataset["source_row_count"],
@@ -97,6 +102,12 @@ def execute(url, *, label_cutoff, test_start, max_signals=50, output_dir=None):
         "dataset_sha256": dataset["rows_sha256"],
         "development_dates": evaluation["development_dates"],
         "nonoverlapping_holdout_windows": len(evaluation["nonoverlap_test_windows"]),
+        "mean_illustrative_net_excess_vs_equal_weight": evaluation.get(
+            "mean_illustrative_net_excess_vs_equal_weight"),
+        "research_window_count_sufficient": evaluation.get(
+            "research_window_count_sufficient", False),
+        "identical_illustrative_cost_assumptions_for_benchmark": evaluation.get(
+            "benchmark_uses_identical_illustrative_cost_assumptions", False),
         "prototype_status": evaluation["status"],
         "historical_asof_capture_vintage_proven": False,
         "original_historical_exchange_universe_audited": False,
@@ -125,10 +136,10 @@ def execute(url, *, label_cutoff, test_start, max_signals=50, output_dir=None):
 
 
 def main():
-    p = argparse.ArgumentParser(description="TWSE six-stock read-only raw research")
+    p = argparse.ArgumentParser(description="TWSE twenty-stock read-only raw research")
     p.add_argument("--label-cutoff", type=date.fromisoformat, required=True)
     p.add_argument("--test-start", type=date.fromisoformat, required=True)
-    p.add_argument("--max-signal-days", type=int, default=50)
+    p.add_argument("--max-signal-days", type=int, default=90)
     p.add_argument("--output-dir", type=Path, default=Path("twse-raw-research-proof"))
     args = p.parse_args()
     print(json.dumps(execute(

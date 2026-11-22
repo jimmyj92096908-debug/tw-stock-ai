@@ -42,7 +42,7 @@ class TWSEReadOnlyRawPrototypeTests(TestCase):
         def execute(query, args=None):
             cursor = MagicMock()
             if query == model.ROSTER_SQL:
-                cursor.fetchone.return_value = {"eligible": 6}
+                cursor.fetchone.return_value = {"eligible": 20}
             elif query == model.PRICE_SQL:
                 cursor.fetchall.return_value = lookup[args[0]]
             elif query == model.SIGNALS_SQL:
@@ -54,12 +54,15 @@ class TWSEReadOnlyRawPrototypeTests(TestCase):
                 "postgresql://fake", label_cutoff=date(2025, 12, 31),
                 test_start=date(2025, 12, 12), max_signals=50,
             )
-        self.assertEqual(report["included_stocks"], 6)
+        self.assertEqual(report["included_stocks"], 20)
         self.assertEqual(report["prototype_status"],
                          "RETROSPECTIVE_EXPLORATORY_UNADJUSTED_PRICE_ONLY")
         self.assertGreaterEqual(report["development_dates"], 20)
         self.assertGreater(report["nonoverlapping_holdout_windows"], 0)
         self.assertTrue(report["no_derived_database_rows_written"])
+        self.assertIsNotNone(report["mean_illustrative_net_excess_vs_equal_weight"])
+        self.assertTrue(report["identical_illustrative_cost_assumptions_for_benchmark"])
+        self.assertFalse(report["research_window_count_sufficient"])
         self.assertFalse(report["live_trading_approved"])
         self.assertFalse(report["independent_future_validation_passed"])
         self.assertIn("default_transaction_read_only=on", connected.call_args.kwargs["options"])
@@ -68,12 +71,12 @@ class TWSEReadOnlyRawPrototypeTests(TestCase):
     def test_missing_or_excluded_roster_fails_before_any_prices(self):
         fake = MagicMock()
         fake.__enter__.return_value = fake
-        fake.execute.return_value.fetchone.return_value = {"eligible": 5}
+        fake.execute.return_value.fetchone.return_value = {"eligible": 19}
         with patch.object(model.psycopg, "connect", return_value=fake):
             with self.assertRaisesRegex(RuntimeError, "roster"):
                 model.execute("fake", label_cutoff=date(2025, 12, 31),
                               test_start=date(2025, 12, 12))
-        self.assertEqual(len(model.PROTOTYPE_STOCKS), 6)
+        self.assertEqual(len(model.PROTOTYPE_STOCKS), 20)
         self.assertNotIn("1589", model.PROTOTYPE_STOCKS)
         self.assertIn("official_current_listed", model.ROSTER_SQL)
         self.assertIn("model_stock_exclusions", model.ROSTER_SQL)
