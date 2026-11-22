@@ -1,0 +1,38 @@
+name: TWSE 2021-22 Real Traded 240-Day Warmup (Offline Tests)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_traded_240_warmup_readonly.py'
+      - 'tests/test_twse_2021_22_traded_240_warmup_readonly.py'
+      - '.github/workflows/twse-2021-22-real-traded240-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2021_22_traded_240_warmup_readonly.py'
+      - 'tests/test_twse_2021_22_traded_240_warmup_readonly.py'
+      - '.github/workflows/twse-2021-22-real-traded240-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-production-credentials-or-private-files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ""
+      STOCK_ARCHIVE_KEY_HEX: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free source and crypto dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run offline synthetic warmup and release guard assertions
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_2021_22_traded_240_warmup_readonly.py
+          python -m scripts.twse_2021_22_traded_240_warmup_readonly --help >/dev/null
+          python -m unittest tests.test_twse_2021_22_traded_240_warmup_readonly -v
