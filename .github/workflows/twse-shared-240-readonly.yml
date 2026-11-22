@@ -1,0 +1,89 @@
+name: TWSE Five-Stock Shared 240-Session Causal Fanout (No Writes)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_shared_240_readonly_fanout.py'
+      - 'tests/test_twse_shared_240_readonly_fanout.py'
+      - '.github/workflows/twse-shared-240-readonly.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_shared_240_readonly_fanout.py'
+      - '.github/workflows/twse-shared-240-readonly.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twse-shared-readonly-240-factor-five-stock
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: .:src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install free existing project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate shared-source 5-stock 242-date causal factor calculations
+        run: |
+          python -m py_compile scripts/twse_shared_240_readonly_fanout.py
+          python -m unittest -v tests.test_twse_shared_240_readonly_fanout
+
+  real-neon-readonly:
+    needs: offline-contract
+    if: >-
+      github.repository == 'jimmyj92096908-debug/tw-stock-ai' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .:src
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Fan out 242 verified official dates into 5 causal factor pipelines
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          python scripts/twse_shared_240_readonly_fanout.py \
+            --output twse-five-stock-shared-factor-summary.json
+      - name: Fail closed on missing source dates, future leakage or promotion
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('twse-five-stock-shared-factor-summary.json')
+          d=json.loads(p.read_text())
+          assert p.stat().st_size<5000
+          assert d['shared_official_market_dates']==242
+          assert d['source_stock_rows_consumed']==1210
+          assert d['source_gets_or_sql_queries_for_all_stocks']==1
+          assert d['causal_240_session_sma_checks']==5
+          assert d['causal_technical_smc_vector_checks']==5
+          assert d['missing_2022_bulk_market_sessions_fetched']==0
+          assert d['neon_price_and_derived_rows_written']==0
+          assert d['public_raw_price_or_factor_rows_written']==0
+          assert not d['all_market_five_year_factor_coverage_proven']
+          assert not d['model_live_trading_approved']
+          print('Shared 5-stock saved 2024 240-session research ONLY; zero Neon writes')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: twse-five-stock-shared-240-aggregate-evidence
+          path: twse-five-stock-shared-factor-summary.json
+          retention-days: 14
+          if-no-files-found: error
