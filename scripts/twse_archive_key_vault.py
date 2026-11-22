@@ -130,10 +130,15 @@ def _write_once(p, blob):
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     handle = os.open(p, flags, 0o600)
-    with os.fdopen(handle, "wb") as output:
-        output.write(blob)
-        output.flush()
-        os.fsync(output.fileno())
+    try:
+        with os.fdopen(handle, "wb") as output:
+            output.write(blob)
+            output.flush()
+            os.fsync(output.fileno())
+    except BaseException:
+        # An exclusive-create write may fail halfway through the file.
+        Path(p).unlink(missing_ok=True)
+        raise
 
 
 def initialize_vault(*, vault_path, recovery_path, passphrase):
