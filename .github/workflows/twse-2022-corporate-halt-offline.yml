@@ -1,0 +1,37 @@
+name: TWSE 2022 Cash Reduction Halts (Offline Evidence Tests)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2022_corporate_halt_audit.py'
+      - 'tests/test_twse_2022_corporate_halt_audit.py'
+      - 'docs/twse-2022-corporate-reduction-halts.md'
+      - '.github/workflows/twse-2022-corporate-halt-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2022_corporate_halt_audit.py'
+      - 'tests/test_twse_2022_corporate_halt_audit.py'
+      - '.github/workflows/twse-2022-corporate-halt-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-no-network-no-credentials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ""
+      STOCK_ARCHIVE_KEY_HEX: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run stdlib-only offline evidence and safety tests
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_2022_corporate_halt_audit.py
+          python -m scripts.twse_2022_corporate_halt_audit --help >/dev/null
+          python -m unittest tests.test_twse_2022_corporate_halt_audit -v
