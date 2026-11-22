@@ -71,7 +71,22 @@ jobs:
         env:
           STOCK_TWSE_LONG_HISTORY_CAMPAIGN_ENABLED: 'yes'
           STOCK_TWSE_HISTORY_WRITE_ENABLED: 'yes'
-        run: python scripts/twse_long_history_campaign.py --apply --max-rounds 14 --report twse-long-evidence.json
+        run: python scripts/twse_long_history_campaign.py --apply --max-rounds 20 --report twse-long-evidence.json
+      - name: Record safe capacity pause separately from full completion
+        if: steps.gate.outputs.should_run == 'true' && success()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          r=json.loads(Path('twse-long-evidence.json').read_text())
+          assert not (r['finished'] and r['capacity_guard_blocked'])
+          reason = 'Protected Neon Free storage reserve reached; resume only if capacity becomes available' if r['capacity_guard_blocked'] else 'Completed safe source batch'
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as out:
+              out.write('### Official five-year backfill status\n')
+              out.write('- '+reason+'\n')
+              out.write('- New verified bars this run: '+str(sum(b['new_valid_bars'] for b in r['batches']))+'\n')
+              out.write('- All five-year dates completed: '+str(r['finished'])+'\n')
+          PY
       - name: Audit currently listed stock maturity and remaining source scope (read only)
         if: steps.gate.outputs.should_run == 'true' && success()
         run: python scripts/twse_five_year_maturity_audit.py --report twse-five-year-maturity.json

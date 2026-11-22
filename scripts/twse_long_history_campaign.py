@@ -115,10 +115,14 @@ def execute(url, *, apply=False, max_rounds=MAX_ROUNDS, report_path=None):
     empty_batches=0
     for number in range(1,max_rounds+1):
         if not has_source_write_budget(previous["database_bytes"], days=MAX_DAYS_PER_ROUND):
+            # Stop at a known safe batch boundary instead of raising after
+            # already successfully importing/committing earlier dates.
+            # The final receipt explicitly records that history is NOT done.
             report["capacity_guard_blocked"]=True
             report["finished"]=False
+            report["capacity_pause_reason"]="neon_free_maintenance_reserve"
             save(report_path,report)
-            raise RuntimeError("TWSE source campaign blocked by Neon Free maintenance reserve")
+            break
         result=source_run(url,apply=True,batch_days=MAX_DAYS_PER_ROUND,
                           lookback_days=LOOKBACK_DAYS,pause_seconds=2)
         if not result:
@@ -168,6 +172,7 @@ def main():
         "new_valid_bars":sum(x["new_valid_bars"] for x in report["batches"]),
         "source_days":report["latest"]["source_days"],
         "finished":report["finished"],
+        "capacity_guard_blocked":report["capacity_guard_blocked"],
         "trading_enabled":False,"line_messages_sent":False,
     },ensure_ascii=False))
 
