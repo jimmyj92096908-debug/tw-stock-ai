@@ -1,0 +1,44 @@
+name: TWSE 2022 AES Offline 240-Factor Readiness (No Neon)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/twse_2022_aes_factor_readiness.py"
+      - "tests/test_twse_2022_aes_factor_readiness.py"
+      - ".github/workflows/twse-2022-aes-offline-factor-readiness.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/twse_2022_aes_factor_readiness.py"
+      - "tests/test_twse_2022_aes_factor_readiness.py"
+      - ".github/workflows/twse-2022-aes-offline-factor-readiness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-encrypted-source-tests:
+    if: github.repository == 'jimmyj92096908-debug/tw-stock-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install free local test libraries only
+        run: python -m pip install 'numpy>=1.26,<3' 'psycopg[binary]>=3.2,<4' 'cryptography>=43,<49' 'requests>=2.31,<3'
+      - name: Compile and run synthetic AES source tests
+        env:
+          DATABASE_URL: ""
+          STOCK_ARCHIVE_KEY_HEX: ""
+          PYTHONPATH: ".:src"
+        run: |
+          python -m py_compile scripts/twse_2022_aes_factor_readiness.py tests/test_twse_2022_aes_factor_readiness.py
+          python -m unittest tests.test_twse_2022_aes_factor_readiness -v
+      - name: Confirm release remains blocked
+        if: always()
+        run: |
+          echo "### Historical 2022 AES in-memory factor readiness" >> "$GITHUB_STEP_SUMMARY"
+          echo "Synthetic AES fixture only; no owner archive, Neon, LINE, secrets, persistent factors, or trading." >> "$GITHUB_STEP_SUMMARY"
+          echo "Real local historical archive audit still required; model remains BLOCKED." >> "$GITHUB_STEP_SUMMARY"
