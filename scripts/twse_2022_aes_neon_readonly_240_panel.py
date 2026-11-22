@@ -35,6 +35,8 @@ FROZEN_STOCKS = (
 FIELDS = ("open", "high", "low", "close", "volume",
           "turnover", "price_change", "transactions")
 SMA_DAYS = 240
+NEON_SECONDARY_SOURCE = "TWSE_STOCK_DAY"
+NEON_ALLOWED_SOURCES = frozenset({SOURCE_TAG, NEON_SECONDARY_SOURCE})
 MAX_NEON_STOCK_ROWS = 20 * MAX_DAYS
 SQL_NEON_DAYS = """
 SELECT DISTINCT trade_date
@@ -47,11 +49,23 @@ SQL_NEON_PANEL = """
 SELECT market,stock_id,trade_date,open,high,low,close,volume,
        turnover,price_change,transactions,source,retrieved_at
 FROM public.daily_prices
-WHERE market='twse' AND source='TWSE_MI_INDEX_ALLBUT0999'
-  AND trade_date >= DATE '2022-01-01' AND trade_date < DATE '2023-01-01'
+WHERE market='twse'
+  AND source IN ('TWSE_MI_INDEX_ALLBUT0999', 'TWSE_STOCK_DAY')
+  AND trade_date >= DATE '2022-09-01' AND trade_date < DATE '2023-01-01'
   AND stock_id = ANY(%s::varchar[])
 ORDER BY trade_date,stock_id
 """
+
+
+def _neon_bar_ok(row):
+    """Secondary official per-stock TWSE provenance is explicitly allowed.
+
+    Never relabel secondary rows themselves or claim the source was primary.
+    Reuse the strict AES OHLCV validator with a temporary source-tag view.
+    """
+    if row.get("source") not in NEON_ALLOWED_SOURCES:
+        raise ValueError("Unrecognized Neon TWSE official source provenance")
+    _bar_ok({**row, "source": SOURCE_TAG})
 
 
 def _same_price(a, b):
@@ -104,14 +118,20 @@ def reconcile(local_rows, neon_rows, neon_days, *,
     overlap = 0
     neon_target = set()
     neon_count = 0
+    neon_source_counts = Counter()
     for row in neon_rows:
         neon_count += 1
         if neon_count > MAX_NEON_STOCK_ROWS:
             raise ValueError("Unexpected Neo frozen panel volume")
-        _bar_ok(row)
+        _neon_bar_ok(row)
         sid = row["stock_id"]
-        if sid not in target or row["trade_date"] not in other_days:
+        d = row["trade_date"]
+        if (sid not in target or
+                (row["source"] == SOURCE_TAG and d not in other_days) or
+                (row["source"] == NEON_SECONDARY_SOURCE and
+                 d not in other_days and d not in local_days)):
             raise ValueError("Unrequested Neon record / absent market source day")
+        neon_source_counts[row["source"]] += 1
         key = (row["trade_date"], sid)
         if key in neon_target:
             raise ValueError("Duplicate database official stock-day record")
@@ -189,6 +209,7 @@ def reconcile(local_rows, neon_rows, neon_days, *,
             max(0, SMA_DAYS - len(calendar)),
         "local_authenticated_source_rows": local_rows_seen,
         "neon_frozen_cohort_source_rows_read": neon_count,
+        "neon_frozen_cohort_source_counts": dict(sorted(neon_source_counts.items())),
         "exact_duplicate_stock_day_ohlcv_matches": overlap,
         "frozen_current_research_stock_count": len(stocks),
         "frozen_stocks_with_complete_last_240_source_sessions": len(eligible),
