@@ -1,0 +1,64 @@
+name: Isolated TWSE AES Restore Drill (Disposable PostgreSQL Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_local_encrypted_archive.py'
+      - 'scripts/twse_local_archive_postgres_restore_drill.py'
+      - 'tests/test_twse_local_archive_postgres_restore_drill.py'
+      - '.github/workflows/twse-isolated-archive-restore-drill.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_local_archive_postgres_restore_drill.py'
+      - '.github/workflows/twse-isolated-archive-restore-drill.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: stock_ci_restore
+          POSTGRES_PASSWORD: ci-only-disposable-local
+          POSTGRES_DB: stock_ci_restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stock_ci_restore -d stock_ci_restore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: .:src
+      STOCK_CI_RESTORE_URL: postgresql://stock_ci_restore:ci-only-disposable-local@127.0.0.1:5432/stock_ci_restore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install only local test dependencies
+        run: python -m pip install 'cryptography>=43,<49' 'psycopg[binary]>=3.2,<4'
+      - name: Compile and run real disposable PostgreSQL AES restoration drill
+        run: |
+          python -m py_compile scripts/twse_local_encrypted_archive.py scripts/twse_local_archive_postgres_restore_drill.py
+          python -m unittest -v tests.test_twse_local_archive_postgres_restore_drill
+      - name: Assert no Neon credentials, production exports, or archive uploads
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          script=Path('scripts/twse_local_archive_postgres_restore_drill.py').read_text()
+          workflow=Path('.github/workflows/twse-isolated-archive-restore-drill.yml').read_text()
+          assert 'CREATE TEMP TABLE' in script and 'ON COMMIT DROP' in script
+          assert 'stock_ci_restore' in script
+          assert 'DELETE FROM public.' not in script
+          assert ('secrets.' + 'DATABASE_URL') not in workflow
+          assert ('uses: actions/upload-' + 'artifact@') not in workflow
+          assert ('workflow_' + 'dispatch') not in workflow
+          print('Disposable PostgreSQL only; no Neon write path')
+          PY
