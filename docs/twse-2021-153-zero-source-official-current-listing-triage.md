@@ -18,6 +18,9 @@
 
 ## Windows PowerShell 5.1 執行方式
 
+修正 2026-11-23 owner 回報：PowerShell 的未加引號 hashtable 鍵 `2021去重來源紀錄 = ...` 會產生 `IncompleteHashLiteral`，而且錯誤導致 PR #244 整個 `& {}` 命令在語法解析時就**沒有執行**。本範例改成 `Write-Host` 和明確驗收 `scope`、`153`、`BLOCKED`；既有 PR #243 輸出已存在的防覆寫訊息是預期安全防護，**不要刪除或重跑 PR #243**。
+
+
 本步要求之前已保存的三份私有報告、AES vault，及目前視窗已安全設定的 `DATABASE_URL`。**不要貼出 Neon URI、AES 金鑰或私有原始行情**。
 
 ```powershell
@@ -54,12 +57,15 @@
     if (!(Test-Path $output)) { throw '新報告不存在，禁止標示通過' }
 
     $r = Get-Content $output -Raw | ConvertFrom-Json
-    [PSCustomObject]@{
-        去重2021來源股票日期 = $r.prior_revalidated_2021_aes_neon_deduplicated_stock_date_pairs
-        完全無2021來源股票 = $r.no_2021_aes_or_neon_source_issuer_count
-        需再查官方歷史事件股票 = $r.zero_source_2021_prioritize_manual_historical_listing_research
-        模型狀態 = $r.model_release
-    } | Format-List
+    if ($r.scope -ne 'OWNER_2021_TWSE_153_ZERO_SOURCE_CURRENT_OFFICIAL_LISTING_DATE_TRIAGE' -or
+        $r.no_2021_aes_or_neon_source_issuer_count -ne 153 -or
+        $r.model_release -ne 'BLOCKED') {
+        throw '新報告驗收欄位不符；禁止標示成功'
+    }
+    Write-Host "2021 去重來源日期鍵：$($r.prior_revalidated_2021_aes_neon_deduplicated_stock_date_pairs)"
+    Write-Host "2021 完全無來源股票：$($r.no_2021_aes_or_neon_source_issuer_count)"
+    Write-Host "待查證歷史資格股票：$($r.zero_source_2021_prioritize_manual_historical_listing_research)"
+    Write-Host "模型發布狀態：$($r.model_release)"
     $r.current_listing_year_and_period_bucket_counts | Format-List
 }
 ```
