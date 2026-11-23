@@ -54,6 +54,7 @@ def validate_owner_30_queue(receipt):
     queue=receipt.get("owner_private_all_30_long_source_absence_runs_official_check_queue")
     if (not isinstance(queue,dict) or
             queue.get("schema_version")!=1 or
+            queue.get("scope")!="OWNER_2022_TWSE_ALL_LONG_SOURCE_ABSENCE_OFFICIAL_CHECK_QUEUE" or
             queue.get("underlying_116_source_absence_stocks")!=EXPECTED["stocks"] or
             queue.get("underlying_all_absent_stock_source_day_pairs")!=EXPECTED["pairs"] or
             queue.get("underlying_all_absent_source_day_runs")!=EXPECTED["all_runs"] or
