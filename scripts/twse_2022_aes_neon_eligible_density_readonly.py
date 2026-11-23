@@ -34,7 +34,7 @@ from scripts.twse_2022_aes_neon_five_year_overlay_offline import (
 )
 from scripts.twse_archive_key_vault import resolve_archive_key
 from scripts.twse_2022_116_internal_source_absence_triage import (
-    triage_internal_source_absences,
+    triage_internal_source_absences, full_six_plus_source_gap_queue,
 )
 from scripts.twse_2022_official_current_listing_date_triage import (
     fetch_official_company_basics, classify_official_current_listing,
@@ -497,11 +497,16 @@ def run_local(*, archive_2022, key_vault, panel_report,
               five_year_report, overlay_report, output,
               post2022_firstseen=False, official_current_listing_audit=False,
               private_listing_conflict_details=False, prior_official_listing_report=None,
-              internal_gap_triage=False):
+              internal_gap_triage=False, long_gap_queue=False,
+              prior_116_report=None):
     if internal_gap_triage and (
             post2022_firstseen or official_current_listing_audit
             or private_listing_conflict_details):
         raise ValueError("Internal 116 source gap review must run as separate owner-only report")
+    if long_gap_queue and not (internal_gap_triage and prior_116_report):
+        raise ValueError("Complete 30 gap queue requires prior verified 116 internal source receipt")
+    if prior_116_report and not long_gap_queue:
+        raise ValueError("Prior 116 receipt only accepted in special private 30 gap queue mode")
     if official_current_listing_audit and not post2022_firstseen:
         raise ValueError("Official current listing date comparison requires stored first-observed-year receipt")
     if private_listing_conflict_details and not (
@@ -564,6 +569,32 @@ def run_local(*, archive_2022, key_vault, panel_report,
         original,five_year,overlay,roster=roster,aes_by_day=aes,
         neon_bulk_days=bulk,neon_rows=neon_rows,source_audit=source_proof,
         post2022_first_seen=post2022,internal_gap_triage=internal_gap_triage)
+    if long_gap_queue:
+        prior_path = _private_file(prior_116_report,should_exist=True)
+        if prior_path in set([*inputs,out]):
+            raise ValueError("Prior 116 private proof must differ from other evidence/output")
+        prior=json.loads(prior_path.read_text(encoding="utf-8"))
+        old_gap=prior.get("owner_private_2022_116_internal_source_absence_triage")
+        new_gap=report.get("owner_private_2022_116_internal_source_absence_triage")
+        if (prior.get("schema_version")!=1 or prior.get("scope")!=SCOPE
+                or prior.get("year")!=2022 or prior.get("model_release")!="BLOCKED"
+                or prior.get("production_neon_writes")!=0 or prior.get("line_messages_sent")!=0
+                or not isinstance(old_gap,dict) or old_gap!=new_gap
+                or old_gap.get("source_observation_gap_count_signatures",{}).get(
+                    "six_or_more_day_run_count")!=30):
+            raise ValueError("Previously accepted PR237 116-source-gap private report drifted")
+        union_dates=tuple(sorted(aes.keys()|set(bulk)))
+        neon_by_day={}
+        for d,sid,_source in neon_rows:
+            neon_by_day.setdefault(d,set()).add(sid)
+        observed={
+            d:aes.get(d,set())|neon_by_day.get(d,set()) for d in union_dates
+        }
+        queue=full_six_plus_source_gap_queue(
+            roster,union_dates,observed,
+            previous_authenticated_116_report=old_gap,
+            expected_long_run_count=30)
+        report["owner_private_all_30_long_source_absence_runs_official_check_queue"]=queue
     if official_current_listing_audit:
         observed_2022 = set()
         for values in aes.values():
@@ -593,12 +624,14 @@ def run_local(*, archive_2022, key_vault, panel_report,
         report["owner_129_no2022_current_twse_official_listing_date_triage"] = result
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
     if len(payload.encode("utf-8"))>(
-            95000 if internal_gap_triage else MAX_REPORT_BYTES):
+            114000 if long_gap_queue else 95000 if internal_gap_triage else MAX_REPORT_BYTES):
         raise ValueError("Private stock-date density report exceeds safe limit")
     with out.open("x",encoding="utf-8") as fp:
         fp.write(payload)
     print(json.dumps({
-        "status":("TWSE_2022_116_INTERNAL_SOURCE_ABSENCE_TRIAGE_READONLY_PASS"
+        "status":("TWSE_2022_ALL_30_LONG_SOURCE_ABSENCE_OFFICIAL_QUEUE_READONLY_PASS"
+                  if long_gap_queue else
+                  "TWSE_2022_116_INTERNAL_SOURCE_ABSENCE_TRIAGE_READONLY_PASS"
                   if internal_gap_triage else
                   "TWSE_2022_SINGLE_LISTING_DATE_CONFLICT_PRIVATE_EVIDENCE_PASS"
                   if private_listing_conflict_details else
@@ -630,6 +663,10 @@ def run_local(*, archive_2022, key_vault, panel_report,
                 "source_observation_gap_count_signatures"][
                     "internal_absent_stock_source_date_pairs"]
             if internal_gap_triage else None),
+        "long_source_absence_runs_for_official_halt_checks":(
+            report["owner_private_all_30_long_source_absence_runs_official_check_queue"][
+                "at_least_six_unobserved_source_day_run_count"]
+            if long_gap_queue else None),
         "unproven_ipo_halt_and_source_gap_reasons":True,
         "no_2022_observation_129_post2022_firstseen_checked":bool(post2022_firstseen),
         "owner_129_current_twse_official_listing_metadata_checked":
@@ -672,6 +709,10 @@ def main():
                      help="Previously verified private PR234 official listing JSON (required for one-stock conflict details)")
     cli.add_argument("--internal-gap-triage",action="store_true",
                      help="Opt-in current-listed 2022 authenticated 104+12 internal source-date absence details (private JSON only)")
+    cli.add_argument("--long-gap-queue",action="store_true",
+                     help="Opt-in complete actual 30 runs with 6+ unobserved source days, owner-private no-write output")
+    cli.add_argument("--prior-116-report",
+                     help="Immutable successful PR237 owner-private JSON required for all 30 long source absences")
     a=cli.parse_args()
     try:
         run_local(archive_2022=a.archive_2022,key_vault=a.key_vault,
@@ -682,7 +723,8 @@ def main():
             official_current_listing_audit=a.official_current_listing_audit,
             private_listing_conflict_details=a.private_listing_conflict_details,
             prior_official_listing_report=a.prior_official_listing_report,
-            internal_gap_triage=a.internal_gap_triage)
+            internal_gap_triage=a.internal_gap_triage,
+            long_gap_queue=a.long_gap_queue,prior_116_report=a.prior_116_report)
     except Exception:
         raise SystemExit(
             "2022 per-stock current-listed AES/Neon source density audit FAILED; "
