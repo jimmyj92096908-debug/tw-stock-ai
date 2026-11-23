@@ -5,7 +5,7 @@ features, joined to verified daily prices. This does NOT score future prices.
 """
 from __future__ import annotations
 import argparse
-from datetime import datetime
+from datetime import date, datetime
 from hashlib import sha256
 import json
 import os
@@ -18,7 +18,7 @@ from psycopg.rows import dict_row
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from src.trained_factor_model import LATEST_MODEL_SQL
+from src.trained_factor_model import FROZEN_SAME_DAY_MODEL_SQL
 from src.research_forward_freeze import (
     build_frozen_universe, canonical, summary,
 )
@@ -27,6 +27,7 @@ MAX_DATABASE_BYTES=800_000_000
 MAX_DATA_SIZE=1_800_000
 MAX_SQL_MILLISECONDS=30000
 CURRENT_PRICE_SQL="SELECT MAX(trade_date) AS latest FROM public.daily_prices WHERE close>0"
+CURRENT_SCORE_SQL="SELECT MAX(as_of_date) AS latest FROM public.daily_composite_scores WHERE total_score IS NOT NULL"
 SIZE_SQL="SELECT pg_database_size(current_database())::bigint AS bytes"
 INSERT_SQL="""
 INSERT INTO public.research_forward_frozen_cohorts
@@ -74,7 +75,18 @@ def execute(url,*,model_path,apply=False,report_path=None):
                 size_before=_size(cur)
                 cur.execute(CURRENT_PRICE_SQL)
                 price_day=cur.fetchone()["latest"]
-                cur.execute(LATEST_MODEL_SQL)
+                cur.execute(CURRENT_SCORE_SQL)
+                score_day=cur.fetchone()["latest"]
+                # Never freeze stale scores as if they were newest. Both
+                # heads are measured in the SAME REPEATABLE READ snapshot.
+                # This preserves the former full-roster latest-score gate,
+                # while enabling a parameter-bound indexed source query.
+                if (type(price_day) is not date or
+                    type(score_day) is not date or
+                    price_day!=score_day):
+                    raise ValueError(
+                        "Global latest true market close and score day differ")
+                cur.execute(FROZEN_SAME_DAY_MODEL_SQL,(price_day,))
                 source=[dict(r) for r in cur.fetchall()]
                 # The trusted DB clock is queried after source selection.
                 cur.execute("SELECT clock_timestamp() AS now")

@@ -79,7 +79,7 @@ def build_frozen_universe(rows,model,*,model_sha256,as_of,latest_market_date):
     members=[]
     for row in rows:
         market,stock=str(row.get("market")),str(row.get("stock_id"))
-        if market not in ("twse","tpex") or not stock.isascii() or not stock.isdigit()            or not 4<=len(stock)<=6 or stock=="1808":
+        if market not in ("twse","tpex") or not stock.isascii() or not stock.isdigit()            or not 4<=len(stock)<=6 or stock in ("1808","1589"):
             raise ValueError("Unexpected issuer in prospectively frozen cohort")
         key=(market,stock)
         if key in names:

@@ -90,6 +90,36 @@ WHERE p.close>0 AND s.stock_id<>'1808' AND s.total_score IS NOT NULL
 ORDER BY s.market,s.stock_id
 """
 
+# For a time-frozen, same-snapshot research cohort ONLY. The caller must
+# independently establish the actual newest nonzero market-close date AND
+# latest non-null score date in the *same REPEATABLE READ snapshot*, prove
+# the two dates are equal and pass that exact date as a typed parameter.
+# This avoids a global "MAX(score date)" aggregate inside the whole-roster
+# join, which had timed out in the owner scheduled workflow. It does NOT
+# relax original MOPS vintage, future label, eligibility, release or trade
+# gates. It uses existing (stock_id, as_of_date) / (stock_id, trade_date)
+# indexes; no DB schema, DDL or paid compute needed.
+FROZEN_SAME_DAY_MODEL_SQL = f"""{CURRENT_OFFICIAL_LISTED_CTE}
+SELECT s.market,s.stock_id,sm.stock_name,s.as_of_date,
+ s.total_score,s.technical_score,s.smc_score,s.short_term_score,
+ s.swing_score,s.long_term_score,s.coverage_weight,
+ p.close AS signal_close
+FROM official_current_listed active
+JOIN public.daily_composite_scores s
+ ON s.market=active.market AND s.stock_id=active.stock_id
+ AND s.as_of_date=%s::date
+JOIN public.daily_prices p
+ ON p.market=s.market AND p.stock_id=s.stock_id
+ AND p.trade_date=s.as_of_date
+JOIN public.stock_master sm
+ ON sm.market=s.market AND sm.stock_id=s.stock_id
+WHERE p.close>0 AND s.stock_id NOT IN ('1808','1589')
+ AND s.total_score IS NOT NULL
+ AND NOT EXISTS (SELECT 1 FROM public.model_stock_exclusions x
+                 WHERE x.market=s.market AND x.stock_id=s.stock_id)
+ORDER BY s.market,s.stock_id
+"""
+
 
 def iso_day(value):
     if isinstance(value, datetime):
