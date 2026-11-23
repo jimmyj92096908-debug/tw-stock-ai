@@ -1,0 +1,38 @@
+name: TWSE 2021-22 1101 2330 Dated Action Gap (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2021_22_owner_two_stock_action_gap_readonly.py'
+      - 'tests/test_twse_2021_22_owner_two_stock_action_gap_readonly.py'
+      - 'docs/twse-2021-22-owner-two-stock-action-gap-readonly.md'
+      - '.github/workflows/twse-2021-22-owner-two-stock-action-gap-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_owner_two_stock_action_gap_readonly.py'
+      - 'tests/test_twse_2021_22_owner_two_stock_action_gap_readonly.py'
+      - 'docs/twse-2021-22-owner-two-stock-action-gap-readonly.md'
+      - '.github/workflows/twse-2021-22-owner-two-stock-action-gap-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  two-stock-action-gap-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies without private files
+        run: pip install -r requirements.txt
+      - name: Compile and test blocked dated-action proof with synthetic data
+        run: |
+          python -m py_compile scripts/twse_2021_22_owner_two_stock_action_gap_readonly.py
+          python -m unittest -v tests.test_twse_2021_22_owner_two_stock_action_gap_readonly
+      - name: Confirm no owner archives, Neon, LINE or model release were invoked
+        run: |
+          echo "Pure synthetic corporate-action gap evidence only. No production DB credentials, issuer private AES, backfill or paid services."
