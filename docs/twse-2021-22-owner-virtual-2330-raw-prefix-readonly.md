@@ -98,3 +98,26 @@ Neon 唯讀查詢證明：2330 在 2021 年有 28 個有效 TWSE_STOCK_DAY 行�
 原始失敗如未建立輸出 JSON，仍可使用相同的私人 --out 路徑重跑，但必須先確認檔案不存在。若已存在，禁止覆寫，改用另一個尚未使用的私人檔名。只回報匿名驗收狀態，不貼 Neon 連線 URI、AES 金鑰或原始價量。
 
 此修正不是豁免 AES/Neon 價量驗證，也不解除 Neon 寫入封鎖、研究模型發布封鎖或公司行動／歷史 PIT 證據缺口。
+
+
+## 2026-11-23 修正版再次安全失敗：非敏感階段碼
+
+擁有者已在 Windows PowerShell 5.1 更新至 main e18ec14，並重新執行 2021–2022 年 2330 AES＋Neon 虛擬來源驗收；結果仍為 FAILED safely。這**不是成功驗收**。原錯誤處理為避免洩漏 AES 金鑰／資料庫 URI／原始價格，把所有例外均轉成同一句話，無法從此訊息判斷真正失敗的步驟。
+
+本次只加入固定、允許清單內的非敏感診斷階段碼，並完全保留每個原始資料驗證、型別、來源日期、來源標籤與價量一致性保護。失敗時終端僅顯示 diagnostic_stage=安全代碼，不印出原始錯誤、價格、路徑、連線 URI、AES 金鑰、原始記錄或日期明細。程式仍只能執行 Neon READ ONLY 查詢；失敗不建立任何成功的研究報告。
+
+階段碼可以縮小調查範圍，但**不代表已發現或修正底層資料問題**：
+
+- PREVIOUS_REPORT_GUARD：先前 2021 AES 品質或 2022 來源密度報告不符合固定驗收證據
+- ARCHIVE_PATHS、PRIVATE_RECEIPTS、AES_KEY_VAULT：私人來源資料夾、前置證據檔案路徑或解密金鑰驗證失敗
+- AES_2021_AUTHENTICATION、AES_2022_AUTHENTICATION：AES 原始封存驗證失敗
+- NEON_READONLY_SNAPSHOT：Neon 唯讀快照或 2330／全市場來源日基線不符
+- AES_2021_2330_REPLAY、AES_2022_2330_REPLAY：該年度封存中 2330 來源資料逐筆驗證未通過
+- SOURCE_2022_CALENDAR：162 日 AES 與 84 日 Neon 官方市場來源日期集合或個股有效來源日不相符
+- AES_NEON_2330_CORE_OHLCV：AES 和 Neon 在某個已重疊 2330 股票日期鍵的核心開高低收或量不相符。需要另行核實來源差異，不得選擇有利數值、補值或忽略差異
+- VIRTUAL_PREFIX_EVALUATION：原始來源整合仍未通過其他保守規則
+- ARCHIVE_IMMUTABILITY、CIPHERTEXT_HASH、PRIVATE_RECEIPT_WRITE、UNCLASSIFIED：原始檔變更、私人報告輸出或其他無法安全分類的失敗
+
+更新 GitHub main 後，重跑本文相同的 PowerShell 指令即可；先檢查私有報告輸出路徑不存在。若已有檔案，**不覆寫**，改用新私有檔名。回報一行匿名 diagnostic_stage 和 FAILED safely 即可，無須提供 AES 原檔、原始股價、金鑰、Neon URI 或堆疊。
+
+模型狀態仍然 BLOCKED；沒有 Neon DDL/DML、LINE 修改或額外付費。
