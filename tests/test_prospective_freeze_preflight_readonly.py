@@ -88,7 +88,8 @@ class ResearchFreezePreflightTests(TestCase):
         fake.__enter__.return_value=fake
         fake.transaction.return_value.__enter__.return_value=fake
         fake.cursor.return_value.__enter__.return_value=fake
-        fake.fetchone.side_effect=[
+        cursor=fake.cursor.return_value.__enter__.return_value
+        cursor.fetchone.side_effect=[
             {"bytes":510_000_000},
             {"market_day":SCORE_DATE,"score_day":SCORE_DATE,
              "captured_at":NOW},
@@ -124,7 +125,8 @@ class ResearchFreezePreflightTests(TestCase):
         fake=MagicMock()
         fake.__enter__.return_value=fake
         fake.cursor.return_value.__enter__.return_value=fake
-        fake.fetchone.return_value={"bytes":753_147_904}
+        cursor=fake.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value={"bytes":753_147_904}
         with patch.object(p.psycopg,"connect",return_value=fake),\
              patch.object(p,"fetch_meter") as remote:
             result=p.run(database_url="private",
