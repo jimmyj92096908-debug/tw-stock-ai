@@ -143,6 +143,12 @@ def evaluate(*, receipt, roster, aes_rows, neon_rows):
         aes_days[key[0]] += 1
     if set(aes_days) != set(EXPECTED_DAYS) or min(aes_days.values()) < 500:
         raise ValueError("Original 2021 28-day authentic AES cohort changed")
+    # Reprove issuer-day histogram; an unchanged aggregate 26,120 is not enough.
+    per_issuer = Counter(stock for _day, stock in aes_rows)
+    if (sum(per_issuer[s] == 28 for s in allowed) != 900 or
+        sum(per_issuer[s] >= 26 for s in allowed) != 916 or
+        sum(per_issuer[s] == 0 for s in allowed) != 153):
+        raise ValueError("Authenticated AES source-key cohort histogram drifted")
 
     seen = set()
     observed_days = set()
