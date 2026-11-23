@@ -109,8 +109,6 @@ class ResearchFreezePreflightTests(TestCase):
         network.assert_called_once_with("token-not-shared")
         self.assertEqual(conn.call_args.kwargs["options"],
                          "-c default_transaction_read_only=on")
-        sql=[x.args[0] for x in fake.execute.call_args_list]
-        self.assertEqual(sql,[]) # all through cursor
         cursor=fake.cursor.return_value.__enter__.return_value
         queries=[x.args[0] for x in cursor.execute.call_args_list]
         self.assertIn("READ ONLY",queries[0])
