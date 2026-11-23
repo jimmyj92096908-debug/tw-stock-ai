@@ -1,0 +1,41 @@
+name: Prospective Freeze Indexed Same-Day Source (Offline)
+
+on:
+  push:
+    paths:
+      - 'src/trained_factor_model.py'
+      - 'src/research_forward_freeze.py'
+      - 'scripts/freeze_prospective_research.py'
+      - 'tests/test_freeze_same_day_indexed_source.py'
+      - 'docs/prospective-freeze-indexed-query-free-storage-audit.md'
+      - '.github/workflows/freeze-same-day-indexed-source-offline.yml'
+  pull_request:
+    paths:
+      - 'src/trained_factor_model.py'
+      - 'src/research_forward_freeze.py'
+      - 'scripts/freeze_prospective_research.py'
+      - 'tests/test_freeze_same_day_indexed_source.py'
+      - 'docs/prospective-freeze-indexed-query-free-storage-audit.md'
+      - '.github/workflows/freeze-same-day-indexed-source-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  indexed-prospective-source-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test indexed date-bound query and immutable prior guards
+        run: |
+          python -m py_compile scripts/freeze_prospective_research.py src/trained_factor_model.py src/research_forward_freeze.py
+          python -m unittest -v tests.test_freeze_same_day_indexed_source tests.test_research_forward_freeze tests.test_trained_factor_model tests.test_prospective_freeze_preflight_readonly
+      - name: No DB, DDL, LINE or live model release in synthetic CI
+        run: echo "EXPLAIN only was executed separately in Neon READ ONLY; this isolated workflow runs mock source date SQL tests and no production queries."
