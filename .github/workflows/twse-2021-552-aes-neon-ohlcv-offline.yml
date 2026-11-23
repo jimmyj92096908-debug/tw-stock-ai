@@ -1,0 +1,39 @@
+name: TWSE 2021 AES-Neon 552 OHLCV Overlap Audit (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2021_552_aes_neon_ohlcv_overlap_readonly.py'
+      - 'tests/test_twse_2021_552_aes_neon_ohlcv_overlap_readonly.py'
+      - 'docs/twse-2021-552-aes-neon-ohlcv-overlap-audit.md'
+      - '.github/workflows/twse-2021-552-aes-neon-ohlcv-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_552_aes_neon_ohlcv_overlap_readonly.py'
+      - 'tests/test_twse_2021_552_aes_neon_ohlcv_overlap_readonly.py'
+      - 'docs/twse-2021-552-aes-neon-ohlcv-overlap-audit.md'
+      - '.github/workflows/twse-2021-552-aes-neon-ohlcv-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-parity-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies without private credentials
+        run: pip install -r requirements.txt
+      - name: Compile and test source-key economics with synthetic dates
+        run: |
+          python -m py_compile scripts/twse_2021_552_aes_neon_ohlcv_overlap_readonly.py
+          python -m unittest -v tests.test_twse_2021_552_aes_neon_ohlcv_overlap_readonly
+      - name: No private credentials, no SQL writes, no LINE
+        run: |
+          echo "Owner-only live AES/Neon reconciliation was NOT invoked in GitHub CI."
+          echo "No production rows or reports were created, changed or deleted."
