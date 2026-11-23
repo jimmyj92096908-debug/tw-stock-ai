@@ -1,0 +1,39 @@
+name: TWSE 2021-22 1101 2330 Remaining Eight Months (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2021_22_frozen2_official_action_monthly_audit.py'
+      - 'scripts/twse_2021_22_owner_remaining_action_months_readonly.py'
+      - 'tests/test_twse_2021_22_owner_remaining_action_months_readonly.py'
+      - 'docs/twse-2021-22-1101-2330-remaining-eight-months.md'
+      - '.github/workflows/twse-2021-22-1101-2330-remaining-eight-months-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_frozen2_official_action_monthly_audit.py'
+      - 'scripts/twse_2021_22_owner_remaining_action_months_readonly.py'
+      - 'tests/test_twse_2021_22_owner_remaining_action_months_readonly.py'
+      - 'docs/twse-2021-22-1101-2330-remaining-eight-months.md'
+      - '.github/workflows/twse-2021-22-1101-2330-remaining-eight-months-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remaining-eight-months-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install established requirements
+        run: pip install -r requirements.txt
+      - name: Compile and run new/old historical event month regressions
+        run: |
+          python -m py_compile scripts/twse_2021_22_owner_remaining_action_months_readonly.py scripts/twse_2021_22_frozen2_official_action_monthly_audit.py
+          python -m unittest -v tests.test_twse_2021_22_owner_remaining_action_months_readonly tests.test_twse_2021_22_owner_twse_six_event_months_readonly tests.test_twse_2021_22_frozen2_official_action_monthly_audit
+      - name: Enforce synthetic-only research boundaries
+        run: echo "No actual official HTTP, Neon, AES, LINE, paid data, trades, original MOPS/PIT or total-return release in CI."
