@@ -10,7 +10,7 @@ from scripts.twse_2021_28day_aes_current_cohort_density_readonly import EXPECTED
 from scripts.twse_2021_aes_exclusive_quality_readonly import SCOPE as QUALITY_SCOPE
 from scripts.twse_2022_aes_neon_eligible_density_readonly import SCOPE as DENSITY_SCOPE
 from scripts.twse_2021_22_owner_virtual_2330_prefix_readonly import (
-    BULK, SECONDARY, SCOPE, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
+    BULK, SECONDARY, SCOPE, SCOPE_1101, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
     stitch, validate_receipts, _stage, _failure_message,
     VirtualAuditStageError, run_owner, _authenticated_selected,
     _resolve_owner_vault_diagnosed,
@@ -104,6 +104,114 @@ class Virtual2330Tests(unittest.TestCase):
             bulk_days=kw.get("bulk", self.bulk_days),
             cutoff=kw.get("cutoff", date(2022, 12, 30)),
         )
+
+    def _run_1101(self, *, aes21=None, aes22=None, neon=None, cutoff=date(2022, 12, 30)):
+        def rebind(rows):
+            return [dict(r, stock_id="1101") for r in rows]
+        return stitch(
+            quality=self.quality,
+            density=self.density,
+            aes21=rebind(self.aes21) if aes21 is None else aes21,
+            aes22=rebind(self.aes22) if aes22 is None else aes22,
+            neon_rows=rebind(self.neon) if neon is None else neon,
+            bulk_days=self.bulk_days,
+            cutoff=cutoff,
+            stock_id="1101",
+        )
+
+    def test_second_current_stock_1101_274_real_calendar_contract(self):
+        # Synthetic stock bars with precisely the independently READ-ONLY
+        # observed 1101 historical Neon bar calendar (28 + 246).
+        result = self._run_1101()
+        self.assertEqual(result["stock_id"], "1101")
+        self.assertEqual(result["scope"], SCOPE_1101)
+        self.assertNotEqual(result["scope"], SCOPE)
+        self.assertEqual(result["virtual_2021_22_combined_source_days"], 274)
+        self.assertEqual(result["neon_AES_overlapping_stockdate_keys"], 190)
+        self.assertEqual(result["neon_2022_market_bulk_calendar_days_with_stock_bar"], 84)
+        self.assertEqual(result["neon_stock_official_price_source_tags"], {SECONDARY: 274})
+        self.assertTrue(result["neon_AES_overlap_OHLCV_exact"])
+        self.assertEqual(result["as_of_last_240_observed_source_days"], 240)
+        self.assertNotIn("neon_AES_overlapping_2330_source_stockdate_keys", result)
+        self.assertNotIn("neon_2330_official_price_source_tags", result)
+        self.assertFalse(result["corporate_action_and_publication_vintage_verified"])
+        self.assertFalse(result["raw_unadjusted_sma240_is_tradable_signal"])
+        self.assertFalse(result["production_backfill_approved"])
+        self.assertEqual(result["neon_writes"], 0)
+        self.assertEqual(result["model_release"], "BLOCKED")
+
+    def test_second_stock_1101_price_conflict_fails_with_own_diagnostic(self):
+        changed = [dict(row, stock_id="1101") for row in self.neon]
+        changed[0] = dict(changed[0], close=Decimal("102.50"))
+        with self.assertRaises(VirtualAuditStageError) as ctx:
+            self._run_1101(neon=changed)
+        self.assertEqual(ctx.exception.code, "AES_NEON_1101_CORE_OHLCV")
+        self.assertNotIn("102.50", str(ctx.exception))
+
+    def test_second_stock_1101_rejects_foreign_issuer_or_missing_dates(self):
+        foreign_neon = [dict(row, stock_id="1101") for row in self.neon]
+        foreign_neon[0] = dict(foreign_neon[0], stock_id="2330")
+        with self.assertRaises(ValueError):
+            self._run_1101(neon=foreign_neon)
+        missing = [dict(row, stock_id="1101") for row in self.neon
+                   if row["trade_date"] != self.bulk_days[0]]
+        with self.assertRaises(VirtualAuditStageError) as ctx:
+            self._run_1101(neon=missing)
+        self.assertEqual(ctx.exception.code, "SOURCE_2022_CALENDAR")
+        for outside in ("1589", "1301", "2317", "2454", "2882"):
+            with self.subTest(outside=outside), self.assertRaises(ValueError):
+                stitch(
+                    quality=self.quality, density=self.density,
+                    aes21=self.aes21, aes22=self.aes22,
+                    neon_rows=self.neon, bulk_days=self.bulk_days,
+                    cutoff=date(2022, 12, 30), stock_id=outside)
+
+    def test_second_stock_1101_lookahead_mutation_invariant(self):
+        earlier = self._run_1101(cutoff=date(2022, 12, 29))
+        future = [dict(row, stock_id="1101") for row in self.neon]
+        idx = next(i for i, row in enumerate(future)
+                   if row["trade_date"] == date(2022, 12, 30))
+        future[idx] = dict(future[idx], close=Decimal("102.50"))
+        res = self._run_1101(neon=future, cutoff=date(2022, 12, 29))
+        self.assertEqual(
+            earlier["as_of_raw_prefix_sha256_private"],
+            res["as_of_raw_prefix_sha256_private"])
+        self.assertEqual(
+            earlier["as_of_raw_unadjusted_sma240_private_research_value"],
+            res["as_of_raw_unadjusted_sma240_private_research_value"])
+        self.assertEqual(res["source_rows_after_asof_used_in_computation"], 0)
+
+    def test_second_stock_1101_real_encrypted_synthetic_replay_filters_rows(self):
+        from scripts.twse_local_encrypted_archive import encrypt_rows
+        key = secrets.token_hex(32)
+        d1, d2 = date(2022, 1, 3), date(2022, 1, 4)
+        with TemporaryDirectory() as directory:
+            p = Path(directory) / "two-stocks-2022.twseenc"
+            rows = [
+                dict(source_bar(d, close="101.25"), stock_id=sid,
+                     retrieved_at=datetime(2026, 11, 20, tzinfo=timezone.utc))
+                for d in (d1, d2)
+                for sid in ("1101", "2330")
+            ]
+            encrypt_rows(rows, p, start=d1, end=d2, hex_key=key)
+            first = _authenticated_selected([p], key, 2022, 2, stock_id="1101")
+            second = _authenticated_selected([p], key, 2022, 2, stock_id="2330")
+            self.assertEqual([row["trade_date"] for row in first], [d1, d2])
+            self.assertEqual([row["trade_date"] for row in second], [d1, d2])
+            self.assertEqual({row["stock_id"] for row in first}, {"1101"})
+            self.assertEqual({row["stock_id"] for row in second}, {"2330"})
+
+    def test_owner_run_rejects_unlisted_stock_before_any_private_io(self):
+        from unittest.mock import patch
+        module = "scripts.twse_2021_22_owner_virtual_2330_prefix_readonly"
+        with patch(module + "._private_archives") as archives:
+            with self.assertRaises(VirtualAuditStageError):
+                run_owner(
+                    archive21="unused", archive22="unused", vault="unused",
+                    quality_path="unused", density_path="unused",
+                    out="unused", cutoff=date(2022, 12, 30),
+                    url="unused", stock_id="1589")
+        archives.assert_not_called()
 
     def test_exact_274_day_virtual_research_not_live_model(self):
         r = self.run_stitch()

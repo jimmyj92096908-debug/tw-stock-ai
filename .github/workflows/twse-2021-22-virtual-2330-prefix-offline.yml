@@ -1,4 +1,4 @@
-name: TWSE 2021-22 AES Neon Virtual 2330 Prefix (Offline)
+name: TWSE 2021-22 AES Neon 2330 and 1101 Prefix (Offline)
 
 on:
   push:
@@ -6,12 +6,14 @@ on:
       - 'scripts/twse_2021_22_owner_virtual_2330_prefix_readonly.py'
       - 'tests/test_twse_2021_22_owner_virtual_2330_prefix_readonly.py'
       - 'docs/twse-2021-22-owner-virtual-2330-raw-prefix-readonly.md'
+      - 'docs/twse-2021-22-owner-1101-virtual-raw-prefix-readonly.md'
       - '.github/workflows/twse-2021-22-virtual-2330-prefix-offline.yml'
   pull_request:
     paths:
       - 'scripts/twse_2021_22_owner_virtual_2330_prefix_readonly.py'
       - 'tests/test_twse_2021_22_owner_virtual_2330_prefix_readonly.py'
       - 'docs/twse-2021-22-owner-virtual-2330-raw-prefix-readonly.md'
+      - 'docs/twse-2021-22-owner-1101-virtual-raw-prefix-readonly.md'
       - '.github/workflows/twse-2021-22-virtual-2330-prefix-offline.yml'
   workflow_dispatch:
 
@@ -29,7 +31,7 @@ jobs:
           python-version: '3.11'
       - name: Install existing dependencies without private files or secrets
         run: pip install -r requirements.txt
-      - name: Compile and run synthetic 2021/22 boundary prefix tests
+      - name: Compile and run synthetic 2330 plus 1101 2021/22 boundary prefix tests
         run: |
           python -m py_compile scripts/twse_2021_22_owner_virtual_2330_prefix_readonly.py
           python -m unittest -v tests.test_twse_2021_22_owner_virtual_2330_prefix_readonly
