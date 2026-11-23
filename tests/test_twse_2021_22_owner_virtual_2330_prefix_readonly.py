@@ -1,6 +1,9 @@
 """Isolated research-only virtual AES+Neon 2330 source-prefix regression tests."""
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import secrets
 import unittest
 
 from scripts.twse_2021_28day_aes_current_cohort_density_readonly import EXPECTED_DAYS
@@ -9,7 +12,7 @@ from scripts.twse_2022_aes_neon_eligible_density_readonly import SCOPE as DENSIT
 from scripts.twse_2021_22_owner_virtual_2330_prefix_readonly import (
     BULK, SECONDARY, SCOPE, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
     stitch, validate_receipts, _stage, _failure_message,
-    VirtualAuditStageError, run_owner,
+    VirtualAuditStageError, run_owner, _authenticated_selected,
 )
 
 
@@ -302,6 +305,75 @@ class Virtual2330Tests(unittest.TestCase):
         source = inspect.getsource(evaluate_2022_density)
         self.assertIn('"production_neon_writes":0', source)
         self.assertNotIn('"neon_writes":0', source)
+
+    def test_real_encrypted_2022_replay_skips_authentic_off_year_files(self):
+        # The real 2022 AES source auditor accepts a shared private folder:
+        # it AUTHENTICATES extra-year files, then filters to original 2022.
+        # Previous 2330 code instead rejected any 2023 source record during
+        # replay despite the successful prior 162-day owner report.
+        from scripts.twse_local_encrypted_archive import encrypt_rows
+        key = secrets.token_hex(32)
+        with TemporaryDirectory() as directory:
+            first = date(2022, 1, 3)
+            second = date(2022, 1, 4)
+            later = date(2023, 1, 3)
+            p22 = Path(directory) / "original-2022.twseenc"
+            p23 = Path(directory) / "other-year-2023.twseenc"
+
+            def archived(day, sid="2330"):
+                return dict(
+                    source_bar(day),
+                    stock_id=sid,
+                    retrieved_at=datetime(2026, 11, 20, tzinfo=timezone.utc),
+                )
+
+            encrypt_rows(
+                [archived(first), archived(second)], p22,
+                start=first, end=second, hex_key=key,
+            )
+            encrypt_rows(
+                [archived(later)], p23,
+                start=later, end=later, hex_key=key,
+            )
+            # Intentionally supply the next-year file FIRST, as globs can.
+            result = _authenticated_selected([p23, p22], key, 2022, 2)
+            self.assertEqual([row["trade_date"] for row in result], [first, second])
+            self.assertTrue(all(row["stock_id"] == "2330" for row in result))
+
+            # Skipping is NOT trusting: corrupt skipped-year AES ciphertext
+            # must still fail, even though it is outside the 2022 window.
+            raw = p23.read_bytes()
+            p23.write_bytes(raw[:-1] + bytes([raw[-1] ^ 0x01]))
+            with self.assertRaises(Exception):
+                _authenticated_selected([p23, p22], key, 2022, 2)
+
+    def test_2022_replay_rejects_missing_2330_and_cross_year_archives(self):
+        from scripts.twse_local_encrypted_archive import encrypt_rows
+        key = secrets.token_hex(32)
+        with TemporaryDirectory() as directory:
+            day1, day2 = date(2022, 1, 3), date(2022, 1, 4)
+            p = Path(directory) / "missing-stock.twseenc"
+            def bar(day, sid):
+                return dict(
+                    source_bar(day),
+                    stock_id=sid,
+                    retrieved_at=datetime(2026, 11, 20, tzinfo=timezone.utc),
+                )
+            encrypt_rows(
+                [bar(day1, "2330"), bar(day2, "1101")], p,
+                start=day1, end=day2, hex_key=key,
+            )
+            with self.assertRaises(ValueError):
+                _authenticated_selected([p], key, 2022, 2)
+
+            cross = Path(directory) / "cross-year-unsupported.twseenc"
+            a, b = date(2022, 12, 30), date(2023, 1, 2)
+            encrypt_rows(
+                [bar(a, "2330"), bar(b, "2330")], cross,
+                start=a, end=b, hex_key=key,
+            )
+            with self.assertRaises(ValueError):
+                _authenticated_selected([cross], key, 2022, 1)
 
     def test_live_sql_is_read_only_and_bounded(self):
         self.assertIn("stock_id=%s", NEON_SINGLE_ISSUER_SQL)
