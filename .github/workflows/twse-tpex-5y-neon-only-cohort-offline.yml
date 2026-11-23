@@ -1,0 +1,38 @@
+name: TWSE TPEx Five Year Neon-Only Cohort (Offline Tests)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_tpex_five_year_neon_only_cohort_readonly.py'
+      - 'tests/test_twse_tpex_five_year_neon_only_cohort_readonly.py'
+      - '.github/workflows/twse-tpex-5y-neon-only-cohort-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_tpex_five_year_neon_only_cohort_readonly.py'
+      - 'tests/test_twse_tpex_five_year_neon_only_cohort_readonly.py'
+      - '.github/workflows/twse-tpex-5y-neon-only-cohort-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  immutable-five-year-source-stock-depth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      STOCK_ARCHIVE_KEY_HEX: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test source-only five-year counts and no-write controls
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_tpex_five_year_neon_only_cohort_readonly.py
+          python -m scripts.twse_tpex_five_year_neon_only_cohort_readonly --help >/dev/null
+          python -m unittest tests.test_twse_tpex_five_year_neon_only_cohort_readonly -v
