@@ -201,3 +201,48 @@ def classify_official_current_listing(
             private_conflicts)
         result["private_conflict_details_never_equate_to_bad_price_or_ipo_proof"]=True
     return result
+
+
+def validate_private_one_conflict_against_prior_receipt(
+        previous_report, latest_audit, *, expected_scope):
+    """Fail closed: one opt-in local stock ID requires unchanged owner PR234 receipt.
+
+    The previous private report contains only aggregate evidence. The one
+    issuer can be identified on the owner's machine *only* after rechecking
+    exact same TWSE source observation/digest, cohort and counts, without
+    touching the database or writing any stock score.
+    """
+    if (not isinstance(previous_report,dict)
+            or previous_report.get("schema_version")!=1
+            or previous_report.get("scope")!=expected_scope
+            or previous_report.get("model_release")!="BLOCKED"
+            or previous_report.get("production_neon_writes")!=0
+            or previous_report.get("line_messages_sent")!=0
+            or previous_report.get("year")!=2022
+            or previous_report.get(
+                "official_current_listed_eligible_twse_issuers")!=1092
+            or previous_report.get(
+                "aes_neon_current_listed_stocks_with_all_246_source_dates")!=825
+            or not isinstance(latest_audit,dict)):
+        raise ValueError("Previous PR234 owner no-write receipt lacks accepted scope")
+    old=previous_report.get(
+        "owner_129_no2022_current_twse_official_listing_date_triage")
+    new_without_private={
+        k:v for k,v in latest_audit.items() if k not in (
+            "owner_private_official_listing_first_neon_date_conflicts",
+            "private_conflict_details_never_equate_to_bad_price_or_ipo_proof")}
+    if (not isinstance(old,dict)
+            or old!=new_without_private
+            or old.get("owner_2022_no_valid_source_stock_count")!=129
+            or old.get("current_twse_listing_after_2022_count")!=129
+            or old.get("current_twse_listing_on_or_before_2022_count")!=0
+            or old.get("current_twse_listing_missing_or_invalid_count")!=0
+            or not isinstance(old.get("source_listing_date_bucket_counts"),dict)
+            or old["source_listing_date_bucket_counts"].get(
+                "current_2023plus_listing_but_neon_first_stored_before_current_listing_date")!=1
+            or not isinstance(latest_audit.get(
+                "owner_private_official_listing_first_neon_date_conflicts"),list)
+            or len(latest_audit[
+                "owner_private_official_listing_first_neon_date_conflicts"])!=1):
+        raise ValueError("Previously owner-verified one-stock discrepancy differs from new official source")
+    return True
