@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from datetime import date
+from datetime import date,datetime
+from zoneinfo import ZoneInfo
 from hashlib import sha256
 import json
 import os
@@ -32,6 +33,9 @@ from scripts.twse_2022_aes_neon_five_year_overlay_offline import (
     SCOPE as OVERLAY_SCOPE, reconcile_offline,
 )
 from scripts.twse_archive_key_vault import resolve_archive_key
+from scripts.twse_2022_official_current_listing_date_triage import (
+    fetch_official_company_basics, classify_official_current_listing,
+)
 
 SCOPE = "OWNER_2022_TWSE_AES_NEON_CURRENT_OFFICIAL_STOCK_DATE_DENSITY_RESEARCH"
 BULK = "TWSE_MI_INDEX_ALLBUT0999"
@@ -470,7 +474,9 @@ def classify_current_stock_source_absences(
 
 def run_local(*, archive_2022, key_vault, panel_report,
               five_year_report, overlay_report, output,
-              post2022_firstseen=False):
+              post2022_firstseen=False, official_current_listing_audit=False):
+    if official_current_listing_audit and not post2022_firstseen:
+        raise ValueError("Official current listing date comparison requires stored first-observed-year receipt")
     paths = _private_archives(archive_2022)
     inputs = [
         _private_file(x,should_exist=True) for x in (
@@ -525,13 +531,33 @@ def run_local(*, archive_2022, key_vault, panel_report,
         original,five_year,overlay,roster=roster,aes_by_day=aes,
         neon_bulk_days=bulk,neon_rows=neon_rows,source_audit=source_proof,
         post2022_first_seen=post2022)
+    if official_current_listing_audit:
+        observed_2022 = set()
+        for values in aes.values():
+            observed_2022.update(values)
+        for _day, sid, _source in neon_rows:
+            observed_2022.add(sid)
+        zero_2022 = set(roster)-observed_2022
+        if len(zero_2022) != 129:
+            raise ValueError("2022 fully absent issuer group drifted")
+        now = datetime.now(ZoneInfo("Asia/Taipei")).date()
+        result = classify_official_current_listing(
+            fetch_official_company_basics(),
+            eligible_ids=set(roster),no_2022_ids=zero_2022,
+            first_2023plus=dict(post2022),current_day=now,
+            prior_window_end=date.fromisoformat(
+                five_year["window_end_exclusive"]),
+        )
+        report["owner_129_no2022_current_twse_official_listing_date_triage"] = result
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
     if len(payload.encode("utf-8"))>MAX_REPORT_BYTES:
         raise ValueError("Private stock-date density report exceeds safe limit")
     with out.open("x",encoding="utf-8") as fp:
         fp.write(payload)
     print(json.dumps({
-        "status":("TWSE_2022_NO_SOURCE_2023PLUS_FIRST_SEEN_READONLY_PASS"
+        "status":("TWSE_2022_NO_SOURCE_OFFICIAL_LISTING_DATE_TRIAGE_READONLY_PASS"
+                  if official_current_listing_audit else
+                  "TWSE_2022_NO_SOURCE_2023PLUS_FIRST_SEEN_READONLY_PASS"
                   if post2022_firstseen else
                   "TWSE_2022_FULL_CURRENT_COHORT_AES_NEON_DENSITY_READONLY_PASS"),
         "authenticated_aes_source_dates":report[
@@ -549,6 +575,20 @@ def run_local(*, archive_2022, key_vault, panel_report,
                 "eligible_stocks_not_observed_on_all_source_days"],
         "unproven_ipo_halt_and_source_gap_reasons":True,
         "no_2022_observation_129_post2022_firstseen_checked":bool(post2022_firstseen),
+        "owner_129_current_twse_official_listing_metadata_checked":
+            bool(official_current_listing_audit),
+        "owner_129_with_current_twse_listing_after_2022":
+            report["owner_129_no2022_current_twse_official_listing_date_triage"][
+                "current_twse_listing_after_2022_count"]
+                if official_current_listing_audit else None,
+        "owner_129_with_current_twse_listing_2022_or_earlier":
+            report["owner_129_no2022_current_twse_official_listing_date_triage"][
+                "current_twse_listing_on_or_before_2022_count"]
+                if official_current_listing_audit else None,
+        "owner_129_without_valid_current_twse_listing_date":
+            report["owner_129_no2022_current_twse_official_listing_date_triage"][
+                "current_twse_listing_missing_or_invalid_count"]
+                if official_current_listing_audit else None,
         "full_historical_pit_or_corporate_actions":False,
         "neon_writes":0,"line_messages_sent":0,"model_release":"BLOCKED",
     },ensure_ascii=False))
@@ -565,13 +605,16 @@ def main():
     cli.add_argument("--out",required=True)
     cli.add_argument("--post2022-firstseen",action="store_true",
                      help="Extra owner-readonly first observed 2023+ source year for 2022 zero-record cohort")
+    cli.add_argument("--official-current-listing-audit",action="store_true",
+                     help="Also compare 129 zero-2022 source issuers with current TWSE official listing dates")
     a=cli.parse_args()
     try:
         run_local(archive_2022=a.archive_2022,key_vault=a.key_vault,
             panel_report=a.source_panel_report,
             five_year_report=a.five_year_neon_report,
             overlay_report=a.prior_overlay_report,output=a.out,
-            post2022_firstseen=a.post2022_firstseen)
+            post2022_firstseen=a.post2022_firstseen,
+            official_current_listing_audit=a.official_current_listing_audit)
     except Exception:
         raise SystemExit(
             "2022 per-stock current-listed AES/Neon source density audit FAILED; "
