@@ -10,7 +10,7 @@ from scripts.twse_2021_28day_aes_current_cohort_density_readonly import EXPECTED
 from scripts.twse_2021_aes_exclusive_quality_readonly import SCOPE as QUALITY_SCOPE
 from scripts.twse_2022_aes_neon_eligible_density_readonly import SCOPE as DENSITY_SCOPE
 from scripts.twse_2021_22_owner_virtual_2330_prefix_readonly import (
-    BULK, SECONDARY, SCOPE, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
+    BULK, SECONDARY, SCOPE, SCOPE_1101, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
     stitch, validate_receipts, _stage, _failure_message,
     VirtualAuditStageError, run_owner, _authenticated_selected,
     _resolve_owner_vault_diagnosed,
@@ -124,6 +124,8 @@ class Virtual2330Tests(unittest.TestCase):
         # observed 1101 historical Neon bar calendar (28 + 246).
         result = self._run_1101()
         self.assertEqual(result["stock_id"], "1101")
+        self.assertEqual(result["scope"], SCOPE_1101)
+        self.assertNotEqual(result["scope"], SCOPE)
         self.assertEqual(result["virtual_2021_22_combined_source_days"], 274)
         self.assertEqual(result["neon_AES_overlapping_stockdate_keys"], 190)
         self.assertEqual(result["neon_2022_market_bulk_calendar_days_with_stock_bar"], 84)
@@ -132,9 +134,7 @@ class Virtual2330Tests(unittest.TestCase):
         self.assertEqual(result["as_of_last_240_observed_source_days"], 240)
         self.assertNotIn("neon_AES_overlapping_2330_source_stockdate_keys", result)
         self.assertNotIn("neon_2330_official_price_source_tags", result)
-        self.assertFalse(result["historical_adjusted_total_returns_approved"]
-                         if "historical_adjusted_total_returns_approved" in result
-                         else result["corporate_action_and_publication_vintage_verified"])
+        self.assertFalse(result["corporate_action_and_publication_vintage_verified"])
         self.assertFalse(result["raw_unadjusted_sma240_is_tradable_signal"])
         self.assertFalse(result["production_backfill_approved"])
         self.assertEqual(result["neon_writes"], 0)
