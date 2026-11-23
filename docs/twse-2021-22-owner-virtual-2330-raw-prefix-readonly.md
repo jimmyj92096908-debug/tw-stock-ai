@@ -156,3 +156,25 @@ Neon 唯讀查詢證明：2330 在 2021 年有 28 個有效 TWSE_STOCK_DAY 行�
 GitHub 合成測試使用真實 AES-GCM 格式的**合成資料**檔案（2022 年與 2023 年），驗證額外年度檔案通過認證後可略過，同時驗證遭竄改的額外年度檔、缺少 2330 原始來源日、跨年度的單檔仍會被拒絕。這些合成測試不涉及擁有者原始價格或解密金鑰。
 
 本次程式碼缺陷與錯誤階段相符，但**尚未證明擁有者實際有其他年度檔案存放於同一目錄**。不移除、不搬移也不改寫任何私人加密封存。更新 main 後可以使用本文相同的 PowerShell 指令重跑；若仍失敗，只回報新的固定 diagnostic_stage。模型仍然 BLOCKED；禁止 Neon DML/DDL、LINE 修改、下單及付費升級。
+
+
+## 2026-11-23 第五次診斷：AES 金鑰庫安全階段細分
+
+擁有者更新 main 至 7e1c9e2（PR #254）後，原始 2330 唯讀驗收得到 diagnostic_stage=AES_KEY_VAULT。此階段位於本次 AES 回放與 Neon 對帳之前。先前已成功進入 2022 AES 回播，不能把新錯誤當作行情不一致，也沒有理由重新產生、刪除或覆寫金鑰。
+
+此程式使用 --key-vault 指向使用者私有 history.twsekey。Vault 模式**不可**同時設定 STOCK_ARCHIVE_KEY_HEX 環境變數。TWSE_KEY_GUI_PROMPT=1 選擇隱藏輸入的 Tk GUI 密碼視窗；它不是密碼或金鑰。此前的 AES_KEY_VAULT 單一錯誤碼包含多種不同情況，尚沒有證據辨識哪一種是實際原因。
+
+本次只對 owner-private 2330 canary 的金鑰載入增加安全、固定錯誤階段：
+
+- AES_KEY_VAULT_MODE_CONFLICT：金鑰庫檔案模式與既有環境金鑰同時存在；仍安全拒絕，不自動清除任何環境變數
+- AES_KEY_VAULT_PATH：金鑰庫檔案路徑、格式或安全權限檢查失敗
+- AES_KEY_VAULT_PROMPT：隱藏輸入視窗取消或無法使用；不印密碼，也不自動回退到命令列明文密碼
+- AES_KEY_VAULT_DECRYPT：現有加密金鑰庫無法通過輸入密碼以及 scrypt/AES-GCM 認證；不能直接判斷必然是錯誤密碼而非檔案異常，更不能重設金鑰
+
+每種失敗都只印允許清單內的診斷碼，不印原始例外、私人路徑、AES 金鑰、密碼或 Neon 連線字串。原有 vault 與 AES 完整性驗證完全保留；不新增備用解密方式、不修改封存、沒有任何 Neon DML 或 LINE 操作。
+
+擁有者更新 main 後，直接重新執行前文完整的 PowerShell 2330 驗收指令即可；若輸出報告已存在，改用尚未使用的新私人檔名，不得覆寫。只回傳匿名 diagnostic_stage 即可。
+
+如回傳 AES_KEY_VAULT_MODE_CONFLICT，**先確認**使用的是正確私人 --key-vault 以及確定需要使用 vault 模式，才可在自己的 PowerShell 處理程序執行 Remove-Item Env:STOCK_ARCHIVE_KEY_HEX -ErrorAction SilentlyContinue。這只清除目前 PowerShell 程序內的環境金鑰變數，不修改原始 vault 或加密封存。請勿貼出任何金鑰或例外堆疊。
+
+2330 的 274 個來源日尚無真實 OHLCV 完整對帳 PASS；研究模型維持 BLOCKED。
