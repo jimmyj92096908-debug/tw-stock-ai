@@ -13,6 +13,7 @@ from scripts.twse_2021_22_owner_virtual_2330_prefix_readonly import (
     BULK, SECONDARY, SCOPE, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
     stitch, validate_receipts, _stage, _failure_message,
     VirtualAuditStageError, run_owner, _authenticated_selected,
+    _resolve_owner_vault_diagnosed,
 )
 
 
@@ -217,6 +218,71 @@ class Virtual2330Tests(unittest.TestCase):
         a[0] = dict(a[0], trade_date=date(2023,1,3))
         with self.assertRaises(ValueError):
             self.run_stitch(neon=a)
+
+    def test_vault_diagnostics_reject_conflicting_env_key_without_prompt(self):
+        import os
+        from unittest.mock import patch
+        module = "scripts.twse_2021_22_owner_virtual_2330_prefix_readonly"
+        with patch.dict(os.environ, {"STOCK_ARCHIVE_KEY_HEX": "not-printed-hex"}):
+            with patch(module + "._hidden_vault_prompt") as prompt:
+                with self.assertRaises(VirtualAuditStageError) as failure:
+                    _resolve_owner_vault_diagnosed("not-a-real-file")
+                prompt.assert_not_called()
+        self.assertEqual(failure.exception.code, "AES_KEY_VAULT_MODE_CONFLICT")
+        self.assertNotIn("not-printed-hex", str(failure.exception))
+
+    def test_vault_diagnostics_file_prompt_and_password_are_private(self):
+        import os
+        from unittest.mock import patch
+        module = "scripts.twse_2021_22_owner_virtual_2330_prefix_readonly"
+        with patch.dict(os.environ, {"STOCK_ARCHIVE_KEY_HEX": ""}):
+            with patch(module + "._existing_private_vault",
+                       side_effect=ValueError("C:/owner-secret-key-path")):
+                with self.assertRaises(VirtualAuditStageError) as failure:
+                    _resolve_owner_vault_diagnosed("private-vault")
+            self.assertEqual(failure.exception.code, "AES_KEY_VAULT_PATH")
+            self.assertNotIn("C:/owner-secret", str(failure.exception))
+            with patch(module + "._existing_private_vault", return_value=Path("private.twsekey")):
+                with patch(module + "._hidden_vault_prompt",
+                           side_effect=ValueError("desktop-cancelled-with-owner-path")):
+                    with self.assertRaises(VirtualAuditStageError) as failure:
+                        _resolve_owner_vault_diagnosed("private-vault")
+                self.assertEqual(failure.exception.code, "AES_KEY_VAULT_PROMPT")
+                with patch(module + "._hidden_vault_prompt",
+                           return_value="do-not-print-my-private-passphrase"):
+                    with patch(module + ".load_archive_key_hex",
+                               side_effect=ValueError("vault ciphertext or password invalid")):
+                        with self.assertRaises(VirtualAuditStageError) as failure:
+                            _resolve_owner_vault_diagnosed("private-vault")
+                self.assertEqual(failure.exception.code, "AES_KEY_VAULT_DECRYPT")
+                self.assertNotIn("do-not-print", str(failure.exception))
+                for code in ("AES_KEY_VAULT_PATH", "AES_KEY_VAULT_PROMPT",
+                             "AES_KEY_VAULT_DECRYPT", "AES_KEY_VAULT_MODE_CONFLICT"):
+                    self.assertIn("diagnostic_stage=" + code, _failure_message(code))
+
+    def test_vault_diagnostics_accepts_real_synthetic_encrypted_vault(self):
+        import os
+        from unittest.mock import patch
+        from scripts.twse_archive_key_vault import initialize_vault
+        phrase = "an original private synthetic test passphrase 0123456789"
+        with TemporaryDirectory() as base:
+            first = Path(base) / "first"
+            second = Path(base) / "second"
+            first.mkdir()
+            second.mkdir()
+            vault = first / "synthetic.twsekey"
+            recovery = second / "synthetic.twsekey"
+            receipt = initialize_vault(
+                vault_path=vault, recovery_path=recovery, passphrase=phrase)
+            self.assertTrue(receipt["two_identical_private_encrypted_copies_verified"])
+            module = "scripts.twse_2021_22_owner_virtual_2330_prefix_readonly"
+            with patch.dict(os.environ, {"STOCK_ARCHIVE_KEY_HEX": ""}):
+                with patch(module + "._hidden_vault_prompt", return_value=phrase):
+                    secret = _resolve_owner_vault_diagnosed(vault)
+            self.assertEqual(len(secret), 64)
+            self.assertNotIn(secret, vault.read_text())
+            self.assertNotIn(phrase, vault.read_text())
+            self.assertNotIn(secret, _failure_message("AES_KEY_VAULT_DECRYPT"))
 
     def test_private_failure_stage_allowlist_never_exposes_raw_error(self):
         secret = "postgresql://owner-secret:password@neon/private-price"

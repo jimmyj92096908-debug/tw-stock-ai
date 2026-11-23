@@ -27,7 +27,11 @@ from scripts.twse_local_encrypted_archive import verify_archive
 from scripts.twse_2022_aes_factor_readiness import (
     _ordered_paths as _authenticated_2022_year_paths,
 )
-from scripts.twse_archive_key_vault import resolve_archive_key
+from scripts.twse_archive_key_vault import (
+    _private_existing_path as _existing_private_vault,
+    _prompt_secret as _hidden_vault_prompt,
+    load_archive_key_hex,
+)
 
 STOCK = "2330"
 BULK = "TWSE_MI_INDEX_ALLBUT0999"
@@ -65,6 +69,10 @@ AUDIT_STAGES = frozenset({
     "PRIVATE_RECEIPTS",
     "PREVIOUS_REPORT_GUARD",
     "AES_KEY_VAULT",
+    "AES_KEY_VAULT_MODE_CONFLICT",
+    "AES_KEY_VAULT_PATH",
+    "AES_KEY_VAULT_PROMPT",
+    "AES_KEY_VAULT_DECRYPT",
     "CIPHERTEXT_HASH",
     "AES_2021_AUTHENTICATION",
     "AES_2022_AUTHENTICATION",
@@ -106,6 +114,33 @@ def _failure_message(stage):
         "diagnostic_stage=" + safe
         + "; no raw prices, key vault, Neon URL, local path, SQL writes or LINE data disclosed"
     )
+
+
+def _resolve_owner_vault_diagnosed(vault):
+    """Vault-only mode; return key privately or one safe, allowlisted reason.
+
+    This owner script always supplies a --key-vault. Never silently switch to
+    any transient environment key, fall back to a different file, weaken AES,
+    log secrets, or create/rewrite an archive or key vault.
+    """
+    if os.environ.get("STOCK_ARCHIVE_KEY_HEX", ""):
+        raise VirtualAuditStageError("AES_KEY_VAULT_MODE_CONFLICT")
+    try:
+        existing = _existing_private_vault(Path(vault))
+    except Exception:
+        raise VirtualAuditStageError("AES_KEY_VAULT_PATH") from None
+    try:
+        passphrase = _hidden_vault_prompt("Private archive vault passphrase: ")
+    except Exception:
+        raise VirtualAuditStageError("AES_KEY_VAULT_PROMPT") from None
+    try:
+        # Decrypt using the same authenticated key-vault implementation as
+        # other owner AES routines, never write the passphrase or key to disk.
+        return load_archive_key_hex(existing, passphrase=passphrase)
+    except Exception:
+        raise VirtualAuditStageError("AES_KEY_VAULT_DECRYPT") from None
+    finally:
+        passphrase = None
 
 
 def validate_receipts(quality, density):
@@ -365,10 +400,7 @@ def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, c
         previous22.read_text(encoding="utf-8")))
     _stage("PREVIOUS_REPORT_GUARD", validate_receipts, quality, density)
 
-    key = _stage(
-        "AES_KEY_VAULT", resolve_archive_key,
-        vault_path=Path(vault), env_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX", ""),
-    )
+    key = _stage("AES_KEY_VAULT", _resolve_owner_vault_diagnosed, vault)
     originals = paths21 + paths22
     start_hashes = _stage(
         "CIPHERTEXT_HASH",
