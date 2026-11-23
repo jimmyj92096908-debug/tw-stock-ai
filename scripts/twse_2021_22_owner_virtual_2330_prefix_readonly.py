@@ -119,13 +119,23 @@ def validate_receipts(quality, density):
         or quality.get("model_release") != "BLOCKED"
         or quality.get("neon_writes") != 0
         or quality.get("line_messages_sent") != 0
+        # The actual 2022 source-density receipt, unlike the 2021 OHLCV
+        # quality receipt, calls the write counter "production_neon_writes".
+        # Require its REAL producer's key, never an absent alias/default.
+        or density.get("schema_version") != 1
         or density.get("scope") != DENSITY_SCOPE
+        or density.get("year") != 2022
+        or density.get("official_current_listed_eligible_twse_issuers") != 1092
         or density.get("aes_prior_2022_source_calendar_dates") != 162
         or density.get("neon_original_bulk_source_calendar_dates") != 84
+        or density.get("aes_source_days_overlap_neon_bulk_source_days") != 0
+        or density.get("aes_plus_neon_unique_observed_source_dates") != 246
+        or density.get("neon_bulk_date_set_matches_500_stock_density_date_set") is not True
         or density.get("aes_neon_merged_days_with_at_least_500_current_eligible_stock_bars") != 246
         or density.get("aes_neon_current_listed_stocks_with_all_246_source_dates") != 825
+        or density.get("historical_adjusted_total_returns_approved") is not False
         or density.get("model_release") != "BLOCKED"
-        or density.get("neon_writes") != 0
+        or density.get("production_neon_writes") != 0
         or density.get("line_messages_sent") != 0):
         raise ValueError("Real 2021 quality / 2022 density source receipt is missing or inconsistent")
 
