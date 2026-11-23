@@ -131,13 +131,14 @@ class Owner2021AesTWSE28DayCurrentCohortTests(unittest.TestCase):
         base=dict(eligible=eligible,source_days=days,
                   per_day_stocks=source,source_rows=count,
                   aes_file_hashes=digests)
+        forged=dict(source)
+        forged[date(2021,11,23)]=set(source[date(2021,11,23)])|{"1589"}
         for override in (
                 {"eligible":(*eligible,"1589")},
                 {"source_days":days-{date(2021,11,23)}},
-                {"per_day_stocks":dict(source,**{
-                    date(2021,11,23):set(source[date(2021,11,23)])|{"1589"}})},
+                {"per_day_stocks":forged},
                 {"aes_file_hashes":{"file.twseenc":"bad"}},
-                {"source_rows":MAX_R if (MAX_R:=45001) else 45001},
+                {"source_rows":45001},
         ):
             with self.assertRaises(ValueError):
                 evaluate_2021_aes_current_cohort(p,**(base|override))
