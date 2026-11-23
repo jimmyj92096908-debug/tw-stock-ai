@@ -28,7 +28,8 @@ def offline_cli(*args):
             "LINE_CHANNEL_SECRET", "INVESTMENT_MODEL_READONLY",
         }
     }
-    # CLI imports both top-level "src" package and modules under src/.\n    env["PYTHONPATH"] = os.pathsep.join((str(ROOT), str(ROOT / "src")))
+    # CLI imports both top-level "src" package and modules under src/.
+    env["PYTHONPATH"] = os.pathsep.join((str(ROOT), str(ROOT / "src")))
     return subprocess.run(
         [sys.executable, str(COMMAND), *map(str, args)],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=45,
