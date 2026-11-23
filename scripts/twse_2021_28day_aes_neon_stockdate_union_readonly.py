@@ -151,8 +151,8 @@ def evaluate_2021_union(*, prior_aes, prior_neon, recomputed_aes,
     month={}
     for d in EXPECTED_DAYS:
         m=d.strftime("%Y-%m")
-        a=sum((d,s) in aes for s in aes_by_day[d])
-        n=sum((d,s) in neon for _,s in neon_rows if _==d)
+        a=len(aes_by_day[d])
+        n=sum(trade_day==d for trade_day,_,_source in neon_rows)
         union_here=sum(day==d for day,s in combined)
         overlap_here=a+n-union_here
         row=month.setdefault(m,{
