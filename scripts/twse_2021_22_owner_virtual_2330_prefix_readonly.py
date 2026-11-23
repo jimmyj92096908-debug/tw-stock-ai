@@ -1,4 +1,4 @@
-"""Owner-private 2330-only 2021/22 virtual AES+Neon raw-source prefix canary.
+"""Owner-private 2330 / 1101 2021/22 virtual AES+Neon raw-source prefix canary.
 
 Proves price provenance and source prefix isolation, NOT point-in-time listing,
 dividend/capital-action adjustments, investability, alpha, historical market
@@ -34,6 +34,8 @@ from scripts.twse_archive_key_vault import (
 )
 
 STOCK = "2330"
+ALLOWED_STOCKS = frozenset({"1101", STOCK})
+
 BULK = "TWSE_MI_INDEX_ALLBUT0999"
 SECONDARY = "TWSE_STOCK_DAY"
 SCOPE = "OWNER_2021_22_AES_NEON_2330_VIRTUAL_RAW_PREFIX_READONLY"
@@ -178,8 +180,10 @@ def validate_receipts(quality, density):
         raise ValueError("Real 2021 quality / 2022 density source receipt is missing or inconsistent")
 
 
-def _validate_bar(row, *, aes=False):
-    if not isinstance(row, dict) or row.get("market") != "twse" or row.get("stock_id") != STOCK:
+def _validate_bar(row, *, aes=False, stock_id=STOCK):
+    if stock_id not in ALLOWED_STOCKS or type(stock_id) is not str:
+        raise ValueError("Issuer outside bounded owner research allowlist")
+    if not isinstance(row, dict) or row.get("market") != "twse" or row.get("stock_id") != stock_id:
         raise ValueError("Foreign or excluded source stock")
     d = row.get("trade_date")
     if (type(d) is not date or d not in EXPECTED_DAYS and not d.year == 2022 or
@@ -202,8 +206,10 @@ def _validate_bar(row, *, aes=False):
             raise ValueError("Invalid optional decimal economic field")
 
 
-def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
-    """Pure provenance-conserving virtual prefix; never emits prices publicly."""
+def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff, stock_id=STOCK):
+    """Pure provenance-conserving bounded issuer source prefix; private prices."""
+    if type(stock_id) is not str or stock_id not in ALLOWED_STOCKS:
+        raise ValueError("Issuer outside bounded owner research allowlist")
     validate_receipts(quality, density)
     if (type(cutoff) is not date or cutoff not in CUTOFFS
         or not isinstance(aes21, list) or not isinstance(aes22, list)
@@ -223,7 +229,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
     source_days_2022 = set()
     for year, source in ((2021, aes21), (2022, aes22)):
         for row in source:
-            _validate_bar(row, aes=True)
+            _validate_bar(row, aes=True, stock_id=stock_id)
             d = row["trade_date"]
             if d.year != year or d in local:
                 raise ValueError("Overlapping or incorrect local AES source date")
@@ -243,7 +249,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
     neon_2022_verified_bulk_calendar_days = set()
     neon_source_counts = Counter()
     for row in neon_rows:
-        _validate_bar(row)
+        _validate_bar(row, stock_id=stock_id)
         d = row["trade_date"]
         if d in neon_keys:
             raise ValueError("Duplicate official Neon 2330 day")
@@ -289,19 +295,19 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
     for d in prefix_dates:
         r = combined[d]
         h.update((d.isoformat() + "|" + "|".join(str(r[f]) for f in FIELDS) + "\n").encode("utf-8"))
-    return {
+    report = {
         "schema_version": 1,
         "scope": SCOPE,
-        "stock_id": STOCK,
+        "stock_id": stock_id,
         "as_of": cutoff.isoformat(),
         "original_2021_authenticated_market_source_days": 28,
         "original_2022_authenticated_aes_market_source_days": 162,
         "neon_2022_authenticated_bulk_source_days": 84,
         "virtual_2022_source_calendar_days": 246,
         "virtual_2021_22_combined_source_days": len(combined),
-        "neon_AES_overlapping_2330_source_stockdate_keys": core_parity,
-        "neon_2022_market_bulk_calendar_days_with_2330_bar": len(neon_2022_verified_bulk_calendar_days),
-        "neon_2330_official_price_source_tags": dict(sorted(neon_source_counts.items())),
+        "neon_AES_overlapping_stockdate_keys": core_parity,
+        "neon_2022_market_bulk_calendar_days_with_stock_bar": len(neon_2022_verified_bulk_calendar_days),
+        "neon_stock_official_price_source_tags": dict(sorted(neon_source_counts.items())),
         "neon_AES_overlap_OHLCV_exact": True,
         "neon_AES_optional_field_discrepancies": dict(sorted(optional_differences.items())),
         "as_of_raw_prefix_source_days": len(prefix_dates),
@@ -322,9 +328,19 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
         "line_messages_sent": 0,
         "paid_services_used": False,
     }
+    # Preserve prior 2330 private receipt contract exactly. Do not label
+    # the independent 1101 result with false 2330-specific field names.
+    if stock_id == STOCK:
+        report["neon_AES_overlapping_2330_source_stockdate_keys"] = core_parity
+        report["neon_2022_market_bulk_calendar_days_with_2330_bar"] = len(
+            neon_2022_verified_bulk_calendar_days)
+        report["neon_2330_official_price_source_tags"] = dict(sorted(neon_source_counts.items()))
+    return report
 
 
-def capture_neon(url):
+def capture_neon(url, stock_id=STOCK):
+    if type(stock_id) is not str or stock_id not in ALLOWED_STOCKS:
+        raise ValueError("Issuer outside bounded owner research allowlist")
     if not isinstance(url, str) or not url.startswith(("postgresql://","postgres://")):
         raise ValueError("Owner protected Neon DATABASE_URL required")
     import psycopg
@@ -334,17 +350,19 @@ def capture_neon(url):
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         conn.execute("SET LOCAL statement_timeout='90000ms'")
         roster = [r["stock_id"] for r in conn.execute(ELIGIBLE_SQL).fetchall()]
-        if len(roster) != 1092 or STOCK not in roster or "1589" in roster:
+        if len(roster) != 1092 or stock_id not in roster or "1589" in roster:
             raise ValueError("Current official listed issuer roster changed")
         bulk_days = [r["trade_date"] for r in conn.execute(BULK_DATES_SQL).fetchall()]
-        neon = [dict(r) for r in conn.execute(NEON_SINGLE_ISSUER_SQL, (STOCK,)).fetchall()]
+        neon = [dict(r) for r in conn.execute(NEON_SINGLE_ISSUER_SQL, (stock_id,)).fetchall()]
         if len(neon) > MAX_NEON_ROWS:
             raise ValueError("Too many Neon 2021/22 2330 original source rows")
         conn.rollback()
     return bulk_days, neon
 
 
-def _authenticated_selected(paths, key, year, expected_days):
+def _authenticated_selected(paths, key, year, expected_days, stock_id=STOCK):
+    if type(stock_id) is not str or stock_id not in ALLOWED_STOCKS:
+        raise ValueError("Issuer outside bounded owner research allowlist")
     # The owner's 2022 private AES directory can contain other-year files.
     # The audited 2022 producer already authenticates *every* off-year file
     # before filtering by its separately inspected year-only archive range.
@@ -367,8 +385,8 @@ def _authenticated_selected(paths, key, year, expected_days):
             if type(d) is not date or d.year != year:
                 raise ValueError("Unexpected source year in selected AES ciphertext")
             days_in_file.add(d)
-            if r["stock_id"] == STOCK:
-                _validate_bar(r, aes=True)
+            if r["stock_id"] == stock_id:
+                _validate_bar(r, aes=True, stock_id=stock_id)
                 result.append(r)
         proof = verify_archive(path, hex_key=key, on_verified_row=consume)
         if proof["archive_integrity_verified"] is not True:
@@ -383,7 +401,9 @@ def _authenticated_selected(paths, key, year, expected_days):
     return result
 
 
-def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, cutoff, url):
+def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, cutoff, url, stock_id=STOCK):
+    if type(stock_id) is not str or stock_id not in ALLOWED_STOCKS:
+        raise VirtualAuditStageError("UNCLASSIFIED")
     paths21 = _stage("ARCHIVE_PATHS", _private_archives, archive21)
     paths22 = _stage("ARCHIVE_PATHS", _private_archives, archive22)
     previous21 = _stage("PRIVATE_RECEIPTS", _private_file, quality_path, should_exist=True)
@@ -419,9 +439,9 @@ def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, c
             raise VirtualAuditStageError(phase)
 
     # Still a single, server-enforced read-only snapshot; no data price logged.
-    bulk_days, neon = _stage("NEON_READONLY_SNAPSHOT", capture_neon, url)
-    aes21 = _stage("AES_2021_2330_REPLAY", _authenticated_selected, paths21, key, 2021, 28)
-    aes22 = _stage("AES_2022_2330_REPLAY", _authenticated_selected, paths22, key, 2022, 162)
+    bulk_days, neon = _stage("NEON_READONLY_SNAPSHOT", capture_neon, url, stock_id)
+    aes21 = _stage("AES_2021_2330_REPLAY", _authenticated_selected, paths21, key, 2021, 28, stock_id)
+    aes22 = _stage("AES_2022_2330_REPLAY", _authenticated_selected, paths22, key, 2022, 162, stock_id)
     same_originals = _stage(
         "ARCHIVE_IMMUTABILITY",
         lambda: all(sha256(p.read_bytes()).hexdigest() == start_hashes[str(p)]
@@ -434,7 +454,15 @@ def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, c
         "VIRTUAL_PREFIX_EVALUATION", stitch,
         quality=quality, density=density, aes21=aes21, aes22=aes22,
         neon_rows=neon, bulk_days=bulk_days, cutoff=cutoff,
+        stock_id=stock_id,
     )
+    # Both 1101 and 2330 have 274 real original individual stock-day bars in
+    # the independently checked 2021/22 Neon read-only snapshot (2026-11-23).
+    # An owner test must not silently pass on less than the audited overlap.
+    if (report["neon_AES_overlapping_stockdate_keys"] != 190
+        or sum(report["neon_stock_official_price_source_tags"].values()) != 274
+        or report["virtual_2021_22_combined_source_days"] != 274):
+        raise VirtualAuditStageError("VIRTUAL_PREFIX_EVALUATION")
     raw = _stage(
         "PRIVATE_RECEIPT_WRITE",
         lambda: json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
@@ -449,7 +477,8 @@ def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, c
 
     # No price, address, credential, hash, private file path or stock-date leaves stdout.
     print(json.dumps({
-        "status": "OWNER_2021_22_2330_VIRTUAL_AES_NEON_RAW_PREFIX_READONLY_PASS",
+        "status": f"OWNER_2021_22_{stock_id}_VIRTUAL_AES_NEON_RAW_PREFIX_READONLY_PASS",
+        "stock_id": stock_id,
         "cutoff": report["as_of"],
         "virtual_source_days": report["virtual_2021_22_combined_source_days"],
         "used_prefix_days": report["as_of_raw_prefix_source_days"],
@@ -469,6 +498,7 @@ def main():
     p.add_argument("--prior-2021-quality", required=True)
     p.add_argument("--prior-2022-density", required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--stock-id", default=STOCK, choices=sorted(ALLOWED_STOCKS))
     p.add_argument("--as-of", default="2022-12-30", choices=("2022-12-29","2022-12-30"))
     args = p.parse_args()
     if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
@@ -479,7 +509,7 @@ def main():
             vault=args.key_vault, quality_path=args.prior_2021_quality,
             density_path=args.prior_2022_density, out=args.out,
             cutoff=date.fromisoformat(args.as_of),
-            url=os.environ.get("DATABASE_URL", ""))
+            url=os.environ.get("DATABASE_URL", ""), stock_id=args.stock_id)
     except VirtualAuditStageError as exc:
         raise SystemExit(_failure_message(exc.code)) from None
     except Exception:
