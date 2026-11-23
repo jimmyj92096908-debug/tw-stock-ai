@@ -1,0 +1,37 @@
+name: Neon Free Five-Year Index Pressure (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/neon_free_index_pressure_readonly.py'
+      - 'tests/test_neon_free_index_pressure_readonly.py'
+      - 'docs/neon-free-index-pressure-readonly-20261124.md'
+      - '.github/workflows/neon-free-index-pressure-readonly-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/neon_free_index_pressure_readonly.py'
+      - 'tests/test_neon_free_index_pressure_readonly.py'
+      - 'docs/neon-free-index-pressure-readonly-20261124.md'
+      - '.github/workflows/neon-free-index-pressure-readonly-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  storage-index-footprint-metadata-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original project testing dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and run Free index pressure guard regressions without Neon
+        run: |
+          python -m py_compile scripts/neon_free_index_pressure_readonly.py
+          python -m unittest -v tests.test_neon_free_index_pressure_readonly tests.test_neon_free_history_preflight_offline tests.test_prospective_freeze_preflight_readonly
+      - name: No live Neon credentials or writes in offline CI
+        run: echo "Only fake pg_catalog and stat rows; no Neon session, AES owner archive, data edits, index DDL, LINE, money or trading."
