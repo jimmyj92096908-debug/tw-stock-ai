@@ -29,6 +29,8 @@ from src.corporate_actions_data import (
 
 SCOPE = "OWNER_2021_22_TWSE_FROZEN2_HISTORICAL_OFFICIAL_ACTION_RESPONSES"
 TARGETS = frozenset(("2327", "2603"))
+AUDITED_ALTERNATE_TARGETS = frozenset(("1101", "2330"))
+ALLOWED_READONLY_TARGETS = TARGETS | AUDITED_ALTERNATE_TARGETS
 QUERY_START = date(2021, 12, 30)
 QUERY_END = date(2022, 12, 30)
 MAX_MONTHS = 13
@@ -107,11 +109,15 @@ def validate_owner_prior(report):
         raise ValueError("Wrong frozen issuer study cohort")
 
 
-def parse_month_response(payload: dict, *, kind: str, begin: date, end: date):
+def parse_month_response(payload: dict, *, kind: str, begin: date, end: date,
+                         targets=TARGETS):
     """Pure validator, rejects out-of-period rows including other issuers."""
     if (kind not in SOURCES or not isinstance(payload, dict)
+            or type(targets) is not frozenset or not targets
+            or not targets.issubset(ALLOWED_READONLY_TARGETS)
             or type(begin) is not date or type(end) is not date
-            or not QUERY_START <= begin <= end <= QUERY_END):
+            or not (date(2021, 12, 1) if targets == AUDITED_ALTERNATE_TARGETS
+                    else QUERY_START) <= begin <= end <= QUERY_END):
         raise ValueError("Invalid official historical month request")
     stat = payload.get("stat")
     if not isinstance(stat, str) or len(stat) > 150:
@@ -150,7 +156,7 @@ def parse_month_response(payload: dict, *, kind: str, begin: date, end: date):
             raw_date, market="twse", kind=kind, symbol=sid)
         if not begin <= d <= end:
             raise ValueError("Official endpoint ignored requested historical dates")
-        if sid not in TARGETS:
+        if sid not in targets:
             continue
         if kind == "reduction":
             category = "CAPITAL_REDUCTION"
@@ -187,7 +193,7 @@ def parse_month_response(payload: dict, *, kind: str, begin: date, end: date):
     }
 
 
-def fetch_month_kind(kind, begin, end, *, get=None):
+def fetch_month_kind(kind, begin, end, *, get=None, targets=TARGETS):
     """Actual HTTP requests stay entirely on public TWSE, never Neon."""
     if kind not in SOURCES:
         raise ValueError("Unrecognized exchange endpoint")
@@ -207,14 +213,15 @@ def fetch_month_kind(kind, begin, end, *, get=None):
         headers={"Accept": "application/json",
                  "User-Agent": "tw-stock-ai-free-historical-action-audit"})
     response.raise_for_status()
-    if urlparse(response.url).hostname != "www.twse.com.tw":
+    if (urlparse(response.url).scheme != "https"
+            or urlparse(response.url).hostname != "www.twse.com.tw"):
         raise ValueError("Official HTTP request redirected to unapproved host")
     data = response.content
     if not isinstance(data, bytes) or len(data) > MAX_BYTES_PER_RESPONSE:
         raise ValueError("TWSE response exceeds audited no-cost size cap")
     payload = response.json()
     report = parse_month_response(
-        payload, kind=kind, begin=begin, end=end)
+        payload, kind=kind, begin=begin, end=end, targets=targets)
     report["response_sha256"] = sha256(data).hexdigest()
     report["source_url"] = url
     report["requested_start"] = begin.isoformat()
