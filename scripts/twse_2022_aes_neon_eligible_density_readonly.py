@@ -297,7 +297,7 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
             sid,day = rec
             if (sid not in allowed or sid in firsts
                     or (day is not None and (
-                        type(day) is not date or not date(2023,1,1)<=day<end))):
+                        type(day) is not date or not date(2023,1,1)<=day<end or day.weekday()>=5))):
                 raise ValueError("Tampered current eligible future source provenance")
             firsts[sid] = day
         if set(firsts)!=allowed:
