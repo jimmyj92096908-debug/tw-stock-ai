@@ -297,7 +297,7 @@ class Virtual2330Tests(unittest.TestCase):
         # with the producer's declared output schema.
         import inspect
         from scripts.twse_2022_aes_neon_eligible_density_readonly import (
-            evaluate_2022_density,
+            evaluate as evaluate_2022_density,
         )
         source = inspect.getsource(evaluate_2022_density)
         self.assertIn('"production_neon_writes":0', source)
