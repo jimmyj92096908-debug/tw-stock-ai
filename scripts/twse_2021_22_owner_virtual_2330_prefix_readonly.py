@@ -81,9 +81,12 @@ AUDIT_STAGES = frozenset({
     "NEON_READONLY_SNAPSHOT",
     "AES_2021_2330_REPLAY",
     "AES_2022_2330_REPLAY",
+    "AES_2021_1101_REPLAY",
+    "AES_2022_1101_REPLAY",
     "ARCHIVE_IMMUTABILITY",
     "SOURCE_2022_CALENDAR",
     "AES_NEON_2330_CORE_OHLCV",
+    "AES_NEON_1101_CORE_OHLCV",
     "VIRTUAL_PREFIX_EVALUATION",
     "PRIVATE_RECEIPT_WRITE",
     "UNCLASSIFIED",
@@ -267,7 +270,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff, stoc
         if d in combined:
             original = combined[d]
             if any(original[f] != row[f] for f in FIELDS):
-                raise VirtualAuditStageError("AES_NEON_2330_CORE_OHLCV")
+                raise VirtualAuditStageError(f"AES_NEON_{stock_id}_CORE_OHLCV")
             for f in OPTIONAL:
                 if original.get(f) is None or row.get(f) is None:
                     optional_differences["unverifiable_" + f] += 1
@@ -440,8 +443,10 @@ def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, c
 
     # Still a single, server-enforced read-only snapshot; no data price logged.
     bulk_days, neon = _stage("NEON_READONLY_SNAPSHOT", capture_neon, url, stock_id)
-    aes21 = _stage("AES_2021_2330_REPLAY", _authenticated_selected, paths21, key, 2021, 28, stock_id)
-    aes22 = _stage("AES_2022_2330_REPLAY", _authenticated_selected, paths22, key, 2022, 162, stock_id)
+    aes21 = _stage(f"AES_2021_{stock_id}_REPLAY", _authenticated_selected,
+                   paths21, key, 2021, 28, stock_id)
+    aes22 = _stage(f"AES_2022_{stock_id}_REPLAY", _authenticated_selected,
+                   paths22, key, 2022, 162, stock_id)
     same_originals = _stage(
         "ARCHIVE_IMMUTABILITY",
         lambda: all(sha256(p.read_bytes()).hexdigest() == start_hashes[str(p)]
