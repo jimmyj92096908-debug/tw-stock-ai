@@ -26,10 +26,10 @@ def offline_cli(*args):
         if key not in {
             "DATABASE_URL", "NEON_API_KEY", "LINE_CHANNEL_ACCESS_TOKEN",
             "LINE_CHANNEL_SECRET", "INVESTMENT_MODEL_READONLY",
+            "PYTHONPATH",
         }
     }
-    # CLI imports both top-level "src" package and modules under src/.
-    env["PYTHONPATH"] = os.pathsep.join((str(ROOT), str(ROOT / "src")))
+    # Exercise the documented CLI from a clean shell, no special import path.
     return subprocess.run(
         [sys.executable, str(COMMAND), *map(str, args)],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=45,
