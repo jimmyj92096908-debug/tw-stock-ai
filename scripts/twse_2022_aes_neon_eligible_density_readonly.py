@@ -35,6 +35,7 @@ from scripts.twse_2022_aes_neon_five_year_overlay_offline import (
 from scripts.twse_archive_key_vault import resolve_archive_key
 from scripts.twse_2022_official_current_listing_date_triage import (
     fetch_official_company_basics, classify_official_current_listing,
+    validate_private_one_conflict_against_prior_receipt,
 )
 
 SCOPE = "OWNER_2022_TWSE_AES_NEON_CURRENT_OFFICIAL_STOCK_DATE_DENSITY_RESEARCH"
@@ -562,23 +563,8 @@ def run_local(*, archive_2022, key_vault, panel_report,
             if prior_path in set([*inputs,out]):
                 raise ValueError("Previous official private proof must not overwrite any input/output")
             prior = json.loads(prior_path.read_text(encoding="utf-8"))
-            old_evidence=prior.get(
-                "owner_129_no2022_current_twse_official_listing_date_triage")
-            cleaned={k:v for k,v in result.items() if k not in (
-                "owner_private_official_listing_first_neon_date_conflicts",
-                "private_conflict_details_never_equate_to_bad_price_or_ipo_proof")}
-            if (prior.get("schema_version")!=1
-                    or prior.get("scope")!=SCOPE
-                    or prior.get("model_release")!="BLOCKED"
-                    or prior.get("production_neon_writes")!=0
-                    or prior.get("line_messages_sent")!=0
-                    or not isinstance(old_evidence,dict)
-                    or old_evidence!=cleaned
-                    or old_evidence["source_listing_date_bucket_counts"].get(
-                        "current_2023plus_listing_but_neon_first_stored_before_current_listing_date")!=1
-                    or len(result.get(
-                        "owner_private_official_listing_first_neon_date_conflicts",[]))!=1):
-                raise ValueError("Previously verified single official listing date conflict has changed")
+            validate_private_one_conflict_against_prior_receipt(
+                prior,result,expected_scope=SCOPE)
         report["owner_129_no2022_current_twse_official_listing_date_triage"] = result
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
     if len(payload.encode("utf-8"))>MAX_REPORT_BYTES:
