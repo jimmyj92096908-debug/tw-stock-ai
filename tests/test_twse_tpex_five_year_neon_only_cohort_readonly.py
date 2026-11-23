@@ -129,7 +129,8 @@ class FiveYearNeonOnlyReadOnlyTests(TestCase):
             for source in ("TWSE_MI_INDEX_ALLBUT0999","TWSE_STOCK_DAY",
                            "TPEX_DATED_OTC_EW","TPEX_DAILY_CLOSE_OPENAPI"):
                 self.assertIn(source,sql)
-        self.assertIn("READ ONLY",audit.capture.__code__.co_consts)
+        self.assertTrue(any(isinstance(v,str) and "READ ONLY" in v
+                            for v in audit.capture.__code__.co_consts))
 
     def test_live_connector_uses_one_repeatable_read_only_transaction(self):
         conn=Mock()
