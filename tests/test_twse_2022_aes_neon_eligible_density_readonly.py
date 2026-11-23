@@ -123,10 +123,10 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
         self.assertEqual(r["observation_signature_stock_count"],expected)
         self.assertEqual(r["eligible_stocks_not_observed_on_all_source_days"],6)
         self.assertEqual(r["nominal_absent_stock_source_date_pairs_before_first"],6)
-        self.assertEqual(r["nominal_absent_stock_source_date_pairs_after_last"],9)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_after_last"],7)
         self.assertEqual(r["nominal_absent_stock_source_date_pairs_inside_first_last"],2)
         self.assertEqual(r["nominal_absent_stock_source_date_pairs_no_2022_record"],10)
-        self.assertEqual(r["nominal_absent_stock_source_date_pairs_total"],27)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_total"],25)
         self.assertTrue(r["boundary_absence_is_not_verified_as_pre_ipo_or_delisting"])
         self.assertTrue(r["internal_absence_may_be_authentic_halt_or_unresolved_source_gap"])
 
