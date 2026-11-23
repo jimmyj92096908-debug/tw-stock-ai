@@ -115,6 +115,10 @@ def reconcile_offline(source, neon):
             raise ValueError("Incomplete 2021..2026 official current-list market-year ledger")
         days_any = seq[2022]["days_with_any_neon_eligible_source_bars"]
         high = seq[2022]["days_with_at_least_500_eligible_source_bars"]
+        if (market == "twse" and
+                (seq[2021]["days_with_any_neon_eligible_source_bars"] != 28 or
+                 seq[2021]["days_with_at_least_500_eligible_source_bars"] != 0)):
+            raise ValueError("Old 2021 sparse Neon source snapshot has changed")
         if days_any != combined or (
                 market == "twse" and high != stored) or (
                 market == "tpex" and high != combined):
@@ -128,7 +132,7 @@ def reconcile_offline(source, neon):
             "neon_2022_days_with_any_eligible_source_stock": days_any,
             "neon_2022_days_with_at_least_500_current_stock_bars": high,
             "source_2022_year_research_gap": (
-                "TWSE_162_LOCAL_AES_SOURCE_DAYS_NOT_YET_MATERIALIZED_AS_NEON"
+                "TWSE_162_LOCAL_AES_SOURCE_DAYS_WITHOUT_NEON_HIGH_DENSITY_BULK"
                 if market == "twse" else
                 "NO_2022_MISSING_DATES_OBSERVED_AT_500_STOCK_HEURISTIC"
             ),
