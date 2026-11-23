@@ -55,6 +55,45 @@ def verify_source_write_budget(conn, *, days: int = 1) -> None:
     if not has_source_write_budget(size, days=days):
         raise RuntimeError("TWSE official source import blocked by Neon Free storage reserve")
 
+
+def read_only_source_preflight(database_url: str) -> dict:
+    """Cheap, server-enforced READ ONLY admission check, before official HTTP.
+
+    The result is advisory: run() repeats the storage test immediately before
+    every actual insertion. Never interpret this as permission to bypass the
+    write gate or as proof of Neon billing/egress headroom.
+    """
+    if not database_url:
+        raise ValueError("Protected DATABASE_URL required for source preflight")
+    with psycopg.connect(
+        database_url, connect_timeout=15,
+        options="-c default_transaction_read_only=on",
+    ) as conn:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                cur.execute("SET LOCAL statement_timeout = '6000ms'")
+                cur.execute("SELECT pg_database_size(current_database())::bigint")
+                row = cur.fetchone()
+                if row is None:
+                    raise ValueError("No verified physical database size")
+                database_bytes = row[0]
+    allowed = has_source_write_budget(database_bytes, days=1)
+    return {
+        "stage": "SOURCE_STORAGE_PREFLIGHT" if allowed else "ABSTAIN_STORAGE_RESERVE",
+        "database_bytes": database_bytes,
+        "max_database_bytes": MAX_DATABASE_BYTES,
+        "maintenance_reserve_bytes": MIN_MAINTENANCE_RESERVE_BYTES,
+        "one_source_day_stress_bytes": MAX_OFFICIAL_BARS_PER_DAY * STRESS_BYTES_PER_NEW_BAR,
+        "one_day_capacity_precheck_passed": allowed,
+        "production_write_authorized": False,
+        "actual_neon_plan_quota_verified": False,
+        "db_writes": 0,
+        "official_http_calls": 0,
+        "line_messages_sent": 0,
+        "model_release": "BLOCKED",
+    }
+
 # Only a recognized exchange "no matching data" response is an off-session.
 NO_DATA_MARKERS = ("沒有符合條件的資料", "無符合條件", "無資料")
 
@@ -197,8 +236,10 @@ def run(database_url: str, *, apply: bool = False,
         if not dates:
             return report
 
-        # Creating a table is a write: do it *only* with explicit apply enabled.
+        # Check the free storage reserve BEFORE even attempting progress DDL.
+        # Every source day is separately rechecked just before its insertion.
         if apply:
+            verify_source_write_budget(conn, days=1)
             with conn.transaction():
                 with conn.cursor() as cursor:
                     cursor.execute(CREATE_PROGRESS)
@@ -235,9 +276,23 @@ def run(database_url: str, *, apply: bool = False,
 def main() -> None:
     parser = argparse.ArgumentParser(description="官方 TWSE 全上市歷史日 K 限額回補")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--preflight", action="store_true",
+                        help="Read-only one-day storage check; never downloads or writes")
     parser.add_argument("--batch-days", type=int, default=6)
     parser.add_argument("--lookback-days", type=int, default=366)
     args = parser.parse_args()
+    if args.preflight:
+        if args.apply:
+            parser.error("--preflight cannot be combined with --apply")
+        result = read_only_source_preflight(os.environ.get("DATABASE_URL", ""))
+        print(f"TWSE official history {result['stage']}; "
+              f"database_bytes={result['database_bytes']}; "
+              f"source_day_stress_bytes={result['one_source_day_stress_bytes']}; "
+              "production_write_authorized=false; model_release=BLOCKED")
+        if not result["one_day_capacity_precheck_passed"]:
+            raise SystemExit("TWSE history ABSTAIN: Neon Free storage reserve; "
+                             "no official source request or database write")
+        return
     for item in run(
         os.environ.get("DATABASE_URL", ""), apply=args.apply,
         batch_days=args.batch_days, lookback_days=args.lookback_days,
