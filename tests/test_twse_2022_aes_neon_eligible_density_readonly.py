@@ -244,7 +244,7 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
             elif i < 100:
                 when=date(2025,5,5)
             elif i < 110:
-                when=date(2026,6,6)
+                when=date(2026,6,8)
             else:
                 when=None
             future[roster.index(sid)]=(sid,when)
