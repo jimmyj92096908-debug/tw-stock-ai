@@ -70,3 +70,19 @@ TWSE 公開免費 OpenAPI `https://openapi.twse.com.tw/v1/opendata/t187ap03_L`�
 成功訊息為 `TWSE_2022_NO_SOURCE_OFFICIAL_LISTING_DATE_TRIAGE_READONLY_PASS`。若官方介面無法取得、與現有 Neon 官方在市母體不一致或來源版本過期，應留待查核，**不得自行推論／造假 2022 來源 K 線**。
 
 維持不花費、Neon 唯讀、LINE 不修改且不發送、排除下市股票及 1589、不給出交易指示、模型 `BLOCKED`。
+## PR #234 實測 1 檔特殊來源時間線：自願輸出的私有明細
+
+擁有者 2026-11-23 在 Windows 本機完成官方來源正式驗收：129/129 檔的「目前證交所上市日期」在 2023 至 2026；但其中 1 檔 Neon 在該上市日之前已存在合法標籤、正收盤價的有效來源紀錄。**這不是 IPO 資格證明，更不是可以刪除行情的理由**。
+
+新增可選的 `--private-listing-conflict-details`，搭配 `--prior-official-listing-report` 指向既有已驗證、不可覆寫的 `aes-neon-2022-129-official-current-listing-date-20261123.json`。執行時仍需其他既有三份私有 AES/Neon 驗收報告及 `--post2022-firstseen`、`--official-current-listing-audit`；工具重新認證原本 AES + Neon 唯讀來源，與上一份 TWSE 官方回應 SHA256、129 檔分類結果、唯一衝突數 1 完全對帳。資料異動即失敗，而不是靜默採信新結果。
+
+原始 PR #234 聚合報告不受影響；請把新報告存成 `aes-neon-2022-single-listing-date-conflict-20261123.json`，仍位於 `TwStockPrivate`，不允許覆寫。這次**只有在明確使用選項時**，私有 JSON 的 `owner_129_no2022_current_twse_official_listing_date_triage.owner_private_official_listing_first_neon_date_conflicts` 才會含最多 5 筆個別股票的 `stock_id`、`first_valid_neon_source_date`、`current_official_twse_listing_date` 與 `stored_source_precedes_current_listing_by_calendar_days`。程式標準輸出仍是純聚合，不列個股代號、任何股價、公司聯絡方式或 Neon URI。
+
+執行上只需重用前節原本 PowerShell 命令，在原本 `--out` 前增加兩行選項：
+
+```text
+--private-listing-conflict-details
+--prior-official-listing-report "$HOME\TwStockPrivate\aes-neon-2022-129-official-current-listing-date-20261123.json"
+```
+
+並將 `--out` 的路徑改為前述新檔名。PowerShell 換行續接字元仍須按上面完整的既有呼叫規則加上。正式 model_release 維持 BLOCKED；本功能不能認定 Neon 日期錯誤、不能推論歷史首次上市日、不能改寫 Neon、不能修改 LINE 或支付額外費用。
