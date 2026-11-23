@@ -74,6 +74,27 @@ WHERE market='twse' AND source='TWSE_MI_INDEX_ALLBUT0999'
 ORDER BY trade_date
 """
 
+# Only a first OBSERVED valid stored stock/source date, never official IPO day.
+# This adds no raw OHLCV export or source-price output. 2023+ read remains
+# under the same current-official-list snapshot and READ ONLY transaction.
+POST2022_FIRST_SEEN_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
+, eligible AS (
+ SELECT o.stock_id FROM official_current_listed o
+ WHERE o.market='twse' AND o.stock_id <> '1589'
+ AND NOT EXISTS (
+ SELECT 1 FROM public.model_stock_exclusions x
+ WHERE x.market=o.market AND x.stock_id=o.stock_id
+ ))
+SELECT e.stock_id,MIN(p.trade_date) AS first_observed_source_date
+FROM eligible e
+LEFT JOIN public.daily_prices p ON
+ p.market='twse' AND p.stock_id=e.stock_id
+ AND p.trade_date >= DATE '2023-01-01' AND p.trade_date < %s
+ AND p.source IN ('TWSE_MI_INDEX_ALLBUT0999','TWSE_STOCK_DAY')
+ AND p.close > 0 AND p.volume >= 0
+GROUP BY e.stock_id ORDER BY e.stock_id
+"""
+
 
 def validate_owner_receipts(panel, five_year, overlay):
     expected = reconcile_offline(panel, five_year)
@@ -88,8 +109,11 @@ def validate_owner_receipts(panel, five_year, overlay):
     return expected
 
 
-def capture_neon(url):
-    """Bounded stock *identifiers* only; no raw price rows leave the DB."""
+def capture_neon(url, *, post2022_end=None):
+    """Bounded stock *identifiers* only; no raw price rows leave the DB.
+
+    Optional post-2022 first observation uses identical read-only snapshot.
+    """
     if not url or not url.startswith(("postgres://", "postgresql://")):
         raise ValueError("Protected owner Neon URL required")
     import psycopg
@@ -110,12 +134,23 @@ def capture_neon(url):
                 rows.extend(batch)
                 if len(rows) > MAX_NEON_ROWS:
                     raise ValueError("Unbounded 2022 Neon source stock/day keys")
+            post2022 = None
+            if post2022_end is not None:
+                if (type(post2022_end) is not date
+                        or not date(2023,1,2) <= post2022_end <= date(2027,1,1)):
+                    raise ValueError("Bounded owner report 2023+ horizon required")
+                cur.execute(POST2022_FIRST_SEEN_SQL,(post2022_end,))
+                post2022 = cur.fetchall()
+                if len(post2022) > 1500:
+                    raise ValueError("Unbounded future first-observed source proof")
         conn.rollback()
+    if post2022_end is not None:
+        return roster, bulk_days, rows, post2022
     return roster, bulk_days, rows
 
 
 def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
-             neon_bulk_days, neon_rows, source_audit):
+             neon_bulk_days, neon_rows, source_audit, post2022_first_seen=None):
     """Pure exact stock/day union, rejecting wrong type/date/source/receipt."""
     prior = validate_owner_receipts(panel, five_year, overlay)
     if (not isinstance(roster,(list,tuple)) or len(roster)!=1092
@@ -245,7 +280,51 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
             signatures["currently_eligible_stocks_observed_fewer_than_240_source_days"]!=
             len(roster)-current_stock_240):
         raise ValueError("Per-stock 2022 count and observed absence signatures drifted")
-    return {
+
+    post2022_observed_zero_2022 = None
+    if post2022_first_seen is not None:
+        if (not isinstance(post2022_first_seen,(list,tuple))
+                or len(post2022_first_seen)!=len(roster)):
+            raise ValueError("Post-2022 first observation must cover same official cohort")
+        firsts = {}
+        try:
+            end = date.fromisoformat(five_year["window_end_exclusive"])
+        except (ValueError,TypeError,KeyError) as exc:
+            raise ValueError("Invalid previously accepted five-year window") from exc
+        for rec in post2022_first_seen:
+            if not isinstance(rec,(tuple,list)) or len(rec)!=2:
+                raise ValueError("Invalid post-2022 first observation row")
+            sid,day = rec
+            if (sid not in allowed or sid in firsts
+                    or (day is not None and (
+                        type(day) is not date or not date(2023,1,1)<=day<end or day.weekday()>=5))):
+                raise ValueError("Tampered current eligible future source provenance")
+            firsts[sid] = day
+        if set(firsts)!=allowed:
+            raise ValueError("First-observed proof does not match current listed roster")
+        never_seen = allowed-set(per_stock)
+        if len(never_seen)!=129 or signatures[
+                "observation_signature_stock_count"]["no_observed_source_day"]!=129:
+            raise ValueError("2022 129 no-source owner witness changed")
+        years = {str(y):0 for y in range(2023,2027)}
+        years["no_valid_stored_source_observation_in_2023_to_2026_window"]=0
+        for sid in never_seen:
+            day = firsts[sid]
+            key = str(day.year) if day is not None else (
+                "no_valid_stored_source_observation_in_2023_to_2026_window")
+            if key not in years:
+                raise ValueError("First stored post-2022 market date outside supported year")
+            years[key] += 1
+        if sum(years.values())!=129:
+            raise ValueError("Post-2022 first-observed year bucket total mismatch")
+        post2022_observed_zero_2022 = {
+            "owner_2022_no_record_129_issuer_first_post2022_neon_observation_years":years,
+            "first_stored_observation_is_not_official_first_listing_or_ipo_date":True,
+            "2022_absence_does_not_prove_security_was_not_listed_in_2022":True,
+            "2022_absence_or_ipo_reason_remains_unresolved":True,
+            "post2022_neon_days_scanned_through_exclusive":end.isoformat(),
+        }
+    result = {
         "schema_version": 1,
         "scope": SCOPE,
         "year": 2022,
@@ -287,6 +366,10 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
         "line_messages_sent":0,
         "paid_upgrade_requested":False,
     }
+    if post2022_observed_zero_2022 is not None:
+        result["no_2022_stock_source_post2022_first_observation_triage"] = (
+            post2022_observed_zero_2022)
+    return result
 
 
 def classify_current_stock_source_absences(
@@ -386,7 +469,8 @@ def classify_current_stock_source_absences(
 
 
 def run_local(*, archive_2022, key_vault, panel_report,
-              five_year_report, overlay_report, output):
+              five_year_report, overlay_report, output,
+              post2022_firstseen=False):
     paths = _private_archives(archive_2022)
     inputs = [
         _private_file(x,should_exist=True) for x in (
@@ -410,7 +494,13 @@ def run_local(*, archive_2022, key_vault, panel_report,
     replay,h = _authenticated_rows(
         paths,hex_key=key,
         expected_bundle_digest=source_proof["authenticated_file_digest_bundle_sha256"])
-    roster, bulk, neon_rows = capture_neon(os.environ.get("DATABASE_URL",""))
+    post2022 = None
+    if post2022_firstseen:
+        cutoff = date.fromisoformat(five_year["window_end_exclusive"])
+        roster, bulk, neon_rows, post2022 = capture_neon(
+            os.environ.get("DATABASE_URL",""),post2022_end=cutoff)
+    else:
+        roster, bulk, neon_rows = capture_neon(os.environ.get("DATABASE_URL",""))
     allowed = set(roster)
     aes = {}
     total = 0
@@ -433,14 +523,17 @@ def run_local(*, archive_2022, key_vault, panel_report,
         raise ValueError("AES source changed during replay")
     report = evaluate(
         original,five_year,overlay,roster=roster,aes_by_day=aes,
-        neon_bulk_days=bulk,neon_rows=neon_rows,source_audit=source_proof)
+        neon_bulk_days=bulk,neon_rows=neon_rows,source_audit=source_proof,
+        post2022_first_seen=post2022)
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
     if len(payload.encode("utf-8"))>MAX_REPORT_BYTES:
         raise ValueError("Private stock-date density report exceeds safe limit")
     with out.open("x",encoding="utf-8") as fp:
         fp.write(payload)
     print(json.dumps({
-        "status":"TWSE_2022_FULL_CURRENT_COHORT_AES_NEON_DENSITY_READONLY_PASS",
+        "status":("TWSE_2022_NO_SOURCE_2023PLUS_FIRST_SEEN_READONLY_PASS"
+                  if post2022_firstseen else
+                  "TWSE_2022_FULL_CURRENT_COHORT_AES_NEON_DENSITY_READONLY_PASS"),
         "authenticated_aes_source_dates":report[
             "aes_prior_2022_source_calendar_dates"],
         "aes_days_with_at_least_500_current_stocks":report[
@@ -455,6 +548,7 @@ def run_local(*, archive_2022, key_vault, panel_report,
             "current_listed_source_date_observation_absence_signatures"][
                 "eligible_stocks_not_observed_on_all_source_days"],
         "unproven_ipo_halt_and_source_gap_reasons":True,
+        "no_2022_observation_129_post2022_firstseen_checked":bool(post2022_firstseen),
         "full_historical_pit_or_corporate_actions":False,
         "neon_writes":0,"line_messages_sent":0,"model_release":"BLOCKED",
     },ensure_ascii=False))
@@ -469,12 +563,15 @@ def main():
     cli.add_argument("--five-year-neon-report",required=True)
     cli.add_argument("--prior-overlay-report",required=True)
     cli.add_argument("--out",required=True)
+    cli.add_argument("--post2022-firstseen",action="store_true",
+                     help="Extra owner-readonly first observed 2023+ source year for 2022 zero-record cohort")
     a=cli.parse_args()
     try:
         run_local(archive_2022=a.archive_2022,key_vault=a.key_vault,
             panel_report=a.source_panel_report,
             five_year_report=a.five_year_neon_report,
-            overlay_report=a.prior_overlay_report,output=a.out)
+            overlay_report=a.prior_overlay_report,output=a.out,
+            post2022_firstseen=a.post2022_firstseen)
     except Exception:
         raise SystemExit(
             "2022 per-stock current-listed AES/Neon source density audit FAILED; "
