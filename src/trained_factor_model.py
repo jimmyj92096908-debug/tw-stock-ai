@@ -99,7 +99,7 @@ ORDER BY s.market,s.stock_id
 # relax original MOPS vintage, future label, eligibility, release or trade
 # gates. It uses existing (stock_id, as_of_date) / (stock_id, trade_date)
 # indexes; no DB schema, DDL or paid compute needed.
-FROZEN_SAME_DAY_MODEL_SQL = f"""${CURRENT_OFFICIAL_LISTED_CTE}
+FROZEN_SAME_DAY_MODEL_SQL = f"""{CURRENT_OFFICIAL_LISTED_CTE}
 SELECT s.market,s.stock_id,sm.stock_name,s.as_of_date,
  s.total_score,s.technical_score,s.smc_score,s.short_term_score,
  s.swing_score,s.long_term_score,s.coverage_weight,
