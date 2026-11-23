@@ -69,14 +69,14 @@ class Virtual2330Tests(unittest.TestCase):
         cls.aes21 = [source_bar(d) for d in sorted(EXPECTED_DAYS)]
         cls.aes22 = [source_bar(d) for d in calendar[:162]]
         cls.bulk_days = calendar[162:]
+        # Real Neon READ ONLY snapshot, 2026-11-23: all 274 valid 2330
+        # price rows are TWSE_STOCK_DAY, including all 84 dates whose
+        # *market-wide* calendar was established by other BULK-source stocks.
         cls.neon = [
-            source_bar(d, neon=True, src=SECONDARY) for d in sorted(EXPECTED_DAYS)
-        ] + [
-            source_bar(d, neon=True, src=BULK) for d in cls.bulk_days
-        ] + [
-            source_bar(d, neon=True, src=SECONDARY) for d in calendar[:3]
+            source_bar(d, neon=True, src=SECONDARY)
+            for d in sorted(EXPECTED_DAYS) + calendar
         ]
-        assert len(cls.neon) == 28 + 84 + 3
+        assert len(cls.neon) == 274
 
     def run_stitch(self, **kw):
         return stitch(
@@ -95,7 +95,9 @@ class Virtual2330Tests(unittest.TestCase):
         self.assertEqual(r["virtual_2021_22_combined_source_days"], 274)
         self.assertEqual(r["virtual_2022_source_calendar_days"], 246)
         self.assertEqual(r["as_of_raw_prefix_source_days"], 274)
-        self.assertEqual(r["neon_AES_overlapping_2330_source_stockdate_keys"], 31)
+        self.assertEqual(r["neon_AES_overlapping_2330_source_stockdate_keys"], 190)
+        self.assertEqual(r["neon_2022_market_bulk_calendar_days_with_2330_bar"], 84)
+        self.assertEqual(r["neon_2330_official_price_source_tags"], {SECONDARY: 274})
         self.assertEqual(r["as_of_last_240_observed_source_days"], 240)
         self.assertEqual(r["as_of_raw_unadjusted_sma240_private_research_value"], "101.25")
         self.assertTrue(r["neon_AES_overlap_OHLCV_exact"])
@@ -141,6 +143,36 @@ class Virtual2330Tests(unittest.TestCase):
 
     def test_missing_bulk_day_never_reconstructs_synthetic_price(self):
         a = [dict(x) for x in self.neon if x["trade_date"] != self.bulk_days[0]]
+        with self.assertRaises(ValueError):
+            self.run_stitch(neon=a)
+
+    def test_market_bulk_calendar_can_have_stock_day_provenance(self):
+        # Both official row sources are allowed on a verified market BULK
+        # date. Other dates cannot silently turn into fabricated bulk days.
+        a = [dict(x) for x in self.neon]
+        target = next(i for i, r in enumerate(a)
+                      if r["trade_date"] == self.bulk_days[0])
+        a[target]["source"] = BULK
+        report = self.run_stitch(neon=a)
+        self.assertEqual(report["neon_2022_market_bulk_calendar_days_with_2330_bar"], 84)
+        self.assertEqual(report["neon_2330_official_price_source_tags"], {
+            BULK: 1, SECONDARY: 273
+        })
+
+    def test_bulk_tag_outside_bulk_date_is_rejected(self):
+        a = [dict(x) for x in self.neon]
+        target = next(i for i, r in enumerate(a)
+                      if r["trade_date"] == self.aes22[0]["trade_date"])
+        a[target]["source"] = BULK
+        with self.assertRaises(ValueError):
+            self.run_stitch(neon=a)
+
+    def test_neon_only_unverified_date_is_rejected(self):
+        a = [dict(x) for x in self.neon]
+        day_outside_246 = date(2022, 12, 28)  # synthetic calendar omits this
+        self.assertNotIn(day_outside_246, self.bulk_days)
+        self.assertNotIn(day_outside_246, [r["trade_date"] for r in self.aes22])
+        a.append(source_bar(day_outside_246, neon=True, src=SECONDARY))
         with self.assertRaises(ValueError):
             self.run_stitch(neon=a)
 
