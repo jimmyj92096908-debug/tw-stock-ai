@@ -116,7 +116,7 @@ def parse_month_response(payload: dict, *, kind: str, begin: date, end: date,
             or type(targets) is not frozenset or not targets
             or not targets.issubset(ALLOWED_READONLY_TARGETS)
             or type(begin) is not date or type(end) is not date
-            or not (date(2021, 12, 1) if targets == AUDITED_ALTERNATE_TARGETS
+            or not (date(2021, 11, 23) if targets == AUDITED_ALTERNATE_TARGETS
                     else QUERY_START) <= begin <= end <= QUERY_END):
         raise ValueError("Invalid official historical month request")
     stat = payload.get("stat")
