@@ -14,7 +14,9 @@ from unittest.mock import Mock
 from scripts.twse_2022_official_current_listing_date_triage import (
     URL, fetch_official_company_basics,
     classify_official_current_listing,
+    validate_private_one_conflict_against_prior_receipt,
 )
+from scripts.twse_2022_aes_neon_eligible_density_readonly import SCOPE
 
 
 def source_inputs():
@@ -133,6 +135,48 @@ class CurrentTWSEListingDateOwnerAuditSyntheticTests(unittest.TestCase):
                 prior_window_end=date(2026,11,23),
                 private_listing_conflict_details=1)
 
+    def test_owner_private_conflict_must_match_original_pr234_receipt(self):
+        evidence,roster,zero,first=source_inputs()
+        sid=sorted(zero)[0]
+        first[sid]=date(2023,1,3)
+        args=dict(
+            eligible_ids=roster,no_2022_ids=zero,
+            first_2023plus=first,current_day=date(2026,11,23),
+            prior_window_end=date(2026,11,23))
+        public=classify_official_current_listing(evidence,**args)
+        private=classify_official_current_listing(
+            evidence,**args,private_listing_conflict_details=True)
+        original={
+            "schema_version":1,
+            "scope":SCOPE,
+            "model_release":"BLOCKED",
+            "production_neon_writes":0,
+            "line_messages_sent":0,
+            "year":2022,
+            "official_current_listed_eligible_twse_issuers":1092,
+            "aes_neon_current_listed_stocks_with_all_246_source_dates":825,
+            "owner_129_no2022_current_twse_official_listing_date_triage":public,
+        }
+        self.assertTrue(validate_private_one_conflict_against_prior_receipt(
+            original,private,expected_scope=SCOPE))
+        bad=dict(original,production_neon_writes=1)
+        with self.assertRaises(ValueError):
+            validate_private_one_conflict_against_prior_receipt(
+                bad,private,expected_scope=SCOPE)
+        bad=dict(original,official_current_listed_eligible_twse_issuers=1000)
+        with self.assertRaises(ValueError):
+            validate_private_one_conflict_against_prior_receipt(
+                bad,private,expected_scope=SCOPE)
+        bad=dict(original)
+        bad["owner_129_no2022_current_twse_official_listing_date_triage"]=dict(
+            public,official_current_company_basics_response_sha256="b"*64)
+        with self.assertRaises(ValueError):
+            validate_private_one_conflict_against_prior_receipt(
+                bad,private,expected_scope=SCOPE)
+        with self.assertRaises(ValueError):
+            validate_private_one_conflict_against_prior_receipt(
+                original,public,expected_scope=SCOPE)
+
     def test_stale_mixed_future_or_duplicate_company_metadata_rejected(self):
         for mode in ("stale","mixed","duplicate","future","invalid_row"):
             e,roster,zero,first=source_inputs()
@@ -220,6 +264,7 @@ class CurrentTWSEListingDateOwnerAuditSyntheticTests(unittest.TestCase):
         self.assertIn("--post2022-firstseen",p.stdout)
         self.assertIn("--official-current-listing-audit",p.stdout)
         self.assertIn("--private-listing-conflict-details",p.stdout)
+        self.assertIn("--prior-official-listing-report",p.stdout)
 
 
 if __name__=="__main__":
