@@ -1,0 +1,38 @@
+name: TWSE 2021-22 1101 2330 Issuer Dividend Economics (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2021_22_owner_issuer_dividend_economics_offline.py'
+      - 'tests/test_twse_2021_22_owner_issuer_dividend_economics_offline.py'
+      - 'docs/twse-2021-22-1101-2330-issuer-dividend-economic-evidence.md'
+      - '.github/workflows/twse-2021-22-issuer-dividend-economics-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_owner_issuer_dividend_economics_offline.py'
+      - 'tests/test_twse_2021_22_owner_issuer_dividend_economics_offline.py'
+      - 'docs/twse-2021-22-1101-2330-issuer-dividend-economic-evidence.md'
+      - '.github/workflows/twse-2021-22-issuer-dividend-economics-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  issuer-dividend-six-rows-blocked:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install established dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and verify retrospective issuer economics without owners
+        run: |
+          python -m py_compile scripts/twse_2021_22_owner_issuer_dividend_economics_offline.py
+          python -m unittest -v tests.test_twse_2021_22_owner_issuer_dividend_economics_offline
+      - name: No new database, network, AES, trading, LINE or billable activity
+        run: |
+          echo "Synthetic owner receipt only: original publication/PIT and total-return remain BLOCKED."
