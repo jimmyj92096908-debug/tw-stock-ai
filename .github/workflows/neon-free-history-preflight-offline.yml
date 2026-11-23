@@ -1,0 +1,37 @@
+name: Neon Free History Capacity Preflight (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/neon_free_history_preflight_offline.py'
+      - 'tests/test_neon_free_history_preflight_offline.py'
+      - 'docs/neon-free-history-preflight-20261123.md'
+      - '.github/workflows/neon-free-history-preflight-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/neon_free_history_preflight_offline.py'
+      - 'tests/test_neon_free_history_preflight_offline.py'
+      - 'docs/neon-free-history-preflight-20261123.md'
+      - '.github/workflows/neon-free-history-preflight-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and run synthetic regression evidence without credentials
+        run: |
+          python -m py_compile scripts/neon_free_history_preflight_offline.py
+          python -m unittest -v tests.test_neon_free_history_preflight_offline
+      - name: Assert offline-only scope
+        run: |
+          ! grep -Eq '^\s*import\s+(psycopg|requests|httpx)|^\s*from\s+(psycopg|requests|httpx)' scripts/neon_free_history_preflight_offline.py
+          echo 'No production database, LINE, paid APIs, deletion, or trading action executed.'
