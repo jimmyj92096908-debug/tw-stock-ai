@@ -78,7 +78,7 @@ class Owner2021AesTWSE28DayCurrentCohortTests(unittest.TestCase):
         self.assertEqual(r["2021_window_last_authenticated_source_day"],"2021-12-30")
         self.assertEqual(r["2021_aes_current_2026_twse_survivor_eligible_count"],1092)
         self.assertEqual(r["2021_2026_current_stocks_with_all_28_observed_source_days"],898)
-        self.assertEqual(r["2021_2026_current_stocks_with_at_least_26_of_28_days"],899)
+        self.assertEqual(r["2021_2026_current_stocks_with_at_least_26_of_28_days"],900)
         self.assertEqual(r["2021_2026_current_stocks_with_no_2021_source_day"],191)
         self.assertEqual(r["2021_aes_current_2026_twse_stock_date_presence_pairs"],sum(
             len(v) for v in source.values()))
