@@ -12,6 +12,7 @@ The capture can PASS while known events are missing; always disclose both.
 from __future__ import annotations
 
 import argparse
+from calendar import monthrange
 from datetime import date, datetime, timezone
 from hashlib import sha256
 import json
@@ -21,7 +22,7 @@ import re
 from scripts.twse_2021_22_traded_240_warmup_readonly import _private_file
 from scripts.twse_2021_22_frozen2_official_action_monthly_audit import (
     AUDITED_ALTERNATE_TARGETS, MAX_ROWS_PER_RESPONSE, SOURCES,
-    fetch_month_kind, months_and_bounds,
+    fetch_month_kind,
 )
 from scripts.twse_2021_22_owner_issuer_dividend_economics_offline import (
     SCOPE as PRIOR_SCOPE, REVIEW_DATE, check_issuer_economics,
@@ -110,10 +111,13 @@ def exact_months():
         raise ValueError("Six exact bounded historical months required")
     ranges = []
     for month in MONTHS:
-        one = months_and_bounds(month, month)
-        if len(one) != 1 or one[0][0] != month:
+        year, mon = map(int, month.split("-"))
+        begin = date(year, mon, 1)
+        end = min(date(year, mon, monthrange(year, mon)[1]),
+                  date(2022, 12, 30))
+        if not date(2021, 12, 1) <= begin <= end <= date(2022, 12, 30):
             raise ValueError("Bad public source month range")
-        ranges.append(one[0])
+        ranges.append((month, begin, end))
     return ranges
 
 
