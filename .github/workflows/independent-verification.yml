@@ -1,0 +1,64 @@
+name: Independent Research Verification (Offline)
+
+on:
+  push:
+    branches:
+      - "feature/independent-verification-contract-*"
+    paths:
+      - "tests/test_independent_verification_*.py"
+      - ".github/workflows/independent-verification.yml"
+      - "docs/independent-verification-contract.md"
+      - "src/chip_score.py"
+      - "src/composite_score.py"
+      - "src/trained_factor_model.py"
+      - "src/investment_model_bundle.py"
+      - "scripts/investment_model_pipeline.py"
+      - "models/tw-factor-ridge-1-*.json"
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: independent-research-verification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-independent-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install existing open-source test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify independent E2E, arithmetic differential and generated properties
+        run: |
+          python -m unittest -v \
+            tests.test_independent_verification_properties \
+            tests.test_independent_verification_e2e \
+            tests.test_fitted_artifact_consistency \
+            tests.test_trained_factor_model \
+            tests.test_investment_model_bundle
+      - name: Repeat the new independently specified tests to expose flaky results
+        run: |
+          python -m unittest -v \
+            tests.test_independent_verification_properties \
+            tests.test_independent_verification_e2e
+      - name: Declare exactly what this job proves
+        if: always()
+        run: |
+          echo '### Independent verification (offline)' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Actual offline investment-model CLI executed twice and output compared.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Independent rational-score reference and seeded generated input properties executed.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Existing model artifact parity, temporal split and fail-closed tests executed.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- No Neon credentials, LINE credentials, production writes or broker orders were provided.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Passing CI does NOT prove five-year completeness, profitable alpha, pristine holdout or safe live release.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- A reviewer-controlled main-branch rule is still required to stop self-edits of this contract.' >> "$GITHUB_STEP_SUMMARY"
