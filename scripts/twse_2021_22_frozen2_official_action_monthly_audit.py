@@ -116,7 +116,8 @@ def parse_month_response(payload: dict, *, kind: str, begin: date, end: date,
             or type(targets) is not frozenset or not targets
             or not targets.issubset(ALLOWED_READONLY_TARGETS)
             or type(begin) is not date or type(end) is not date
-            or not QUERY_START <= begin <= end <= QUERY_END):
+            or not (date(2021, 12, 1) if targets == AUDITED_ALTERNATE_TARGETS
+                    else QUERY_START) <= begin <= end <= QUERY_END):
         raise ValueError("Invalid official historical month request")
     stat = payload.get("stat")
     if not isinstance(stat, str) or len(stat) > 150:
@@ -212,7 +213,8 @@ def fetch_month_kind(kind, begin, end, *, get=None, targets=TARGETS):
         headers={"Accept": "application/json",
                  "User-Agent": "tw-stock-ai-free-historical-action-audit"})
     response.raise_for_status()
-    if urlparse(response.url).hostname != "www.twse.com.tw":
+    if (urlparse(response.url).scheme != "https"
+            or urlparse(response.url).hostname != "www.twse.com.tw"):
         raise ValueError("Official HTTP request redirected to unapproved host")
     data = response.content
     if not isinstance(data, bytes) or len(data) > MAX_BYTES_PER_RESPONSE:
