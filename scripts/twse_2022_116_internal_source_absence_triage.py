@@ -183,3 +183,99 @@ def triage_internal_source_absences(
         "line_messages_sent":0,
         "paid_provider_or_upgrades":False,
     }
+
+
+
+def full_six_plus_source_gap_queue(
+        roster, source_dates, observed_by_day, *,
+        previous_authenticated_116_report, expected_long_run_count=30):
+    """Recover *all*, not just two samples, 2022 internal gaps >=6 source days.
+
+    Requires byte-equivalent JSON structure of a prior owner real 116 report
+    (recomputed from reauthenticated AES + read-only Neon stock/date sources).
+    Does not infer missing real trades or classify pauses. Only saves dates
+    and ticker identifiers to a distinct owner-private JSON.
+    """
+    original=triage_internal_source_absences(
+        roster,source_dates,observed_by_day,
+        enforce_owner_receipt=True,
+    )
+    if (not isinstance(previous_authenticated_116_report,dict)
+            or original!=previous_authenticated_116_report
+            or type(expected_long_run_count) is not int
+            or not 0<=expected_long_run_count<=35):
+        raise ValueError("Immutable owner 116 source absence proof changed")
+    allowed=set(roster)
+    if len(allowed)!=1092 or len(source_dates)!=246:
+        raise ValueError("Expected authenticated owner 2022 official current-stock cohort")
+    positions={sid:[] for sid in roster}
+    for i,d in enumerate(source_dates):
+        for sid in observed_by_day[d]:
+            positions[sid].append(i)
+    long_rows=[]
+    for sid in sorted(allowed):
+        actual=positions[sid]
+        if len(actual)<2:
+            continue
+        first,last=actual[0],actual[-1]
+        have=set(actual)
+        absent=[i for i in range(first+1,last) if i not in have]
+        if not absent:
+            continue
+        begin=end=absent[0]
+        run_intervals=[]
+        for i in absent[1:]:
+            if i==end+1:
+                end=i
+            else:
+                run_intervals.append((begin,end))
+                begin=end=i
+        run_intervals.append((begin,end))
+        group=("INTERNAL_ONLY" if first==0 and
+               last==len(source_dates)-1 else
+               "INTERNAL_AND_OUTER")
+        for lo,hi in run_intervals:
+            size=hi-lo+1
+            if size<6:
+                continue
+            long_rows.append({
+                "stock_id":sid,
+                "observation_signature":group,
+                "first_unobserved_source_day":source_dates[lo].isoformat(),
+                "last_unobserved_source_day":source_dates[hi].isoformat(),
+                "unobserved_consecutive_source_days":size,
+                "confirmed_official_halt_for_these_dates":False,
+                "confirmed_missing_price_repair_obligation":False,
+            })
+    long_rows.sort(key=lambda item:(
+        -item["unobserved_consecutive_source_days"],
+        item["first_unobserved_source_day"],item["stock_id"]))
+    audited_counts=original["source_observation_gap_count_signatures"]
+    if (len(long_rows)!=expected_long_run_count or len(long_rows)!=
+            audited_counts["six_or_more_day_run_count"]
+            or sum(item["unobserved_consecutive_source_days"] for item
+                   in long_rows)>audited_counts[
+                       "internal_absent_stock_source_date_pairs"]):
+        raise ValueError("Previously authenticated 30 long 2022 gaps not reproduced")
+    return {
+        "schema_version":1,
+        "scope":"OWNER_2022_TWSE_ALL_LONG_SOURCE_ABSENCE_OFFICIAL_CHECK_QUEUE",
+        "underlying_116_source_absence_stocks":audited_counts[
+            "internal_absent_source_date_stock_count"],
+        "underlying_all_absent_stock_source_day_pairs":audited_counts[
+            "internal_absent_stock_source_date_pairs"],
+        "underlying_all_absent_source_day_runs":audited_counts[
+            "disjoint_absence_run_count"],
+        "at_least_six_unobserved_source_day_run_count":len(long_rows),
+        "all_30_long_source_absence_runs_recovered_from_source":True,
+        "owner_private_long_run_official_halt_check_queue":long_rows,
+        "twse_official_historic_suspension_query_url":
+            "https://www.twse.com.tw/zh/trading/historical/twtawu.html",
+        "official_halt_or_resumption_not_checked_by_this_offline_step":True,
+        "source_day_absence_not_proof_of_exchange_trading_obligation":True,
+        "zero_stock_price_imputation":True,
+        "model_release":"BLOCKED",
+        "production_neon_writes":0,
+        "line_messages_sent":0,
+        "paid_service_used":False,
+    }
