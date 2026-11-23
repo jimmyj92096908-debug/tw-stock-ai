@@ -1,0 +1,38 @@
+name: TWSE 2021-22 AES Neon Virtual 2330 Prefix (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2021_22_owner_virtual_2330_prefix_readonly.py'
+      - 'tests/test_twse_2021_22_owner_virtual_2330_prefix_readonly.py'
+      - 'docs/twse-2021-22-owner-virtual-2330-raw-prefix-readonly.md'
+      - '.github/workflows/twse-2021-22-virtual-2330-prefix-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_owner_virtual_2330_prefix_readonly.py'
+      - 'tests/test_twse_2021_22_owner_virtual_2330_prefix_readonly.py'
+      - 'docs/twse-2021-22-owner-virtual-2330-raw-prefix-readonly.md'
+      - '.github/workflows/twse-2021-22-virtual-2330-prefix-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  virtual-raw-prefix-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies without private files or secrets
+        run: pip install -r requirements.txt
+      - name: Compile and run synthetic 2021/22 boundary prefix tests
+        run: |
+          python -m py_compile scripts/twse_2021_22_owner_virtual_2330_prefix_readonly.py
+          python -m unittest -v tests.test_twse_2021_22_owner_virtual_2330_prefix_readonly
+      - name: Affirm no production write or private receipt was used
+        run: |
+          echo "Synthetic data only: no owner AES original, Neon live connection, PIT approval, model release, paid service, LINE or orders."
