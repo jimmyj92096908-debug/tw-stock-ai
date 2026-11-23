@@ -62,3 +62,63 @@
 ```
 
 預期輸出狀態 `TWSE_2022_FULL_CURRENT_COHORT_AES_NEON_DENSITY_READONLY_PASS`，不預先猜測 162 日每日至少 500 檔或 246 日 100% 逐日行情完整。若當前官方上市名單、Neon 2022 來源資料或 AES 私有檔變動，將停止而不是製造資料。全研究仍 `BLOCKED`。
+## 2022 年 267 檔未涵蓋所有來源日期：缺口形狀分類（下一階段）
+
+先前擁有者真實驗收顯示 1,092 檔目前上市股票中，有 **825 檔有全部 246 個已觀測來源日期**，另外 **65 檔有 240–245 日**、**202 檔少於 240 日**。這不等於「267 檔行情爬取失敗」：歷史 IPO、合法停牌、正常資料來源缺漏都可能造成某些日子沒有股票 K 線。
+
+同一支腳本新增一組不泄漏逐檔價格或敏感資料的 `current_listed_source_date_observation_absence_signatures`（來源日期**存在性**，不是已認證交易義務），把 1,092 檔嚴格分成七種互斥群組：
+
+- 全 246 個已觀測來源日期都有來源紀錄
+- 2022 年 246 個觀測來源日期完全沒有紀錄
+- 只有第一筆有來源紀錄**之前**的日期沒有紀錄
+- 只有最後一筆有來源紀錄**之後**的日期沒有紀錄
+- 只有兩端的外側日期沒有紀錄
+- 只有第一筆至最後一筆之間有內部沒有紀錄的日期
+- 同時有內部和外側缺口日期
+
+另外把「首次出現前」、「末次出現後」、「首次至末次之間」與「全年完全沒紀錄」的**名目缺口股票日期對**分開計數。每個分類都只是現有來源日集合下的數學描述；**未經官方歷史上市日、停牌紀錄、原始行情逐筆核對，不可以把邊界缺口歸因為 IPO，不可以把內部缺口直接判定為資料故障、也不能補假 K 線。**
+
+### 使用原本已驗證的私有資料再次執行分類
+
+新的分類只有在重新套用受控原始 AES＋Neon 逐檔資料計數後才會得到真實結果，因為舊版報告不含完整逐檔日期鍵。不要覆寫已成功驗收的舊 JSON；使用**新報告名稱**。
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    cd "$HOME\tw-stock-ai"
+    git pull --ff-only origin main
+    if ($LASTEXITCODE -ne 0) { throw 'GitHub 更新失敗' }
+    if ($env:DATABASE_URL -notmatch '^postgres(ql)?://') {
+        throw '請先在同一個 PowerShell 視窗安全設定既有 Neon URI'
+    }
+
+    $env:TWSE_KEY_GUI_PROMPT = '1'
+    $base = "$HOME\TwStockPrivate"
+    $panel = Join-Path $base 'aes-neon-240-stock-gaps-20261123.json'
+    $five = Join-Path $base 'aes-neon-five-year-current-listed-cohort-20261123.json'
+    $overlay = Join-Path $base 'aes-neon-2022-five-year-source-overlay-20261123.json'
+    $out = Join-Path $base 'aes-neon-2022-current-listed-absence-signatures-20261123.json'
+    foreach ($p in @($panel,$five,$overlay)) {
+        if (!(Test-Path $p)) { throw '既有驗收資料缺少，停止' }
+    }
+    if (Test-Path $out) { throw '新輸出已存在，禁止覆寫' }
+
+    python -m scripts.twse_2022_aes_neon_eligible_density_readonly `
+        --archive-2022 "$env:LOCALAPPDATA\tw-stock-private\prices" `
+        --key-vault "$env:LOCALAPPDATA\tw-stock-private\history.twsekey" `
+        --source-panel-report "$panel" `
+        --five-year-neon-report "$five" `
+        --prior-overlay-report "$overlay" `
+        --out "$out"
+    if ($LASTEXITCODE -ne 0) { throw '2022 股票來源缺口分布分類未通過' }
+
+    $r = Get-Content $out -Raw | ConvertFrom-Json
+    $s = $r.current_listed_source_date_observation_absence_signatures
+    Write-Host "未滿 246 來源日股票: $($s.eligible_stocks_not_observed_on_all_source_days)"
+    Write-Host "已觀測 240 到 245 日: $($s.currently_eligible_stocks_observed_240_to_245_source_days)"
+    Write-Host "已觀測少於 240 日: $($s.currently_eligible_stocks_observed_fewer_than_240_source_days)"
+    $s.observation_signature_stock_count | Format-List
+}
+```
+
+整套流程仍維持 **Neon transaction READ ONLY、LINE 訊息 0、沒有付費服務**、不傳出私人來源或個股行情；正式模型 `BLOCKED`。只有本機實際執行成功，才能將該七種形狀的真實統計標示為完成。
