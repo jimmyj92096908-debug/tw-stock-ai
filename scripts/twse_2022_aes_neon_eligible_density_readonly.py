@@ -33,6 +33,9 @@ from scripts.twse_2022_aes_neon_five_year_overlay_offline import (
     SCOPE as OVERLAY_SCOPE, reconcile_offline,
 )
 from scripts.twse_archive_key_vault import resolve_archive_key
+from scripts.twse_2022_116_internal_source_absence_triage import (
+    triage_internal_source_absences,
+)
 from scripts.twse_2022_official_current_listing_date_triage import (
     fetch_official_company_basics, classify_official_current_listing,
     validate_private_one_conflict_against_prior_receipt,
@@ -155,7 +158,8 @@ def capture_neon(url, *, post2022_end=None):
 
 
 def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
-             neon_bulk_days, neon_rows, source_audit, post2022_first_seen=None):
+             neon_bulk_days, neon_rows, source_audit, post2022_first_seen=None,
+             internal_gap_triage=False):
     """Pure exact stock/day union, rejecting wrong type/date/source/receipt."""
     prior = validate_owner_receipts(panel, five_year, overlay)
     if (not isinstance(roster,(list,tuple)) or len(roster)!=1092
@@ -286,6 +290,19 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
             len(roster)-current_stock_240):
         raise ValueError("Per-stock 2022 count and observed absence signatures drifted")
 
+    detail_for_116 = None
+    if internal_gap_triage:
+        if (type(internal_gap_triage) is not bool or
+                post2022_first_seen is not None):
+            raise ValueError("Owner 2022 internal source gap research is separate from 2023+ first source")
+        detail_for_116 = triage_internal_source_absences(
+            roster, tuple(sorted(union_days)),
+            {d:aes_by_day.get(d,set())|neon_by_day.get(d,set())
+             for d in union_days},
+            expected_signature=signatures,
+            enforce_owner_receipt=True,
+        )
+
     post2022_observed_zero_2022 = None
     if post2022_first_seen is not None:
         if (not isinstance(post2022_first_seen,(list,tuple))
@@ -374,6 +391,9 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
     if post2022_observed_zero_2022 is not None:
         result["no_2022_stock_source_post2022_first_observation_triage"] = (
             post2022_observed_zero_2022)
+    if detail_for_116 is not None:
+        result["owner_private_2022_116_internal_source_absence_triage"] = (
+            detail_for_116)
     return result
 
 
@@ -476,7 +496,12 @@ def classify_current_stock_source_absences(
 def run_local(*, archive_2022, key_vault, panel_report,
               five_year_report, overlay_report, output,
               post2022_firstseen=False, official_current_listing_audit=False,
-              private_listing_conflict_details=False, prior_official_listing_report=None):
+              private_listing_conflict_details=False, prior_official_listing_report=None,
+              internal_gap_triage=False):
+    if internal_gap_triage and (
+            post2022_firstseen or official_current_listing_audit
+            or private_listing_conflict_details):
+        raise ValueError("Internal 116 source gap review must run as separate owner-only report")
     if official_current_listing_audit and not post2022_firstseen:
         raise ValueError("Official current listing date comparison requires stored first-observed-year receipt")
     if private_listing_conflict_details and not (
@@ -538,7 +563,7 @@ def run_local(*, archive_2022, key_vault, panel_report,
     report = evaluate(
         original,five_year,overlay,roster=roster,aes_by_day=aes,
         neon_bulk_days=bulk,neon_rows=neon_rows,source_audit=source_proof,
-        post2022_first_seen=post2022)
+        post2022_first_seen=post2022,internal_gap_triage=internal_gap_triage)
     if official_current_listing_audit:
         observed_2022 = set()
         for values in aes.values():
@@ -567,12 +592,15 @@ def run_local(*, archive_2022, key_vault, panel_report,
                 prior,result,expected_scope=SCOPE)
         report["owner_129_no2022_current_twse_official_listing_date_triage"] = result
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
-    if len(payload.encode("utf-8"))>MAX_REPORT_BYTES:
+    if len(payload.encode("utf-8"))>(
+            95000 if internal_gap_triage else MAX_REPORT_BYTES):
         raise ValueError("Private stock-date density report exceeds safe limit")
     with out.open("x",encoding="utf-8") as fp:
         fp.write(payload)
     print(json.dumps({
-        "status":("TWSE_2022_SINGLE_LISTING_DATE_CONFLICT_PRIVATE_EVIDENCE_PASS"
+        "status":("TWSE_2022_116_INTERNAL_SOURCE_ABSENCE_TRIAGE_READONLY_PASS"
+                  if internal_gap_triage else
+                  "TWSE_2022_SINGLE_LISTING_DATE_CONFLICT_PRIVATE_EVIDENCE_PASS"
                   if private_listing_conflict_details else
                   "TWSE_2022_NO_SOURCE_OFFICIAL_LISTING_DATE_TRIAGE_READONLY_PASS"
                   if official_current_listing_audit else
@@ -592,6 +620,16 @@ def run_local(*, archive_2022, key_vault, panel_report,
         "incomplete_2022_source_day_stock_count":report[
             "current_listed_source_date_observation_absence_signatures"][
                 "eligible_stocks_not_observed_on_all_source_days"],
+        "internal_2022_observed_absence_stock_count":(
+            report["owner_private_2022_116_internal_source_absence_triage"][
+                "source_observation_gap_count_signatures"][
+                    "internal_absent_source_date_stock_count"]
+            if internal_gap_triage else None),
+        "internal_2022_unobserved_stock_source_day_pairs":(
+            report["owner_private_2022_116_internal_source_absence_triage"][
+                "source_observation_gap_count_signatures"][
+                    "internal_absent_stock_source_date_pairs"]
+            if internal_gap_triage else None),
         "unproven_ipo_halt_and_source_gap_reasons":True,
         "no_2022_observation_129_post2022_firstseen_checked":bool(post2022_firstseen),
         "owner_129_current_twse_official_listing_metadata_checked":
@@ -632,6 +670,8 @@ def main():
                      help="Opt-in owner-private report only: stock code and first Neon date vs current TWSE listing-date mismatch")
     cli.add_argument("--prior-official-listing-report",
                      help="Previously verified private PR234 official listing JSON (required for one-stock conflict details)")
+    cli.add_argument("--internal-gap-triage",action="store_true",
+                     help="Opt-in current-listed 2022 authenticated 104+12 internal source-date absence details (private JSON only)")
     a=cli.parse_args()
     try:
         run_local(archive_2022=a.archive_2022,key_vault=a.key_vault,
@@ -641,7 +681,8 @@ def main():
             post2022_firstseen=a.post2022_firstseen,
             official_current_listing_audit=a.official_current_listing_audit,
             private_listing_conflict_details=a.private_listing_conflict_details,
-            prior_official_listing_report=a.prior_official_listing_report)
+            prior_official_listing_report=a.prior_official_listing_report,
+            internal_gap_triage=a.internal_gap_triage)
     except Exception:
         raise SystemExit(
             "2022 per-stock current-listed AES/Neon source density audit FAILED; "
