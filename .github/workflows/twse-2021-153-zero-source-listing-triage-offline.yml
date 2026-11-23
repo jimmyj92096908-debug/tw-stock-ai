@@ -1,0 +1,38 @@
+name: TWSE 2021 153 Zero Source Current Listing Date Triage (Offline)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_153_zero_source_current_listing_triage.py'
+      - 'tests/test_twse_2021_153_zero_source_current_listing_triage.py'
+      - '.github/workflows/twse-2021-153-zero-source-listing-triage-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2021_153_zero_source_current_listing_triage.py'
+      - 'tests/test_twse_2021_153_zero_source_current_listing_triage.py'
+      - '.github/workflows/twse-2021-153-zero-source-listing-triage-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  current-listing-not-2021-pit-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      STOCK_ARCHIVE_KEY_HEX: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run offline fake 153 zero-source current company listing-date tests
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_2021_153_zero_source_current_listing_triage.py
+          python -m unittest tests.test_twse_2021_153_zero_source_current_listing_triage -v
+          python -m unittest tests.test_twse_2021_28day_aes_neon_stockdate_union_readonly -v
