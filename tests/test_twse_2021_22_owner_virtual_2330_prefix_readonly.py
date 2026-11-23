@@ -41,12 +41,23 @@ def qualified_receipts():
             "line_messages_sent": 0,
         },
         {
+            # Match actual producer's 2022 receipt, not the incorrect
+            # neon_writes alias that caused the owner's guarded real audit
+            # to fail after both source-tag changes.
+            "schema_version": 1,
             "scope": DENSITY_SCOPE,
+            "year": 2022,
+            "official_current_listed_eligible_twse_issuers": 1092,
             "aes_prior_2022_source_calendar_dates": 162,
             "neon_original_bulk_source_calendar_dates": 84,
+            "aes_source_days_overlap_neon_bulk_source_days": 0,
+            "aes_plus_neon_unique_observed_source_dates": 246,
+            "neon_bulk_date_set_matches_500_stock_density_date_set": True,
             "aes_neon_merged_days_with_at_least_500_current_eligible_stock_bars": 246,
             "aes_neon_current_listed_stocks_with_all_246_source_dates": 825,
-            "model_release": "BLOCKED", "neon_writes": 0,
+            "historical_adjusted_total_returns_approved": False,
+            "model_release": "BLOCKED",
+            "production_neon_writes": 0,
             "line_messages_sent": 0,
         },
     )
@@ -248,6 +259,49 @@ class Virtual2330Tests(unittest.TestCase):
         with self.assertRaises(VirtualAuditStageError) as ctx:
             self.run_stitch(neon=missing)
         self.assertEqual(ctx.exception.code, "SOURCE_2022_CALENDAR")
+
+    def test_2022_real_report_schema_rejected_if_write_guard_missing_or_changed(self):
+        # Importing the actual 2022 density receipt has no neon_writes key.
+        # That is not evidence of writes: the canonical producer field is
+        # production_neon_writes, which must be zero.
+        q, d = qualified_receipts()
+        self.assertNotIn("neon_writes", d)
+        self.assertEqual(d["production_neon_writes"], 0)
+        validate_receipts(q, d)
+        result = self.run_stitch(quality=q, density=d)
+        self.assertEqual(result["virtual_2021_22_combined_source_days"], 274)
+
+        for mutation in (
+            {"production_neon_writes": 1},
+            {"production_neon_writes": None},
+            {"production_neon_writes": True},
+            {"schema_version": 2},
+            {"year": 2021},
+            {"aes_source_days_overlap_neon_bulk_source_days": 1},
+            {"aes_plus_neon_unique_observed_source_dates": 245},
+            {"neon_bulk_date_set_matches_500_stock_density_date_set": False},
+            {"historical_adjusted_total_returns_approved": True},
+        ):
+            bad = dict(d, **mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                validate_receipts(q, bad)
+
+        absent = dict(d)
+        absent.pop("production_neon_writes")
+        absent["neon_writes"] = 0  # old broken alias must never bypass guard
+        with self.assertRaises(ValueError):
+            validate_receipts(q, absent)
+
+    def test_real_density_receipt_producer_uses_production_neon_writes(self):
+        # Source-contract regression: ensure the protected importer agrees
+        # with the producer's declared output schema.
+        import inspect
+        from scripts.twse_2022_aes_neon_eligible_density_readonly import (
+            evaluate as evaluate_2022_density,
+        )
+        source = inspect.getsource(evaluate_2022_density)
+        self.assertIn('"production_neon_writes":0', source)
+        self.assertNotIn('"neon_writes":0', source)
 
     def test_live_sql_is_read_only_and_bounded(self):
         self.assertIn("stock_id=%s", NEON_SINGLE_ISSUER_SQL)
