@@ -12,7 +12,8 @@ from unittest.mock import Mock,patch
 
 from scripts.twse_2022_aes_neon_eligible_density_readonly import (
     BULK, SECONDARY, SCOPE, STOCK_DATE_SQL, ELIGIBLE_SQL,
-    BULK_DATES_SQL, capture_neon, evaluate, classify_current_stock_source_absences,
+    BULK_DATES_SQL, POST2022_FIRST_SEEN_SQL,
+    capture_neon, evaluate, classify_current_stock_source_absences,
 )
 from scripts.twse_2022_aes_neon_five_year_overlay_offline import reconcile_offline
 from tests.test_twse_2022_aes_neon_five_year_overlay_offline import old,fresh
@@ -212,6 +213,112 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
         self.assertEqual(r["aes_neon_merged_days_with_at_least_500_current_eligible_stock_bars"],245)
         self.assertFalse(r["full_market_all_stock_daily_bar_completeness_certified"])
 
+    def test_post2022_first_observed_years_for_exact_129_zero_2022_source(self):
+        p,b,o,roster,aes,bulk,neon,proof=self.reference
+        # The general synthetic panel had 103 no-source issuers.
+        # Keep exactly 83,294 previously accepted Neon 2022 source keys,
+        # but move 2,184 distinct eligible stock/day keys from 26 bulk
+        # issuer series into 162 low-density source dates. This raises
+        # genuine synthetic zero-source current-listed issuers to 129.
+        omit=set(roster[963:989])
+        reduced=[row for row in neon if row[1] not in omit]
+        self.assertEqual(len(neon)-len(reduced),84*26)
+        for i,d in enumerate(sorted(aes)):
+            to_add=(84*26//162)+(1 if i < (84*26)%162 else 0)
+            for sid in roster[2:2+to_add]:
+                reduced.append((d,sid,SECONDARY))
+        self.assertEqual(len(reduced),83294)
+        initial=evaluate(p,b,o,roster=roster,aes_by_day=aes,
+                         neon_bulk_days=bulk,neon_rows=reduced,source_audit=proof)
+        self.assertEqual(initial["current_listed_source_date_observation_absence_signatures"][
+            "observation_signature_stock_count"]["no_observed_source_day"],129)
+        future=[(sid,date(2023,4,3)) for sid in roster]
+        # 129 synthetic missing-2022 issuers: 50 first appear 2023,
+        # 30 in 2024, 20 in 2025, 10 in 2026 and 19 no Neon
+        # eligible observations after the year window.
+        for i,sid in enumerate(roster[963:]):
+            if i < 50:
+                when=date(2023,4,3)
+            elif i < 80:
+                when=date(2024,3,4)
+            elif i < 100:
+                when=date(2025,5,5)
+            elif i < 110:
+                when=date(2026,6,6)
+            else:
+                when=None
+            future[roster.index(sid)]=(sid,when)
+        audited=evaluate(p,b,o,roster=roster,aes_by_day=aes,
+                         neon_bulk_days=bulk,neon_rows=reduced,
+                         source_audit=proof,post2022_first_seen=future)
+        detail=audited["no_2022_stock_source_post2022_first_observation_triage"]
+        bins=detail["owner_2022_no_record_129_issuer_first_post2022_neon_observation_years"]
+        self.assertEqual([bins[str(y)] for y in range(2023,2027)],[50,30,20,10])
+        self.assertEqual(bins[
+            "no_valid_stored_source_observation_in_2023_to_2026_window"],19)
+        self.assertEqual(sum(bins.values()),129)
+        self.assertTrue(detail[
+            "first_stored_observation_is_not_official_first_listing_or_ipo_date"])
+        self.assertTrue(detail["2022_absence_or_ipo_reason_remains_unresolved"])
+        self.assertEqual(audited["model_release"],"BLOCKED")
+        self.assertEqual(audited["production_neon_writes"],0)
+        self.assertEqual(audited["line_messages_sent"],0)
+        self.assertFalse(audited["historical_delisted_survivorship_bias_eliminated"])
+        bad=list(future);bad[0]=(bad[0][0],date(2022,12,30))
+        with self.assertRaises(ValueError):
+            evaluate(p,b,o,roster=roster,aes_by_day=aes,
+                     neon_bulk_days=bulk,neon_rows=reduced,
+                     source_audit=proof,post2022_first_seen=bad)
+        bad=future[:-1]
+        with self.assertRaises(ValueError):
+            evaluate(p,b,o,roster=roster,aes_by_day=aes,
+                     neon_bulk_days=bulk,neon_rows=reduced,
+                     source_audit=proof,post2022_first_seen=bad)
+        bad=list(future);bad[0]=bad[1]
+        with self.assertRaises(ValueError):
+            evaluate(p,b,o,roster=roster,aes_by_day=aes,
+                     neon_bulk_days=bulk,neon_rows=reduced,
+                     source_audit=proof,post2022_first_seen=bad)
+
+    def test_post2022_first_seen_sql_read_only_current_listing_and_no_ipo_claim(self):
+        self.assertIn("official_current_listed",POST2022_FIRST_SEEN_SQL)
+        self.assertIn("model_stock_exclusions",POST2022_FIRST_SEEN_SQL)
+        self.assertIn("stock_id <> '1589'",POST2022_FIRST_SEEN_SQL)
+        self.assertIn("2023-01-01",POST2022_FIRST_SEEN_SQL)
+        self.assertIn("MIN(p.trade_date)",POST2022_FIRST_SEEN_SQL)
+        self.assertIn("p.close > 0",POST2022_FIRST_SEEN_SQL)
+        self.assertIn("p.volume >= 0",POST2022_FIRST_SEEN_SQL)
+        self.assertNotIn("INSERT ",POST2022_FIRST_SEEN_SQL.upper())
+        self.assertNotIn("UPDATE ",POST2022_FIRST_SEEN_SQL.upper())
+        self.assertNotIn("DELETE ",POST2022_FIRST_SEEN_SQL.upper())
+
+    def test_post2022_optional_query_uses_same_readonly_snapshot(self):
+        conn=Mock();conn.__enter__=Mock(return_value=conn);conn.__exit__=Mock(return_value=False)
+        cursor=Mock();cursor.__enter__=Mock(return_value=cursor);cursor.__exit__=Mock(return_value=False)
+        conn.cursor.return_value=cursor
+        def result(sql,*params):
+            if sql==ELIGIBLE_SQL:
+                cursor.fetchall.return_value=[("2327",)]
+            elif sql==BULK_DATES_SQL:
+                cursor.fetchall.return_value=[(date(2022,10,31),)]
+            elif sql==STOCK_DATE_SQL:
+                cursor.fetchmany.side_effect=[[(date(2022,10,31),"2327",BULK)],[]]
+            elif sql==POST2022_FIRST_SEEN_SQL:
+                cursor.fetchall.return_value=[("2327",date(2023,1,3))]
+                self.assertEqual(params[0],(date(2026,11,23),))
+            return cursor
+        cursor.execute.side_effect=result
+        with patch("psycopg.connect",return_value=conn):
+            roster,bulk,stock_dates,firsts=capture_neon(
+                "postgresql://fake/db",post2022_end=date(2026,11,23))
+        self.assertEqual(firsts,[("2327",date(2023,1,3))])
+        self.assertEqual(roster,["2327"])
+        conn.rollback.assert_called_once()
+        commands=[c.args[0] for c in cursor.execute.call_args_list]
+        self.assertEqual(commands.count(
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"),1)
+        self.assertEqual(commands.count(POST2022_FIRST_SEEN_SQL),1)
+
     def test_database_source_queries_filter_current_listing_no_writes(self):
         self.assertIn("official_current_listed",ELIGIBLE_SQL)
         self.assertIn("stock_id <> '1589'",ELIGIBLE_SQL)
@@ -263,6 +370,7 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
         self.assertEqual(proc.returncode,0,proc.stderr)
         self.assertIn("--archive-2022",proc.stdout)
         self.assertIn("--prior-overlay-report",proc.stdout)
+        self.assertIn("--post2022-firstseen",proc.stdout)
 
 
 if __name__=="__main__":
