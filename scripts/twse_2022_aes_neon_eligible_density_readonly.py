@@ -475,12 +475,15 @@ def classify_current_stock_source_absences(
 def run_local(*, archive_2022, key_vault, panel_report,
               five_year_report, overlay_report, output,
               post2022_firstseen=False, official_current_listing_audit=False,
-              private_listing_conflict_details=False):
+              private_listing_conflict_details=False, prior_official_listing_report=None):
     if official_current_listing_audit and not post2022_firstseen:
         raise ValueError("Official current listing date comparison requires stored first-observed-year receipt")
     if private_listing_conflict_details and not (
-            official_current_listing_audit and post2022_firstseen):
-        raise ValueError("Private conflict details require full authenticated current-listing audit")
+            official_current_listing_audit and post2022_firstseen and
+            prior_official_listing_report):
+        raise ValueError("Private conflict details require previous successful official listing receipt")
+    if prior_official_listing_report and not private_listing_conflict_details:
+        raise ValueError("Prior official receipt may only be supplied for opt-in private conflict evidence")
     paths = _private_archives(archive_2022)
     inputs = [
         _private_file(x,should_exist=True) for x in (
@@ -553,6 +556,29 @@ def run_local(*, archive_2022, key_vault, panel_report,
                 five_year["window_end_exclusive"]),
             private_listing_conflict_details=private_listing_conflict_details,
         )
+        if private_listing_conflict_details:
+            prior_path = _private_file(
+                prior_official_listing_report,should_exist=True)
+            if prior_path in set([*inputs,out]):
+                raise ValueError("Previous official private proof must not overwrite any input/output")
+            prior = json.loads(prior_path.read_text(encoding="utf-8"))
+            old_evidence=prior.get(
+                "owner_129_no2022_current_twse_official_listing_date_triage")
+            cleaned={k:v for k,v in result.items() if k not in (
+                "owner_private_official_listing_first_neon_date_conflicts",
+                "private_conflict_details_never_equate_to_bad_price_or_ipo_proof")}
+            if (prior.get("schema_version")!=1
+                    or prior.get("scope")!=SCOPE
+                    or prior.get("model_release")!="BLOCKED"
+                    or prior.get("production_neon_writes")!=0
+                    or prior.get("line_messages_sent")!=0
+                    or not isinstance(old_evidence,dict)
+                    or old_evidence!=cleaned
+                    or old_evidence["source_listing_date_bucket_counts"].get(
+                        "current_2023plus_listing_but_neon_first_stored_before_current_listing_date")!=1
+                    or len(result.get(
+                        "owner_private_official_listing_first_neon_date_conflicts",[]))!=1):
+                raise ValueError("Previously verified single official listing date conflict has changed")
         report["owner_129_no2022_current_twse_official_listing_date_triage"] = result
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
     if len(payload.encode("utf-8"))>MAX_REPORT_BYTES:
@@ -618,6 +644,8 @@ def main():
                      help="Also compare 129 zero-2022 source issuers with current TWSE official listing dates")
     cli.add_argument("--private-listing-conflict-details",action="store_true",
                      help="Opt-in owner-private report only: stock code and first Neon date vs current TWSE listing-date mismatch")
+    cli.add_argument("--prior-official-listing-report",
+                     help="Previously verified private PR234 official listing JSON (required for one-stock conflict details)")
     a=cli.parse_args()
     try:
         run_local(archive_2022=a.archive_2022,key_vault=a.key_vault,
@@ -626,7 +654,8 @@ def main():
             overlay_report=a.prior_overlay_report,output=a.out,
             post2022_firstseen=a.post2022_firstseen,
             official_current_listing_audit=a.official_current_listing_audit,
-            private_listing_conflict_details=a.private_listing_conflict_details)
+            private_listing_conflict_details=a.private_listing_conflict_details,
+            prior_official_listing_report=a.prior_official_listing_report)
     except Exception:
         raise SystemExit(
             "2022 per-stock current-listed AES/Neon source density audit FAILED; "
