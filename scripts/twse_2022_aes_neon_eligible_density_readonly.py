@@ -199,14 +199,18 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
 
     monthly = {}
     per_stock = Counter()
+    first_seen_index = {}
+    last_seen_index = {}
     all_by_day = {}
-    for d in sorted(union_days):
+    for source_index, d in enumerate(sorted(union_days)):
         combined = aes_by_day.get(d,set()) | neon_by_day.get(d,set())
         if not combined <= allowed or len(combined)>len(roster):
             raise ValueError("Impossible merged today-listed stock/date coverage")
         all_by_day[d] = len(combined)
         for sid in combined:
             per_stock[sid] += 1
+            first_seen_index.setdefault(sid,source_index)
+            last_seen_index[sid] = source_index
         key = d.strftime("%Y-%m")
         bucket = monthly.setdefault(key,{
             "source_dates":0,
@@ -231,6 +235,16 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
     current_stock_240 = sum(n>=240 for n in per_stock.values())
     current_stock_2022_full_source_days = sum(
         n==len(union_days) for n in per_stock.values())
+    signatures = classify_current_stock_source_absences(
+        roster,per_stock,first_seen_index,last_seen_index,
+        source_day_count=len(union_days))
+    if (signatures["eligible_stocks_not_observed_on_all_source_days"]!=
+            len(roster)-current_stock_2022_full_source_days or
+            signatures["currently_eligible_stocks_observed_240_to_245_source_days"]!=
+            current_stock_240-current_stock_2022_full_source_days or
+            signatures["currently_eligible_stocks_observed_fewer_than_240_source_days"]!=
+            len(roster)-current_stock_240):
+        raise ValueError("Per-stock 2022 count and observed absence signatures drifted")
     return {
         "schema_version": 1,
         "scope": SCOPE,
@@ -257,6 +271,7 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
         "aes_neon_merged_max_current_eligible_stock_bars":max(all_by_day.values()),
         "aes_neon_current_listed_stocks_with_at_least_240_of_246_source_dates":current_stock_240,
         "aes_neon_current_listed_stocks_with_all_246_source_dates":current_stock_2022_full_source_days,
+        "current_listed_source_date_observation_absence_signatures":signatures,
         "aes_neon_2022_monthly_source_date_density": [
             {"month":m,**v} for m,v in sorted(monthly.items())],
         "source_day_presence_and_240_count_not_adjusted_total_return_or_historical_pit":True,
@@ -271,6 +286,102 @@ def evaluate(panel, five_year, overlay, *, roster, aes_by_day,
         "production_neon_writes":0,
         "line_messages_sent":0,
         "paid_upgrade_requested":False,
+    }
+
+
+def classify_current_stock_source_absences(
+        roster, per_stock, first_index, last_index, *,
+        source_day_count):
+    """Aggregate source-presence signatures; NEVER impute IPO/halt or a missing bar.
+
+    Partition current-listed stock identifiers into mutually exclusive groups.
+    A stock-day without stored source records is an *observation absence*,
+    not a confirmed exchange trading obligation or a backfill authorization.
+    No stock IDs, raw prices or source dates leave the process.
+    """
+    if (not isinstance(roster, (tuple,list)) or not roster
+            or len(set(roster))!=len(roster)
+            or type(source_day_count) is not int or
+            not 1<=source_day_count<=366
+            or not isinstance(per_stock,Counter)
+            or not isinstance(first_index,dict)
+            or not isinstance(last_index,dict)
+            or (set(per_stock)|set(first_index)|set(last_index))-set(roster)
+            or set(first_index)!=set(per_stock)
+            or set(last_index)!=set(per_stock)):
+        raise ValueError("Observation signature requires original distinct cohort")
+    groups={key:0 for key in (
+        "all_observed_source_days",
+        "no_observed_source_day",
+        "absence_only_before_first_observed_day",
+        "absence_only_after_last_observed_day",
+        "absence_at_both_outer_boundaries_only",
+        "internal_absent_days_only",
+        "internal_and_outer_absent_days",
+    )}
+    lead_total=tail_total=inside_total=zero_total=0
+    partial_240_to_245=below_240=0
+    for sid in roster:
+        n=per_stock.get(sid,0)
+        if type(n) is not int or n<0 or n>source_day_count:
+            raise ValueError("Impossible per-stock source-date observation count")
+        if n==0:
+            if sid in first_index or sid in last_index:
+                raise ValueError("No-date stock cannot have observed date bounds")
+            groups["no_observed_source_day"]+=1
+            zero_total+=source_day_count
+            below_240+=1
+            continue
+        first,last=first_index[sid],last_index[sid]
+        if (type(first) is not int or type(last) is not int
+                or not 0<=first<=last<source_day_count or
+                n>last-first+1):
+            raise ValueError("Impossible first/last authenticated source-day index")
+        lead,tail=first,source_day_count-last-1
+        inside=last-first+1-n
+        lead_total+=lead
+        tail_total+=tail
+        inside_total+=inside
+        if n<240:
+            below_240+=1
+        elif n<source_day_count:
+            partial_240_to_245+=1
+        if n==source_day_count:
+            groups["all_observed_source_days"]+=1
+        elif inside>0:
+            if lead or tail:
+                groups["internal_and_outer_absent_days"]+=1
+            else:
+                groups["internal_absent_days_only"]+=1
+        elif lead and tail:
+            groups["absence_at_both_outer_boundaries_only"]+=1
+        elif lead:
+            groups["absence_only_before_first_observed_day"]+=1
+        elif tail:
+            groups["absence_only_after_last_observed_day"]+=1
+        else:
+            raise RuntimeError("Unclassified non-full 2022 source observation")
+    if (sum(groups.values())!=len(roster)
+            or (lead_total+tail_total+inside_total+zero_total)!=
+               len(roster)*source_day_count-sum(per_stock.values())):
+        raise RuntimeError("Observed per-stock absent-source-date totals incoherent")
+    return {
+        "observation_signature_stock_count":groups,
+        "eligible_stocks_not_observed_on_all_source_days":
+            len(roster)-groups["all_observed_source_days"],
+        "currently_eligible_stocks_observed_240_to_245_source_days":
+            partial_240_to_245,
+        "currently_eligible_stocks_observed_fewer_than_240_source_days":
+            below_240,
+        "nominal_absent_stock_source_date_pairs_before_first":lead_total,
+        "nominal_absent_stock_source_date_pairs_after_last":tail_total,
+        "nominal_absent_stock_source_date_pairs_inside_first_last":inside_total,
+        "nominal_absent_stock_source_date_pairs_no_2022_record":zero_total,
+        "nominal_absent_stock_source_date_pairs_total":
+            lead_total+tail_total+inside_total+zero_total,
+        "no_absence_is_a_certified_data_fetch_gap":True,
+        "boundary_absence_is_not_verified_as_pre_ipo_or_delisting":True,
+        "internal_absence_may_be_authentic_halt_or_unresolved_source_gap":True,
     }
 
 
@@ -338,6 +449,12 @@ def run_local(*, archive_2022, key_vault, panel_report,
             "aes_neon_merged_days_with_at_least_500_current_eligible_stock_bars"],
         "bulk_84_equals_neon_dense_84_by_date":report[
             "neon_bulk_date_set_matches_500_stock_density_date_set"],
+        "observed_on_all_246_source_days":report[
+            "aes_neon_current_listed_stocks_with_all_246_source_dates"],
+        "incomplete_2022_source_day_stock_count":report[
+            "current_listed_source_date_observation_absence_signatures"][
+                "eligible_stocks_not_observed_on_all_source_days"],
+        "unproven_ipo_halt_and_source_gap_reasons":True,
         "full_historical_pit_or_corporate_actions":False,
         "neon_writes":0,"line_messages_sent":0,"model_release":"BLOCKED",
     },ensure_ascii=False))
