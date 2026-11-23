@@ -142,17 +142,24 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
     neon_keys = set()
     core_parity = 0
     optional_differences = Counter()
-    neon_2022_bulk = set()
+    neon_2022_verified_bulk_calendar_days = set()
+    neon_source_counts = Counter()
     for row in neon_rows:
         _validate_bar(row)
         d = row["trade_date"]
         if d in neon_keys:
             raise ValueError("Duplicate official Neon 2330 day")
         neon_keys.add(d)
-        if d.year == 2022 and row["source"] == BULK:
-            neon_2022_bulk.add(d)
-            if d not in bulk_days:
-                raise ValueError("2022 bulk-source price not on verified bulk date")
+        neon_source_counts[row["source"]] += 1
+        if d.year == 2022:
+            # The 84 BULK dates are a *market-wide* provenance calendar.
+            # A 2330 stock/date on those dates may itself be independently
+            # sourced from TWSE_STOCK_DAY. The source tag of one issuer is
+            # not proof that every issuer uses the market-wide source tag.
+            if row["source"] == BULK and d not in bulk_days:
+                raise ValueError("2022 issuer bulk provenance outside verified bulk calendar")
+            if d in bulk_days:
+                neon_2022_verified_bulk_calendar_days.add(d)
         if d in combined:
             original = combined[d]
             if any(original[f] != row[f] for f in FIELDS):
@@ -164,11 +171,11 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
                     optional_differences["different_" + f] += 1
             core_parity += 1
         else:
-            if d.year != 2022 or d not in bulk_days or row["source"] != BULK:
+            if d.year != 2022 or d not in bulk_days:
                 raise ValueError("Neon-only 2330 cannot bypass the verified 2022 official bulk calendar")
             combined[d] = row
-    if neon_2022_bulk != set(bulk_days):
-        raise ValueError("The 84 official 2022 bulk source days have missing 2330 bars")
+    if neon_2022_verified_bulk_calendar_days != set(bulk_days):
+        raise ValueError("The 84 official 2022 market bulk dates lack valid 2330 stock bars")
     year22 = {d for d in combined if d.year == 2022}
     if year22 != source_days_2022 | set(bulk_days):
         raise ValueError("Verified 2022 246-day virtual 2330 source calendar changed")
@@ -195,6 +202,8 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
         "virtual_2022_source_calendar_days": 246,
         "virtual_2021_22_combined_source_days": len(combined),
         "neon_AES_overlapping_2330_source_stockdate_keys": core_parity,
+        "neon_2022_market_bulk_calendar_days_with_2330_bar": len(neon_2022_verified_bulk_calendar_days),
+        "neon_2330_official_price_source_tags": dict(sorted(neon_source_counts.items())),
         "neon_AES_overlap_OHLCV_exact": True,
         "neon_AES_optional_field_discrepancies": dict(sorted(optional_differences.items())),
         "as_of_raw_prefix_source_days": len(prefix_dates),
