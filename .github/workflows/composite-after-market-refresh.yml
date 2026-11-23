@@ -64,14 +64,29 @@ jobs:
           fi
       - name: Recompute existing composite score table
         run: python scripts/score_after_refresh.py
-      # Only the scheduled same-day 23:00 official source job starts this
+      # Prospective FREE researcher may only touch the cohort after a
+      # server-enforced READ ONLY small-head budget/source date check.
+      # Near the 650MB conservative Free cap, unknown Neon egress meter,
+      # changed score vs market date or late first observation = ABSTAIN,
+      # NOT a 30s SQL scan, NOT a backdated replacement, NOT a release PASS.
+      - name: Read-only prospective preflight before freeze
+        id: prospective_gate
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name == 'Official Taiwan Market Daily Snapshot (Authorized)'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          python scripts/prospective_freeze_preflight_readonly.py --report prospective-freeze-preflight.json --github-output "$GITHUB_OUTPUT"
+      # Only the scheduled same-day official source job starts this
       # prospective freeze. The next-morning indicator catchup may revise
       # the existing score day, so it must not retroactively change a frozen
       # precommitted signal cohort.
       - name: Freeze real prospective full-research roster after official same-day score
         if: >-
           github.event_name == 'workflow_run' &&
-          github.event.workflow_run.name == 'Official Taiwan Market Daily Snapshot (Authorized)'
+          github.event.workflow_run.name == 'Official Taiwan Market Daily Snapshot (Authorized)' &&
+          steps.prospective_gate.outputs.safe_to_freeze == 'true'
         env:
           STOCK_FORWARD_RESEARCH_FREEZE_WRITE: "yes"
         run: |
@@ -97,6 +112,7 @@ jobs:
         with:
           name: research-only-forward-precommit-evidence
           path: |
+            prospective-freeze-preflight.json
             prospective-research-freeze-evidence.json
             prospective-frozen-progress-evidence.json
           retention-days: 14

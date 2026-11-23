@@ -69,12 +69,18 @@ jobs:
           python -m unittest tests.test_free_quota_and_prospective_continuation tests.test_research_forward_freeze -v
       - name: Audit actual database headroom plus Neon network counter if API token exists
         run: python scripts/neon_free_meter_guard.py --report neon-free-budget-before.json
+      - name: Read-only small-head prospective budget and same-day preflight
+        id: prospective_gate
+        run: |
+          python scripts/prospective_freeze_preflight_readonly.py --report prospective-freeze-preflight.json --github-output "$GITHUB_OUTPUT"
       - name: Read-only prospective full-cohort precommit preview after latest verified close
+        if: steps.prospective_gate.outputs.safe_to_freeze == 'true'
         run: python scripts/freeze_prospective_research.py --report prospective-preview.json
       - name: Insert ONE actual pre-return immutable research-only cohort (no LINE or live trade)
         if: >-
-          github.event_name == 'workflow_run' ||
-          (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+          steps.prospective_gate.outputs.safe_to_freeze == 'true' &&
+          (github.event_name == 'workflow_run' ||
+           (github.event_name == 'workflow_dispatch' && inputs.apply == true))
         env:
           STOCK_FORWARD_RESEARCH_FREEZE_WRITE: 'yes'
         run: |
@@ -101,6 +107,7 @@ jobs:
           name: neon-free-prospective-research-evidence
           path: |
             neon-free-budget-before.json
+            prospective-freeze-preflight.json
             prospective-preview.json
             prospective-applied.json
             prospective-older-cohort-outcomes.json

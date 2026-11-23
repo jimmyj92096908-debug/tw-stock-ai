@@ -1,0 +1,41 @@
+name: Prospective Freeze Free-Safety Readonly Preflight (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/prospective_freeze_preflight_readonly.py'
+      - 'tests/test_prospective_freeze_preflight_readonly.py'
+      - '.github/workflows/prospective-free-safe-daily.yml'
+      - '.github/workflows/composite-after-market-refresh.yml'
+      - '.github/workflows/prospective-freeze-readonly-preflight-offline.yml'
+      - 'docs/prospective-freeze-readonly-gate-diagnostics.md'
+  pull_request:
+    paths:
+      - 'scripts/prospective_freeze_preflight_readonly.py'
+      - 'tests/test_prospective_freeze_preflight_readonly.py'
+      - '.github/workflows/prospective-free-safe-daily.yml'
+      - '.github/workflows/composite-after-market-refresh.yml'
+      - '.github/workflows/prospective-freeze-readonly-preflight-offline.yml'
+      - 'docs/prospective-freeze-readonly-gate-diagnostics.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-abstain-no-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing no-paid testing dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test exact safe prospective preflight
+        run: |
+          python -m py_compile scripts/prospective_freeze_preflight_readonly.py
+          python -m unittest -v tests.test_prospective_freeze_preflight_readonly tests.test_research_forward_freeze tests.test_free_quota_and_prospective_continuation
+      - name: Verify no secrets or production writes are required
+        run: echo "Synthetic historical dates and mocked read-only Neon only. No production DB, LINE, trading or paid service access."
