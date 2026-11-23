@@ -229,3 +229,93 @@ class TwoStockActionGapTests(TestCase):
         self.assertEqual(
             sum(x["retrospective_evidence_tier"] == "THIRD_PARTY_RETROSPECTIVE"
                 for x in report["candidate_date_witnesses"]), 1)
+
+
+    def test_six_exact_issuer_date_pairs_not_twelve_cross_product(self):
+        """Regression: independent ANY(stock) + ANY(date) yielded 12 rows."""
+        expected = {(sid, day) for sid, day, *_ in m.CANDIDATES}
+        all_issuers_all_dates = {
+            (sid, day) for sid in m.STOCKS
+            for day in {d for _, d, *_ in m.CANDIDATES}
+        }
+        self.assertEqual(len(expected), 6)
+        self.assertEqual(len(all_issuers_all_dates), 12)
+        self.assertEqual(len(all_issuers_all_dates - expected), 6)
+        self.assertIn("UNNEST(%s::varchar[], %s::date[])", m.EVENT_DAY_SQL)
+        self.assertIn("p.stock_id = w.stock_id", m.EVENT_DAY_SQL)
+        self.assertIn("p.trade_date = w.trade_date", m.EVENT_DAY_SQL)
+        self.assertIn("FROM requested w", m.EVENT_DAY_SQL)
+        self.assertNotIn("AND stock_id=ANY(%s::varchar[])", m.EVENT_DAY_SQL)
+        self.assertNotIn("AND trade_date=ANY(%s::date[])", m.EVENT_DAY_SQL)
+        # The original validation must remain STRICT: extra rows still fail.
+        unexpected = next(iter(all_issuers_all_dates - expected))
+        with self.assertRaises(ValueError):
+            self.calculate(days=real_event_days() + [{
+                "stock_id": unexpected[0], "trade_date": unexpected[1], "n": 1
+            }])
+
+    def test_capture_snapshot_restricts_exact_issuer_date_pair_parameters(self):
+        """Simulate SELECT result contracts, asserting the query's bound pairs."""
+        import psycopg
+        from unittest.mock import patch
+
+        class Rows:
+            def __init__(self, items):
+                self.items = items
+            def fetchall(self):
+                return self.items
+            def fetchone(self):
+                return self.items[0]
+
+        class SafeFakeConnection:
+            def __init__(self):
+                self.readonly = False
+                self.event_pairs = None
+                self.executed = []
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc, tb):
+                return False
+            def execute(self, query, args=None):
+                self.executed.append(query)
+                if query == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY":
+                    self.readonly = True
+                    return Rows([])
+                if query.startswith("SET LOCAL "):
+                    return Rows([])
+                if query == m.ELIGIBLE_SQL:
+                    return Rows([{"stock_id": sid} for sid in
+                                 ["1101", "2330"] + [f"S{i:04d}" for i in range(1090)]])
+                if query == m.COUNT_ACTION_SQL:
+                    self.test_case.assertEqual(args, (list(m.STOCKS), m.START, m.END))
+                    return Rows([{"n": 0}])
+                if query == m.ACTION_SQL:
+                    return Rows([])
+                if query == m.PRICE_DENSITY_SQL:
+                    return Rows(density())
+                if query == m.EVENT_DAY_SQL:
+                    self.test_case.assertTrue(self.readonly)
+                    self.event_pairs = list(zip(*args))
+                    expected = {(sid, day) for sid, day, *_ in m.CANDIDATES}
+                    self.test_case.assertEqual(set(self.event_pairs), expected)
+                    self.test_case.assertEqual(len(self.event_pairs), 6)
+                    return Rows(real_event_days())
+                raise AssertionError("Unexpected or unsafe source query")
+        connection = SafeFakeConnection()
+        connection.test_case = self
+        with patch.object(psycopg, "connect", return_value=connection) as connect:
+            actions, issuer_density, observed_days = m.capture_snapshot(
+                "postgresql://nonsecret-synthetic")
+        self.assertTrue(connection.readonly)
+        self.assertEqual(actions, [])
+        self.assertEqual(issuer_density, density())
+        self.assertEqual(len(observed_days), 6)
+        report = self.calculate(
+            action_rows=actions, issuer_density=issuer_density,
+            days=observed_days)
+        self.assertEqual(report["candidate_dates_without_stored_action"], 6)
+        self.assertEqual(report["model_release"], "BLOCKED")
+        connect.assert_called_once()
+        self.assertEqual(
+            connect.call_args.kwargs["options"],
+            "-c default_transaction_read_only=on")
