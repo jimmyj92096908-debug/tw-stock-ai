@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date,timedelta
+from collections import Counter
 import os
 from pathlib import Path
 import subprocess
@@ -11,7 +12,7 @@ from unittest.mock import Mock,patch
 
 from scripts.twse_2022_aes_neon_eligible_density_readonly import (
     BULK, SECONDARY, SCOPE, STOCK_DATE_SQL, ELIGIBLE_SQL,
-    BULK_DATES_SQL, capture_neon, evaluate,
+    BULK_DATES_SQL, capture_neon, evaluate, classify_current_stock_source_absences,
 )
 from scripts.twse_2022_aes_neon_five_year_overlay_offline import reconcile_offline
 from tests.test_twse_2022_aes_neon_five_year_overlay_offline import old,fresh
@@ -85,6 +86,13 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
         self.assertEqual(r["aes_neon_merged_days_with_at_least_500_current_eligible_stock_bars"],246)
         self.assertEqual(r["aes_neon_current_listed_stocks_with_all_246_source_dates"],800)
         self.assertEqual(r["aes_neon_current_listed_stocks_with_at_least_240_of_246_source_dates"],800)
+        signature=r["current_listed_source_date_observation_absence_signatures"]
+        self.assertEqual(signature["eligible_stocks_not_observed_on_all_source_days"],292)
+        self.assertEqual(signature["observation_signature_stock_count"]["all_observed_source_days"],800)
+        self.assertEqual(signature["observation_signature_stock_count"]["absence_only_before_first_observed_day"],189)
+        self.assertEqual(signature["observation_signature_stock_count"]["no_observed_source_day"],103)
+        self.assertEqual(signature["observation_signature_stock_count"]["internal_absent_days_only"],0)
+        self.assertTrue(signature["no_absence_is_a_certified_data_fetch_gap"])
         self.assertEqual(sum(x["source_dates"] for x in
                              r["aes_neon_2022_monthly_source_date_density"]),246)
         self.assertFalse(r["full_market_all_stock_daily_bar_completeness_certified"])
@@ -95,6 +103,45 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
         self.assertEqual(r["line_messages_sent"],0)
         self.assertEqual(r["model_release"],"BLOCKED")
         self.assertNotIn("raw_close",str(r))
+
+    def test_all_seven_absence_signatures_are_nonoverlapping_and_accounted(self):
+        roster=("A","B","C","D","E","F","G")
+        counts=Counter({"A":10,"C":8,"D":7,"E":5,"F":9,"G":6})
+        first={"A":0,"C":2,"D":0,"E":2,"F":0,"G":2}
+        last={"A":9,"C":9,"D":6,"E":6,"F":9,"G":8}
+        r=classify_current_stock_source_absences(
+            roster,counts,first,last,source_day_count=10)
+        expected={
+            "all_observed_source_days":1,
+            "no_observed_source_day":1,
+            "absence_only_before_first_observed_day":1,
+            "absence_only_after_last_observed_day":1,
+            "absence_at_both_outer_boundaries_only":1,
+            "internal_absent_days_only":1,
+            "internal_and_outer_absent_days":1,
+        }
+        self.assertEqual(r["observation_signature_stock_count"],expected)
+        self.assertEqual(r["eligible_stocks_not_observed_on_all_source_days"],6)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_before_first"],6)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_after_last"],9)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_inside_first_last"],2)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_no_2022_record"],10)
+        self.assertEqual(r["nominal_absent_stock_source_date_pairs_total"],27)
+        self.assertTrue(r["boundary_absence_is_not_verified_as_pre_ipo_or_delisting"])
+        self.assertTrue(r["internal_absence_may_be_authentic_halt_or_unresolved_source_gap"])
+
+    def test_absence_classifier_rejects_duplicate_or_impossible_observation(self):
+        roster=("A","B")
+        for bad_roster,counts,first,last in (
+            (("A","A"),Counter({"A":1}),{"A":0},{"A":0}),
+            (roster,Counter({"A":4}),{"A":0},{"A":1}),
+            (roster,Counter({"A":1}),{"A":3},{"A":1}),
+            (roster,Counter({"A":1}),{},{"A":0}),
+            (roster,Counter({"A":1,"X":1}),{"A":0,"X":0},{"A":0,"X":0}),
+        ):
+            with self.assertRaises(ValueError):
+                classify_current_stock_source_absences(
+                    bad_roster,counts,first,last,source_day_count=10)
 
     def test_same_dense_counts_can_hide_wrong_date_set(self):
         p,b,o,roster,aes,bulk,neon,proof=self.reference
