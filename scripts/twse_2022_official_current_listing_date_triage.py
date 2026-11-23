@@ -69,12 +69,15 @@ def fetch_official_company_basics(*, get=None):
 
 def classify_official_current_listing(
         evidence, *, eligible_ids, no_2022_ids, first_2023plus,
-        current_day, prior_window_end):
+        current_day, prior_window_end, private_listing_conflict_details=False):
     """Validate source metadata and reconcile 129 missing source issuer IDs.
 
-    Only summary buckets leave this function; no ticker IDs, raw names, prices,
-    private Neon data, dates of individual issuers, contacts or credentials.
+    Default output is aggregate-only. Explicit owner-private opt-in may add
+    up to five mismatched public stock codes and first valid Neon/source dates.
+    These must stay in the private output directory, never logs or GitHub.
     """
+    if type(private_listing_conflict_details) is not bool:
+        raise ValueError("Private listing discrepancy export must be explicit boolean")
     if (not isinstance(evidence,dict)
             or evidence.get("endpoint")!=URL
             or not isinstance(evidence.get("response_sha256"),str)
@@ -127,6 +130,7 @@ def classify_official_current_listing(
         "current_2023plus_listing_and_first_stored_not_before_listing_date":0,
     }
     after2022=early=missing=0
+    private_conflicts=[]
     for sid in sorted(no_2022_ids):
         listing=by_id.get(sid)
         stored=first_2023plus[sid]
@@ -150,6 +154,14 @@ def classify_official_current_listing(
             after2022+=1
             if stored is not None and stored<listing:
                 counts["current_2023plus_listing_but_neon_first_stored_before_current_listing_date"]+=1
+                if private_listing_conflict_details:
+                    private_conflicts.append({
+                        "stock_id":sid,
+                        "first_valid_neon_source_date":stored.isoformat(),
+                        "current_official_twse_listing_date":listing.isoformat(),
+                        "stored_source_precedes_current_listing_by_calendar_days":(listing-stored).days,
+                        "reason_unresolved_not_authorized_to_modify_price":True,
+                    })
             else:
                 counts["current_2023plus_listing_and_first_stored_not_before_listing_date"]+=1
     if (after2022+early+missing!=129 or
@@ -157,7 +169,7 @@ def classify_official_current_listing(
              +counts["current_2023plus_listing_and_first_stored_not_before_listing_date"]
              !=after2022)):
         raise RuntimeError("Official listing classification groups do not conserve 129")
-    return {
+    result={
         "source_url":URL,
         "official_current_company_basics_response_sha256":evidence[
             "response_sha256"],
@@ -181,3 +193,11 @@ def classify_official_current_listing(
         "line_messages_sent":0,
         "paid_services_used":False,
     }
+    if private_listing_conflict_details:
+        if (len(private_conflicts)>5 or len(private_conflicts)!=counts[
+                "current_2023plus_listing_but_neon_first_stored_before_current_listing_date"]):
+            raise ValueError("Private first-source/listing mismatch evidence exceeds audit cap")
+        result["owner_private_official_listing_first_neon_date_conflicts"]=(
+            private_conflicts)
+        result["private_conflict_details_never_equate_to_bad_price_or_ipo_proof"]=True
+    return result
