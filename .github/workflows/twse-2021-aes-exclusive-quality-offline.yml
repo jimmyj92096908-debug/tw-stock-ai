@@ -1,0 +1,38 @@
+name: Owner 2021 AES-Only 25568 Source Quality (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2021_aes_exclusive_quality_readonly.py'
+      - 'tests/test_twse_2021_aes_exclusive_quality_readonly.py'
+      - 'docs/twse-2021-aes-exclusive-25568-quality-readonly.md'
+      - '.github/workflows/twse-2021-aes-exclusive-quality-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_aes_exclusive_quality_readonly.py'
+      - 'tests/test_twse_2021_aes_exclusive_quality_readonly.py'
+      - 'docs/twse-2021-aes-exclusive-25568-quality-readonly.md'
+      - '.github/workflows/twse-2021-aes-exclusive-quality-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-evidence-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies
+        run: pip install -r requirements.txt
+      - name: Test only synthetic AES and Neon evidence, never owner credentials
+        run: |
+          python -m py_compile scripts/twse_2021_aes_exclusive_quality_readonly.py
+          python -m unittest -v tests.test_twse_2021_aes_exclusive_quality_readonly
+      - name: Fail-closed source quality gate
+        run: |
+          echo "No real owner archive, private key vault, Neon connection, paid service, LINE or database write exercised in CI."
