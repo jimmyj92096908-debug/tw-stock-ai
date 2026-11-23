@@ -39,6 +39,7 @@ ALLOWED_STOCKS = frozenset({"1101", STOCK})
 BULK = "TWSE_MI_INDEX_ALLBUT0999"
 SECONDARY = "TWSE_STOCK_DAY"
 SCOPE = "OWNER_2021_22_AES_NEON_2330_VIRTUAL_RAW_PREFIX_READONLY"
+SCOPE_1101 = "OWNER_2021_22_AES_NEON_1101_VIRTUAL_RAW_PREFIX_READONLY"
 FIELDS = ("open", "high", "low", "close", "volume")
 OPTIONAL = ("turnover", "price_change", "transactions")
 MAX_NEON_ROWS = 320
@@ -222,11 +223,11 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff, stoc
         or any(type(d) is not date or d.year != 2022 or d.weekday() >= 5
                for d in bulk_days)
         or len(neon_rows) > MAX_NEON_ROWS):
-        raise ValueError("Invalid read-only 2330 market-source snapshot size or cutoff")
+        raise ValueError("Invalid read-only bounded issuer market-source snapshot size or cutoff")
     if set(r["trade_date"] for r in aes21) != set(EXPECTED_DAYS) or len(aes21) != 28:
-        raise ValueError("2021 original 2330 28-day source anchor changed")
+        raise ValueError("2021 original issuer 28-day source anchor changed")
     if len(aes22) != 162 or len(set(r["trade_date"] for r in aes22)) != 162:
-        raise ValueError("2022 original 2330 162-day source anchor changed")
+        raise ValueError("2022 original issuer 162-day source anchor changed")
 
     local = {}
     source_days_2022 = set()
@@ -255,7 +256,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff, stoc
         _validate_bar(row, stock_id=stock_id)
         d = row["trade_date"]
         if d in neon_keys:
-            raise ValueError("Duplicate official Neon 2330 day")
+            raise ValueError("Duplicate official Neon issuer day")
         neon_keys.add(d)
         neon_source_counts[row["source"]] += 1
         if d.year == 2022:
@@ -291,7 +292,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff, stoc
 
     prefix_dates = [d for d in sorted(combined) if d <= cutoff]
     if len(prefix_dates) < 240 or prefix_dates[-1] != cutoff:
-        raise ValueError("No sufficient real 2330 raw source observations at cutoff")
+        raise ValueError("No sufficient real issuer raw source observations at cutoff")
     last240 = prefix_dates[-240:]
     raw_sma240 = sum((combined[d]["close"] for d in last240), Decimal(0)) / Decimal(240)
     h = sha256()
@@ -300,7 +301,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff, stoc
         h.update((d.isoformat() + "|" + "|".join(str(r[f]) for f in FIELDS) + "\n").encode("utf-8"))
     report = {
         "schema_version": 1,
-        "scope": SCOPE,
+        "scope": SCOPE if stock_id == STOCK else SCOPE_1101,
         "stock_id": stock_id,
         "as_of": cutoff.isoformat(),
         "original_2021_authenticated_market_source_days": 28,
