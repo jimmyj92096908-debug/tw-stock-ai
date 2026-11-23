@@ -186,7 +186,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
         len(source_days_2022 | set(bulk_days)) != 246 or
         min(source_days_2022 | set(bulk_days)) != date(2022,1,3) or
         max(source_days_2022 | set(bulk_days)) != date(2022,12,30)):
-        raise ValueError("Owner AES vs Neon 2022 source calendar incomplete or overlaps")
+        raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
 
     combined = dict(local)
     neon_keys = set()
@@ -222,13 +222,13 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
             core_parity += 1
         else:
             if d.year != 2022 or d not in bulk_days:
-                raise ValueError("Neon-only 2330 cannot bypass the verified 2022 official bulk calendar")
+                raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
             combined[d] = row
     if neon_2022_verified_bulk_calendar_days != set(bulk_days):
-        raise ValueError("The 84 official 2022 market bulk dates lack valid 2330 stock bars")
+        raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
     year22 = {d for d in combined if d.year == 2022}
     if year22 != source_days_2022 | set(bulk_days):
-        raise ValueError("Verified 2022 246-day virtual 2330 source calendar changed")
+        raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
     if len(combined) != 28 + 246:
         raise ValueError("Insufficient authenticated source days for virtual history")
 
