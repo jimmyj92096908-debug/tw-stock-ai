@@ -145,7 +145,7 @@ class AesNeonOverlapTests(unittest.TestCase):
     def test_live_query_is_bounded_and_research_only(self):
         self.assertIn("official_current_listed", READONLY_SQL)
         self.assertIn("model_stock_exclusions", READONLY_SQL)
-        self.assertIn("p.stock_id<>'1589'", READONLY_SQL)
+        self.assertIn("o.stock_id<>'1589'", READONLY_SQL)
         self.assertIn("p.close>0", READONLY_SQL)
         self.assertIn("LIMIT 801", READONLY_SQL)
         for banned in ("INSERT INTO ", "DELETE FROM ", "UPDATE ", "TRUNCATE ", "DROP TABLE "):
