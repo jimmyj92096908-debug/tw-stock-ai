@@ -43,19 +43,7 @@ EXPECTED_AES_FULL=900
 EXPECTED_AES_26PLUS=916
 EXPECTED_AES_ZERO=153
 
-STOCK_DATE_SQL = """
-WITH eligible AS (
- SELECT o.stock_id
- FROM (
-  /* replaced below by the repository's latest official-listed CTE */
-  SELECT stock_id, market FROM public.stock_master WHERE FALSE
- ) o
- WHERE o.market='twse' AND o.stock_id <> '1589'
-)
-SELECT NULL::date,NULL::text,NULL::text WHERE FALSE
-"""
-# Assemble with the SAME official-current-only CTE and exclusion used for
-# the roster, never fallback to stock_master to fabricate issuer eligibility.
+# Only the official-current-listed CTE; no fallback to stock_master.
 from scripts.twse_tpex_five_year_neon_only_cohort_readonly import CURRENT_OFFICIAL_LISTED_CTE
 
 STOCK_DATE_SQL = CURRENT_OFFICIAL_LISTED_CTE + """
