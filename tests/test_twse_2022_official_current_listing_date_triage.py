@@ -93,6 +93,45 @@ class CurrentTWSEListingDateOwnerAuditSyntheticTests(unittest.TestCase):
         self.assertEqual(c[
             "current_2023plus_listing_but_neon_first_stored_before_current_listing_date"],1)
         self.assertEqual(result["model_release"],"BLOCKED")
+        self.assertNotIn("owner_private_official_listing_first_neon_date_conflicts",result)
+        detail=classify_official_current_listing(
+            e,eligible_ids=roster,no_2022_ids=zero,
+            first_2023plus=first,current_day=date(2026,11,23),
+            prior_window_end=date(2026,11,23),
+            private_listing_conflict_details=True)
+        self.assertEqual(detail[
+            "source_listing_date_bucket_counts"][
+                "current_2023plus_listing_but_neon_first_stored_before_current_listing_date"],1)
+        issue=detail["owner_private_official_listing_first_neon_date_conflicts"]
+        self.assertEqual(len(issue),1)
+        self.assertEqual(issue[0]["stock_id"],sid)
+        self.assertEqual(issue[0]["first_valid_neon_source_date"],"2023-01-03")
+        self.assertEqual(issue[0]["current_official_twse_listing_date"],"2023-04-03")
+        self.assertEqual(issue[0][
+            "stored_source_precedes_current_listing_by_calendar_days"],90)
+        self.assertTrue(issue[0]["reason_unresolved_not_authorized_to_modify_price"])
+        self.assertTrue(detail[
+            "private_conflict_details_never_equate_to_bad_price_or_ipo_proof"])
+        self.assertEqual(detail["production_neon_writes"],0)
+        self.assertEqual(detail["line_messages_sent"],0)
+        self.assertEqual(detail["model_release"],"BLOCKED")
+
+    def test_private_listing_conflict_details_explicit_opt_in_and_hard_cap(self):
+        e,roster,zero,first=source_inputs()
+        for sid in sorted(zero)[:6]:
+            first[sid]=date(2023,1,3)
+        with self.assertRaisesRegex(ValueError,"exceeds audit cap"):
+            classify_official_current_listing(
+                e,eligible_ids=roster,no_2022_ids=zero,
+                first_2023plus=first,current_day=date(2026,11,23),
+                prior_window_end=date(2026,11,23),
+                private_listing_conflict_details=True)
+        with self.assertRaisesRegex(ValueError,"explicit boolean"):
+            classify_official_current_listing(
+                e,eligible_ids=roster,no_2022_ids=zero,
+                first_2023plus=first,current_day=date(2026,11,23),
+                prior_window_end=date(2026,11,23),
+                private_listing_conflict_details=1)
 
     def test_stale_mixed_future_or_duplicate_company_metadata_rejected(self):
         for mode in ("stale","mixed","duplicate","future","invalid_row"):
@@ -180,6 +219,7 @@ class CurrentTWSEListingDateOwnerAuditSyntheticTests(unittest.TestCase):
         self.assertEqual(p.returncode,0,p.stderr)
         self.assertIn("--post2022-firstseen",p.stdout)
         self.assertIn("--official-current-listing-audit",p.stdout)
+        self.assertIn("--private-listing-conflict-details",p.stdout)
 
 
 if __name__=="__main__":
