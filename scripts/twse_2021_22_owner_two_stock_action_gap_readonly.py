@@ -77,13 +77,21 @@ AND close>0 AND volume>=0
 GROUP BY stock_id ORDER BY stock_id
 """
 EVENT_DAY_SQL = """
-SELECT stock_id,trade_date,COUNT(*)::int AS n
-FROM public.daily_prices
-WHERE market='twse' AND stock_id=ANY(%s::varchar[])
-AND trade_date=ANY(%s::date[])
-AND source IN ('TWSE_STOCK_DAY','TWSE_MI_INDEX_ALLBUT0999')
-AND close>0 AND volume>=0
-GROUP BY stock_id,trade_date ORDER BY stock_id,trade_date
+-- Important: the two parameter arrays are zipped into issuer/date PAIRS.
+-- Independent stock_id=ANY() and trade_date=ANY() filters unintentionally
+-- produced 12 issuer-date rows for only six requested historical event pairs.
+WITH requested AS (
+  SELECT e.stock_id, e.trade_date
+  FROM UNNEST(%s::varchar[], %s::date[]) AS e(stock_id, trade_date)
+)
+SELECT p.stock_id,p.trade_date,COUNT(*)::int AS n
+FROM requested w
+JOIN public.daily_prices p
+  ON p.stock_id = w.stock_id AND p.trade_date = w.trade_date
+WHERE p.market='twse'
+AND p.source IN ('TWSE_STOCK_DAY','TWSE_MI_INDEX_ALLBUT0999')
+AND p.close>0 AND p.volume>=0
+GROUP BY p.stock_id,p.trade_date ORDER BY p.stock_id,p.trade_date
 LIMIT 20
 """
 
@@ -174,9 +182,13 @@ def capture_snapshot(url):
             raise ValueError("Corporate action count changed within source snapshot")
         density = [dict(r) for r in conn.execute(
             PRICE_DENSITY_SQL, (list(STOCKS),)).fetchall()]
-        event_dates = sorted({day for _, day, *_ in CANDIDATES})
+        event_keys = sorted({(sid, day) for sid, day, *_ in CANDIDATES})
+        if len(event_keys) != len(CANDIDATES):
+            raise ValueError("Duplicate event candidate issuer-date pair")
         event_days = [dict(r) for r in conn.execute(
-            EVENT_DAY_SQL, (list(STOCKS), event_dates)).fetchall()]
+            EVENT_DAY_SQL,
+            ([sid for sid, _ in event_keys],
+             [day for _, day in event_keys])).fetchall()]
     return actions, density, event_days
 
 
