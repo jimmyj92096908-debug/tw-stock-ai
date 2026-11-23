@@ -474,9 +474,13 @@ def classify_current_stock_source_absences(
 
 def run_local(*, archive_2022, key_vault, panel_report,
               five_year_report, overlay_report, output,
-              post2022_firstseen=False, official_current_listing_audit=False):
+              post2022_firstseen=False, official_current_listing_audit=False,
+              private_listing_conflict_details=False):
     if official_current_listing_audit and not post2022_firstseen:
         raise ValueError("Official current listing date comparison requires stored first-observed-year receipt")
+    if private_listing_conflict_details and not (
+            official_current_listing_audit and post2022_firstseen):
+        raise ValueError("Private conflict details require full authenticated current-listing audit")
     paths = _private_archives(archive_2022)
     inputs = [
         _private_file(x,should_exist=True) for x in (
@@ -547,6 +551,7 @@ def run_local(*, archive_2022, key_vault, panel_report,
             first_2023plus=dict(post2022),current_day=now,
             prior_window_end=date.fromisoformat(
                 five_year["window_end_exclusive"]),
+            private_listing_conflict_details=private_listing_conflict_details,
         )
         report["owner_129_no2022_current_twse_official_listing_date_triage"] = result
     payload = json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
@@ -555,7 +560,9 @@ def run_local(*, archive_2022, key_vault, panel_report,
     with out.open("x",encoding="utf-8") as fp:
         fp.write(payload)
     print(json.dumps({
-        "status":("TWSE_2022_NO_SOURCE_OFFICIAL_LISTING_DATE_TRIAGE_READONLY_PASS"
+        "status":("TWSE_2022_SINGLE_LISTING_DATE_CONFLICT_PRIVATE_EVIDENCE_PASS"
+                  if private_listing_conflict_details else
+                  "TWSE_2022_NO_SOURCE_OFFICIAL_LISTING_DATE_TRIAGE_READONLY_PASS"
                   if official_current_listing_audit else
                   "TWSE_2022_NO_SOURCE_2023PLUS_FIRST_SEEN_READONLY_PASS"
                   if post2022_firstseen else
@@ -589,6 +596,8 @@ def run_local(*, archive_2022, key_vault, panel_report,
             report["owner_129_no2022_current_twse_official_listing_date_triage"][
                 "current_twse_listing_missing_or_invalid_count"]
                 if official_current_listing_audit else None,
+        "private_listing_conflict_id_detail_saved_only_to_owner_private_report":
+            bool(private_listing_conflict_details),
         "full_historical_pit_or_corporate_actions":False,
         "neon_writes":0,"line_messages_sent":0,"model_release":"BLOCKED",
     },ensure_ascii=False))
@@ -607,6 +616,8 @@ def main():
                      help="Extra owner-readonly first observed 2023+ source year for 2022 zero-record cohort")
     cli.add_argument("--official-current-listing-audit",action="store_true",
                      help="Also compare 129 zero-2022 source issuers with current TWSE official listing dates")
+    cli.add_argument("--private-listing-conflict-details",action="store_true",
+                     help="Opt-in owner-private report only: stock code and first Neon date vs current TWSE listing-date mismatch")
     a=cli.parse_args()
     try:
         run_local(archive_2022=a.archive_2022,key_vault=a.key_vault,
@@ -614,7 +625,8 @@ def main():
             five_year_report=a.five_year_neon_report,
             overlay_report=a.prior_overlay_report,output=a.out,
             post2022_firstseen=a.post2022_firstseen,
-            official_current_listing_audit=a.official_current_listing_audit)
+            official_current_listing_audit=a.official_current_listing_audit,
+            private_listing_conflict_details=a.private_listing_conflict_details)
     except Exception:
         raise SystemExit(
             "2022 per-stock current-listed AES/Neon source density audit FAILED; "
