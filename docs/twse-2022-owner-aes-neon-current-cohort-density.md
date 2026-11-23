@@ -122,3 +122,51 @@
 ```
 
 整套流程仍維持 **Neon transaction READ ONLY、LINE 訊息 0、沒有付費服務**、不傳出私人來源或個股行情；正式模型 `BLOCKED`。只有本機實際執行成功，才能將該七種形狀的真實統計標示為完成。
+
+## 2022 年完全無來源的 129 檔：2023～2026 年第一次「已儲存」行情觀測年份
+
+擁有者 2026-11-23 已在本機正式驗收 PR #232：825 檔 2022 全 246 個來源日期都有紀錄、129 檔 2022 完全無紀錄、20 檔只缺最早日期、2 檔只缺後段、104 檔只有內部缺日期、12 檔內部及外側都有缺日期，合計當前上市 1,092 檔。
+
+最新工具支援可選 `--post2022-firstseen`。它仍認證**相同私有 2022 AES** 並查核 Neon 2022 來源日期／股票鍵，但在 **同一個 Neon REPEATABLE READ READ ONLY 快照內**，針對當前官方上市、排除 1589 的 1,092 檔，增加一次 `MIN(trade_date)` 分組查詢（2023-01-01 到前次五年完整度報告 `window_end_exclusive`，現為 2026-11-23，不查未結束交易日）。只保留各股票**首筆已儲存、來源受控、有效正價**日期；輸出聚合結果不記錄任何股票代碼、個別日期或實際股價。
+
+特別注意：**第一次出現在 Neon 的行情日期並不是官方首次上市日**。即使 129 檔全部第一次被紀錄在 2023 年之後，也不能在沒有官方交易所歷史上市證據時自動將 2022 年缺資料判定為「IPO 後正常」、亦不能推定公司行動完整。這只將 129 檔依 2023、2024、2025、2026 或「直到 2026 年基線仍無紀錄」分桶，協助下一階段決定該核查哪一年度的官方上市文件與首筆行情。
+
+這個查詢**不更動已通過的舊版 PR #231／#232 私有報告**，使用一份不同檔名的新輸出。
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    cd "$HOME\tw-stock-ai"
+    git pull --ff-only origin main
+    if ($LASTEXITCODE -ne 0) { throw '更新 GitHub 失敗' }
+    if ($env:DATABASE_URL -notmatch '^postgres(ql)?://') {
+        throw '請先於目前 PowerShell 視窗安全設定 Neon DATABASE_URL'
+    }
+    $env:TWSE_KEY_GUI_PROMPT = '1'
+    $base = "$HOME\TwStockPrivate"
+    $panel = Join-Path $base 'aes-neon-240-stock-gaps-20261123.json'
+    $five = Join-Path $base 'aes-neon-five-year-current-listed-cohort-20261123.json'
+    $overlay = Join-Path $base 'aes-neon-2022-five-year-source-overlay-20261123.json'
+    $output = Join-Path $base 'aes-neon-2022-zero-source-post2022-firstseen-20261123.json'
+    foreach ($p in @($panel,$five,$overlay)) {
+        if (!(Test-Path $p)) { throw '缺少先前驗收報告' }
+    }
+    if (Test-Path $output) { throw '新報告檔已存在，禁止覆寫' }
+
+    python -m scripts.twse_2022_aes_neon_eligible_density_readonly `
+        --archive-2022 "$env:LOCALAPPDATA\tw-stock-private\prices" `
+        --key-vault "$env:LOCALAPPDATA\tw-stock-private\history.twsekey" `
+        --source-panel-report "$panel" `
+        --five-year-neon-report "$five" `
+        --prior-overlay-report "$overlay" `
+        --post2022-firstseen `
+        --out "$output"
+    if ($LASTEXITCODE -ne 0) { throw '2022 129 檔後續最早 Neon 來源年份稽核失敗' }
+    $r = Get-Content $output -Raw | ConvertFrom-Json
+    $f = $r.no_2022_stock_source_post2022_first_observation_triage
+    $f.owner_2022_no_record_129_issuer_first_post2022_neon_observation_years |
+        Format-List
+}
+```
+
+本研究用途的「第一筆行情」只是來源**觀察資料**，不能代表 TWSE 證券首次上市日或歷史存活者偏差已移除。Neon 嚴格 `READ ONLY`，不改 LINE、不發 LINE、不發送交易、不付費、不使用非當前上市股票，模型 `BLOCKED`。
