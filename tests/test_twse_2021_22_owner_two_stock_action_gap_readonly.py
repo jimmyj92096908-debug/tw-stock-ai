@@ -186,6 +186,91 @@ class TwoStockActionGapTests(TestCase):
                 "action_type": "CASH_DIVIDEND", "verified": True,
             }] * (m.MAX_EVENTS + 1))
 
+    def test_exact_issuer_date_sql_does_not_cross_join_other_stock_days(self):
+        # Real Neon READ ONLY on 2026-11-23 showed that the old independent
+        # ANY(stock_id) AND ANY(date) returned 12 valid rows for SIX intended
+        # issuer+event-date keys. Enforce pairwise zip at SQL boundary;
+        # don't discard unrequested genuine stock sessions in evaluate().
+        q = m.EVENT_DAY_SQL
+        self.assertIn(
+            "unnest(%s::varchar[], %s::date[]) AS e(stock_id,trade_date)",
+            q)
+        self.assertIn("p.stock_id=e.stock_id", q)
+        self.assertIn("p.trade_date=e.trade_date", q)
+        self.assertIn("LEFT JOIN public.daily_prices", q)
+        self.assertIn("COUNT(p.stock_id)::int AS n", q)
+        self.assertNotIn("stock_id=ANY(%s::varchar[])", q)
+        self.assertNotIn("trade_date=ANY(%s::date[])", q)
+        self.assertEqual(len({(sid, day) for sid, day, *_ in m.CANDIDATES}), 6)
+
+    def test_snapshot_binds_exact_six_issuer_date_pairs_not_cartesian_product(self):
+        from unittest.mock import MagicMock
+        from types import SimpleNamespace
+        import psycopg
+
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        calls = []
+        def fetch(rows):
+            return SimpleNamespace(
+                fetchall=lambda: rows,
+                fetchone=lambda: rows[0],
+            )
+        def execute(sql, params=None):
+            calls.append((sql, params))
+            if sql == m.ELIGIBLE_SQL:
+                # Keep the production 1092 current listed-issuer guard.
+                return fetch([{"stock_id": x} for x in (
+                    ["1101", "2330"] + [str(4000+i) for i in range(1090)]
+                )])
+            if sql == m.COUNT_ACTION_SQL:
+                return fetch([{"n": 0}])
+            if sql == m.ACTION_SQL:
+                return fetch([])
+            if sql == m.PRICE_DENSITY_SQL:
+                return fetch(density())
+            if sql == m.EVENT_DAY_SQL:
+                self.assertEqual(
+                    params,
+                    ([sid for sid, *_ in m.CANDIDATES],
+                     [d for _, d, *_ in m.CANDIDATES]))
+                self.assertEqual(len(params[0]), 6)
+                self.assertEqual(len(params[1]), 6)
+                return fetch(real_event_days())
+            self.assertTrue(
+                sql.startswith("SET TRANSACTION ") or
+                sql.startswith("SET LOCAL "), "Unexpected SQL issued")
+            return fetch([])
+        connection.execute.side_effect = execute
+        with patch.object(psycopg, "connect", return_value=connection) as connect:
+            actions, ds, days = m.capture_snapshot(
+                "postgresql://fictional-synthetic-connection")
+        connect.assert_called_once()
+        self.assertEqual(actions, [])
+        self.assertEqual(ds, density())
+        self.assertEqual(days, real_event_days())
+        self.assertEqual(len([sql for sql, _ in calls if sql == m.EVENT_DAY_SQL]), 1)
+        self.assertEqual(
+            m.evaluate(prior=original(), actions=actions,
+                       density=ds, event_days=days)[
+                "candidate_dates_without_stored_action"], 6)
+
+    def test_missing_or_duplicate_exact_pair_is_still_fail_closed(self):
+        # The LEFT JOIN returns n=0 on a missing valid stock-day instead of
+        # disappearing from the result; a second original source row gives n=2.
+        all_days = real_event_days()
+        for abnormal in (0, 2):
+            rows = [dict(r) for r in all_days]
+            rows[0]["n"] = abnormal
+            with self.subTest(n=abnormal), self.assertRaises(ValueError):
+                self.calculate(days=rows)
+        # A valid unrelated stock date is never evidence of a candidate pair.
+        unexpected = all_days + [{
+            "stock_id": "1101", "trade_date": date(2022, 3, 16), "n": 1,
+        }]
+        with self.assertRaises(ValueError):
+            self.calculate(days=unexpected)
+
     def test_sql_is_strict_read_only_bounded_and_never_prints_prices(self):
         for query in (m.COUNT_ACTION_SQL, m.ACTION_SQL,
                       m.PRICE_DENSITY_SQL, m.EVENT_DAY_SQL):
