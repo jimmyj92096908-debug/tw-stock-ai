@@ -77,13 +77,14 @@ AND close>0 AND volume>=0
 GROUP BY stock_id ORDER BY stock_id
 """
 EVENT_DAY_SQL = """
-SELECT stock_id,trade_date,COUNT(*)::int AS n
-FROM public.daily_prices
-WHERE market='twse' AND stock_id=ANY(%s::varchar[])
-AND trade_date=ANY(%s::date[])
-AND source IN ('TWSE_STOCK_DAY','TWSE_MI_INDEX_ALLBUT0999')
-AND close>0 AND volume>=0
-GROUP BY stock_id,trade_date ORDER BY stock_id,trade_date
+SELECT e.stock_id,e.trade_date,COUNT(p.stock_id)::int AS n
+FROM unnest(%s::varchar[], %s::date[]) AS e(stock_id,trade_date)
+LEFT JOIN public.daily_prices AS p
+  ON p.market='twse' AND p.stock_id=e.stock_id
+ AND p.trade_date=e.trade_date
+ AND p.source IN ('TWSE_STOCK_DAY','TWSE_MI_INDEX_ALLBUT0999')
+ AND p.close>0 AND p.volume>=0
+GROUP BY e.stock_id,e.trade_date ORDER BY e.stock_id,e.trade_date
 LIMIT 20
 """
 
@@ -174,9 +175,16 @@ def capture_snapshot(url):
             raise ValueError("Corporate action count changed within source snapshot")
         density = [dict(r) for r in conn.execute(
             PRICE_DENSITY_SQL, (list(STOCKS),)).fetchall()]
-        event_dates = sorted({day for _, day, *_ in CANDIDATES})
+        # Strict pairwise zip: the prior stock_id=ANY(stocks) plus
+        # trade_date=ANY(dates) fetched a 2x6 CROSS PRODUCT (12 genuine
+        # stock-days) even though only SIX issuer-specific events exist.
+        # Do not trim extra valid stock days in Python: join the exact
+        # stock+date keys in SQL, and LEFT JOIN so missing bars yield n=0.
+        # The evaluator must reject n!=1, including 0 and duplicates.
+        event_stock_ids = [sid for sid, _, *_ in CANDIDATES]
+        event_dates = [day for _, day, *_ in CANDIDATES]
         event_days = [dict(r) for r in conn.execute(
-            EVENT_DAY_SQL, (list(STOCKS), event_dates)).fetchall()]
+            EVENT_DAY_SQL, (event_stock_ids, event_dates)).fetchall()]
     return actions, density, event_days
 
 
