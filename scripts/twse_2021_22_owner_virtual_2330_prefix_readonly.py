@@ -55,6 +55,56 @@ ORDER BY trade_date LIMIT 100
 """
 
 
+# Only these non-sensitive stage codes may leave the owner's computer.
+# Never emit original exception messages (which may hold a URI, price or path).
+AUDIT_STAGES = frozenset({
+    "ARCHIVE_PATHS",
+    "PRIVATE_RECEIPTS",
+    "PREVIOUS_REPORT_GUARD",
+    "AES_KEY_VAULT",
+    "CIPHERTEXT_HASH",
+    "AES_2021_AUTHENTICATION",
+    "AES_2022_AUTHENTICATION",
+    "NEON_READONLY_SNAPSHOT",
+    "AES_2021_2330_REPLAY",
+    "AES_2022_2330_REPLAY",
+    "ARCHIVE_IMMUTABILITY",
+    "SOURCE_2022_CALENDAR",
+    "AES_NEON_2330_CORE_OHLCV",
+    "VIRTUAL_PREFIX_EVALUATION",
+    "PRIVATE_RECEIPT_WRITE",
+    "UNCLASSIFIED",
+})
+
+
+class VirtualAuditStageError(ValueError):
+    """Sanitized error. Its only public text is a code from AUDIT_STAGES."""
+
+    def __init__(self, code):
+        self.code = code if code in AUDIT_STAGES else "UNCLASSIFIED"
+        super().__init__(self.code)
+
+
+def _stage(code, callback, *args, **kwargs):
+    if code not in AUDIT_STAGES:
+        raise VirtualAuditStageError("UNCLASSIFIED")
+    try:
+        return callback(*args, **kwargs)
+    except VirtualAuditStageError:
+        raise
+    except Exception:
+        raise VirtualAuditStageError(code) from None
+
+
+def _failure_message(stage):
+    safe = stage if stage in AUDIT_STAGES else "UNCLASSIFIED"
+    return (
+        "Owner 2021/22 2330 AES+Neon virtual prefix FAILED safely; "
+        "diagnostic_stage=" + safe
+        + "; no raw prices, key vault, Neon URL, local path, SQL writes or LINE data disclosed"
+    )
+
+
 def validate_receipts(quality, density):
     if (not isinstance(quality, dict) or not isinstance(density, dict)
         or quality.get("scope") != QUALITY_SCOPE
@@ -136,7 +186,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
         len(source_days_2022 | set(bulk_days)) != 246 or
         min(source_days_2022 | set(bulk_days)) != date(2022,1,3) or
         max(source_days_2022 | set(bulk_days)) != date(2022,12,30)):
-        raise ValueError("Owner AES vs Neon 2022 source calendar incomplete or overlaps")
+        raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
 
     combined = dict(local)
     neon_keys = set()
@@ -163,7 +213,7 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
         if d in combined:
             original = combined[d]
             if any(original[f] != row[f] for f in FIELDS):
-                raise ValueError("Overlapping AES and Neon 2330 OHLCV differs")
+                raise VirtualAuditStageError("AES_NEON_2330_CORE_OHLCV")
             for f in OPTIONAL:
                 if original.get(f) is None or row.get(f) is None:
                     optional_differences["unverifiable_" + f] += 1
@@ -172,13 +222,13 @@ def stitch(*, quality, density, aes21, aes22, neon_rows, bulk_days, cutoff):
             core_parity += 1
         else:
             if d.year != 2022 or d not in bulk_days:
-                raise ValueError("Neon-only 2330 cannot bypass the verified 2022 official bulk calendar")
+                raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
             combined[d] = row
     if neon_2022_verified_bulk_calendar_days != set(bulk_days):
-        raise ValueError("The 84 official 2022 market bulk dates lack valid 2330 stock bars")
+        raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
     year22 = {d for d in combined if d.year == 2022}
     if year22 != source_days_2022 | set(bulk_days):
-        raise ValueError("Verified 2022 246-day virtual 2330 source calendar changed")
+        raise VirtualAuditStageError("SOURCE_2022_CALENDAR")
     if len(combined) != 28 + 246:
         raise ValueError("Insufficient authenticated source days for virtual history")
 
@@ -273,43 +323,73 @@ def _authenticated_selected(paths, key, year, expected_days):
 
 
 def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, cutoff, url):
-    paths21, paths22 = _private_archives(archive21), _private_archives(archive22)
-    previous21 = _private_file(quality_path, should_exist=True)
-    previous22 = _private_file(density_path, should_exist=True)
-    destination = _private_file(out, should_exist=False)
+    paths21 = _stage("ARCHIVE_PATHS", _private_archives, archive21)
+    paths22 = _stage("ARCHIVE_PATHS", _private_archives, archive22)
+    previous21 = _stage("PRIVATE_RECEIPTS", _private_file, quality_path, should_exist=True)
+    previous22 = _stage("PRIVATE_RECEIPTS", _private_file, density_path, should_exist=True)
+    destination = _stage("PRIVATE_RECEIPTS", _private_file, out, should_exist=False)
     if len({previous21, previous22, destination}) != 3 or any(
         p == destination for p in paths21 + paths22
     ):
-        raise ValueError("Distinct owner-private evidence and report paths required")
-    quality = json.loads(previous21.read_text(encoding="utf-8"))
-    density = json.loads(previous22.read_text(encoding="utf-8"))
-    validate_receipts(quality, density)
-    key = resolve_archive_key(
-        vault_path=Path(vault), env_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX", ""))
+        raise VirtualAuditStageError("PRIVATE_RECEIPTS")
+
+    quality = _stage("PREVIOUS_REPORT_GUARD", lambda: json.loads(
+        previous21.read_text(encoding="utf-8")))
+    density = _stage("PREVIOUS_REPORT_GUARD", lambda: json.loads(
+        previous22.read_text(encoding="utf-8")))
+    _stage("PREVIOUS_REPORT_GUARD", validate_receipts, quality, density)
+
+    key = _stage(
+        "AES_KEY_VAULT", resolve_archive_key,
+        vault_path=Path(vault), env_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX", ""),
+    )
     originals = paths21 + paths22
-    start_hashes = {str(p): sha256(p.read_bytes()).hexdigest() for p in originals}
-    for paths, year, start, end, days in (
-        (paths21, 2021, date(2021,11,23), date(2022,1,1), 28),
-        (paths22, 2022, date(2022,1,1), date(2023,1,1), 162),
+    start_hashes = _stage(
+        "CIPHERTEXT_HASH",
+        lambda: {str(p): sha256(p.read_bytes()).hexdigest() for p in originals},
+    )
+
+    for paths, start, end, expected, phase in (
+        (paths21, date(2021,11,23), date(2022,1,1), 28, "AES_2021_AUTHENTICATION"),
+        (paths22, date(2022,1,1), date(2023,1,1), 162, "AES_2022_AUTHENTICATION"),
     ):
-        census = authenticated_archive_days(paths, hex_key=key, start=start, end=end)
-        if census.get("full_file_integrity_verified") is not True or len(census["days"]) != days:
-            raise ValueError("Owner-private official AES source census not authenticated")
-    # Fresh Neon snapshot must be captured after the AES source census and
-    # before cryptographic replay; source hashes are checked once more at end.
-    bulk_days, neon = capture_neon(url)
-    aes21 = _authenticated_selected(paths21, key, 2021, 28)
-    aes22 = _authenticated_selected(paths22, key, 2022, 162)
-    if any(sha256(p.read_bytes()).hexdigest() != start_hashes[str(p)] for p in originals):
-        raise ValueError("AES original was modified during owner virtual source replay")
-    report = stitch(
+        proof = _stage(
+            phase, authenticated_archive_days,
+            paths, hex_key=key, start=start, end=end,
+        )
+        if proof.get("full_file_integrity_verified") is not True or len(proof["days"]) != expected:
+            raise VirtualAuditStageError(phase)
+
+    # Still a single, server-enforced read-only snapshot; no data price logged.
+    bulk_days, neon = _stage("NEON_READONLY_SNAPSHOT", capture_neon, url)
+    aes21 = _stage("AES_2021_2330_REPLAY", _authenticated_selected, paths21, key, 2021, 28)
+    aes22 = _stage("AES_2022_2330_REPLAY", _authenticated_selected, paths22, key, 2022, 162)
+    same_originals = _stage(
+        "ARCHIVE_IMMUTABILITY",
+        lambda: all(sha256(p.read_bytes()).hexdigest() == start_hashes[str(p)]
+                    for p in originals),
+    )
+    if not same_originals:
+        raise VirtualAuditStageError("ARCHIVE_IMMUTABILITY")
+
+    report = _stage(
+        "VIRTUAL_PREFIX_EVALUATION", stitch,
         quality=quality, density=density, aes21=aes21, aes22=aes22,
-        neon_rows=neon, bulk_days=bulk_days, cutoff=cutoff)
-    raw = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+        neon_rows=neon, bulk_days=bulk_days, cutoff=cutoff,
+    )
+    raw = _stage(
+        "PRIVATE_RECEIPT_WRITE",
+        lambda: json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+    )
     if len(raw.encode("utf-8")) > MAX_REPORT_BYTES:
-        raise ValueError("Private virtual prefix report exceeds output budget")
-    with destination.open("x", encoding="utf-8") as f:
-        f.write(raw)
+        raise VirtualAuditStageError("PRIVATE_RECEIPT_WRITE")
+
+    def write_owner_only():
+        with destination.open("x", encoding="utf-8") as f:
+            f.write(raw)
+    _stage("PRIVATE_RECEIPT_WRITE", write_owner_only)
+
+    # No price, address, credential, hash, private file path or stock-date leaves stdout.
     print(json.dumps({
         "status": "OWNER_2021_22_2330_VIRTUAL_AES_NEON_RAW_PREFIX_READONLY_PASS",
         "cutoff": report["as_of"],
@@ -322,7 +402,6 @@ def run_owner(*, archive21, archive22, vault, quality_path, density_path, out, c
         "neon_writes": 0,
         "line_messages_sent": 0,
     }, ensure_ascii=False))
-
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -343,11 +422,10 @@ def main():
             density_path=args.prior_2022_density, out=args.out,
             cutoff=date.fromisoformat(args.as_of),
             url=os.environ.get("DATABASE_URL", ""))
+    except VirtualAuditStageError as exc:
+        raise SystemExit(_failure_message(exc.code)) from None
     except Exception:
-        raise SystemExit(
-            "Owner 2021/22 2330 AES+Neon virtual prefix FAILED safely; "
-            "no prices, AES keys, Neon URL, LINE or database writes disclosed"
-        ) from None
+        raise SystemExit(_failure_message("UNCLASSIFIED")) from None
 
 
 if __name__ == "__main__":

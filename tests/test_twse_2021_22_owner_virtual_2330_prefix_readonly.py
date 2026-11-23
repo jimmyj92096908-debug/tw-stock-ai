@@ -8,7 +8,8 @@ from scripts.twse_2021_aes_exclusive_quality_readonly import SCOPE as QUALITY_SC
 from scripts.twse_2022_aes_neon_eligible_density_readonly import SCOPE as DENSITY_SCOPE
 from scripts.twse_2021_22_owner_virtual_2330_prefix_readonly import (
     BULK, SECONDARY, SCOPE, NEON_SINGLE_ISSUER_SQL, BULK_DATES_SQL,
-    stitch, validate_receipts,
+    stitch, validate_receipts, _stage, _failure_message,
+    VirtualAuditStageError, run_owner,
 )
 
 
@@ -202,6 +203,51 @@ class Virtual2330Tests(unittest.TestCase):
         a[0] = dict(a[0], trade_date=date(2023,1,3))
         with self.assertRaises(ValueError):
             self.run_stitch(neon=a)
+
+    def test_private_failure_stage_allowlist_never_exposes_raw_error(self):
+        secret = "postgresql://owner-secret:password@neon/private-price"
+        def bad_external_call():
+            raise ValueError(secret)
+        with self.assertRaises(VirtualAuditStageError) as ctx:
+            _stage("NEON_READONLY_SNAPSHOT", bad_external_call)
+        self.assertEqual(ctx.exception.code, "NEON_READONLY_SNAPSHOT")
+        self.assertEqual(str(ctx.exception), "NEON_READONLY_SNAPSHOT")
+        text = _failure_message(ctx.exception.code)
+        self.assertIn("diagnostic_stage=NEON_READONLY_SNAPSHOT", text)
+        self.assertNotIn(secret, text)
+        self.assertNotIn(secret, str(ctx.exception))
+        self.assertEqual(_failure_message(secret).count(secret), 0)
+        self.assertIn("diagnostic_stage=UNCLASSIFIED", _failure_message(secret))
+
+    def test_archive_layout_stage_fails_before_any_private_neon_read(self):
+        from unittest.mock import patch
+        module = "scripts.twse_2021_22_owner_virtual_2330_prefix_readonly"
+        with patch(module + "._private_archives",
+                   side_effect=ValueError("C:/secret-owner-path")), \
+             patch(module + ".capture_neon") as read_neon:
+            with self.assertRaises(VirtualAuditStageError) as ctx:
+                run_owner(
+                    archive21="nonexistent", archive22="nonexistent",
+                    vault="unused", quality_path="unused", density_path="unused",
+                    out="unused", cutoff=date(2022,12,30), url="unused")
+        self.assertEqual(ctx.exception.code, "ARCHIVE_PATHS")
+        self.assertNotIn("secret", str(ctx.exception))
+        read_neon.assert_not_called()
+
+    def test_core_mismatch_and_calendar_missing_have_distinct_safe_codes(self):
+        changed = [dict(x) for x in self.neon]
+        changed[0] = source_bar(
+            changed[0]["trade_date"], neon=True, src=SECONDARY, close="104.50")
+        with self.assertRaises(VirtualAuditStageError) as ctx:
+            self.run_stitch(neon=changed)
+        self.assertEqual(ctx.exception.code, "AES_NEON_2330_CORE_OHLCV")
+        self.assertNotIn("104.50", str(ctx.exception))
+
+        missing = [dict(x) for x in self.neon
+                   if x["trade_date"] != self.bulk_days[0]]
+        with self.assertRaises(VirtualAuditStageError) as ctx:
+            self.run_stitch(neon=missing)
+        self.assertEqual(ctx.exception.code, "SOURCE_2022_CALENDAR")
 
     def test_live_sql_is_read_only_and_bounded(self):
         self.assertIn("stock_id=%s", NEON_SINGLE_ISSUER_SQL)
