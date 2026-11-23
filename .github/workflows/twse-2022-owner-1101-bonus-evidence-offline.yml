@@ -1,0 +1,37 @@
+name: TWSE 2022 1101 Bonus Share Candidate Evidence (Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_2022_owner_1101_bonus_share_evidence_offline.py'
+      - 'tests/test_twse_2022_owner_1101_bonus_share_evidence_offline.py'
+      - 'docs/twse-2022-1101-stock-bonus-ratio-candidate-evidence.md'
+      - '.github/workflows/twse-2022-owner-1101-bonus-evidence-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_2022_owner_1101_bonus_share_evidence_offline.py'
+      - 'tests/test_twse_2022_owner_1101_bonus_share_evidence_offline.py'
+      - 'docs/twse-2022-1101-stock-bonus-ratio-candidate-evidence.md'
+      - '.github/workflows/twse-2022-owner-1101-bonus-evidence-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tcc-bonus-provenance-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test TCC stock-bonus blocked candidate
+        run: |
+          python -m py_compile scripts/twse_2022_owner_1101_bonus_share_evidence_offline.py
+          python -m unittest -v tests.test_twse_2022_owner_1101_bonus_share_evidence_offline tests.test_twse_2021_22_owner_remaining_action_months_readonly
+      - name: Keep original MOPS and adjusted returns blocked
+        run: echo "No Neon, AES, live MOPS, LINE, paid service, trades, adjusted price factors or total return labels."
