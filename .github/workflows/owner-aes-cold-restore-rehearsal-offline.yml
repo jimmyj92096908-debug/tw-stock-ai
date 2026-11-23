@@ -1,0 +1,39 @@
+name: Owner AES Cold Restore Rehearsal (Synthetic Offline)
+
+on:
+  push:
+    paths:
+      - 'scripts/twse_owner_aes_cold_restore_rehearsal.py'
+      - 'tests/test_twse_owner_aes_cold_restore_rehearsal.py'
+      - 'docs/twse-2021-22-owner-aes-cold-restore-rehearsal.md'
+      - '.github/workflows/owner-aes-cold-restore-rehearsal-offline.yml'
+  pull_request:
+    paths:
+      - 'scripts/twse_owner_aes_cold_restore_rehearsal.py'
+      - 'tests/test_twse_owner_aes_cold_restore_rehearsal.py'
+      - 'docs/twse-2021-22-owner-aes-cold-restore-rehearsal.md'
+      - '.github/workflows/owner-aes-cold-restore-rehearsal-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-restore-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing offline source modules dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test only synthetic AES-256-GCM source archives
+        run: |
+          python -m py_compile scripts/twse_owner_aes_cold_restore_rehearsal.py
+          python -m unittest -v tests.test_twse_owner_aes_cold_restore_rehearsal
+      - name: Confirm no live credentials or database actions were used
+        run: |
+          echo "Only synthetic owner AES encrypted archive data was generated in runner temporary directories."
+          echo "No Neon database URL, LINE token, private key vault, historical archive, SQL writes or deletion used."
