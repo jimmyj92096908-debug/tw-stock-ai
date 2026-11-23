@@ -1,0 +1,38 @@
+name: TWSE 2021-22 Historical Two-Stock Corporate Actions (Offline)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/twse_2021_22_frozen2_official_action_monthly_audit.py'
+      - 'tests/test_twse_2021_22_frozen2_official_action_monthly_audit.py'
+      - '.github/workflows/twse-2021-22-frozen2-official-action-monthly-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/twse_2021_22_frozen2_official_action_monthly_audit.py'
+      - 'tests/test_twse_2021_22_frozen2_official_action_monthly_audit.py'
+      - '.github/workflows/twse-2021-22-frozen2-official-action-monthly-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  strict-historical-months-no-neon-no-keys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      STOCK_ARCHIVE_KEY_HEX: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing free dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Offline historical source scope and fail-closed tests
+        run: |
+          unset PYTHONPATH
+          python -m py_compile scripts/twse_2021_22_frozen2_official_action_monthly_audit.py
+          python -m scripts.twse_2021_22_frozen2_official_action_monthly_audit --help >/dev/null
+          python -m unittest tests.test_twse_2021_22_frozen2_official_action_monthly_audit -v
