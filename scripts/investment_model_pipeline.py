@@ -18,7 +18,11 @@ import psycopg
 from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+# Direct CLI invocation must work from a clean shell without PYTHONPATH.
+# The model uses both src.* package and legacy top-level module imports.
+for source_path in (ROOT, ROOT / "src"):
+    if str(source_path) not in sys.path:
+        sys.path.insert(0, str(source_path))
 from trained_factor_model import LATEST_MODEL_SQL
 from investment_model_bundle import STOCK_STATUS_SQL, assemble_research_bundle
 
