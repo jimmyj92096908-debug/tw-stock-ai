@@ -148,7 +148,8 @@ class DateHistoryTests(unittest.TestCase):
         self.assertEqual(calls[0][2:],("imported",800,799))
         self.assertEqual(calls[1][2:],("closed",0,0))
         self.assertTrue(any("CREATE TABLE" in s for s,_ in fake.cur.statements))
-        self.assertEqual(storage.call_count,2)
+        # Pre-DDL admission plus both per-source-day checks; no weakening.
+        self.assertEqual(storage.call_count,3)
 
     def test_realistic_source_budget_and_fail_closed_validation(self):
         self.assertTrue(history.has_source_write_budget(610_377_728,days=8))
