@@ -142,11 +142,11 @@ class Virtual2330Tests(unittest.TestCase):
 
     def test_second_stock_1101_price_conflict_fails_with_own_diagnostic(self):
         changed = [dict(row, stock_id="1101") for row in self.neon]
-        changed[0] = dict(changed[0], close=Decimal("104.50"))
+        changed[0] = dict(changed[0], close=Decimal("102.50"))
         with self.assertRaises(VirtualAuditStageError) as ctx:
             self._run_1101(neon=changed)
         self.assertEqual(ctx.exception.code, "AES_NEON_1101_CORE_OHLCV")
-        self.assertNotIn("104.50", str(ctx.exception))
+        self.assertNotIn("102.50", str(ctx.exception))
 
     def test_second_stock_1101_rejects_foreign_issuer_or_missing_dates(self):
         foreign_neon = [dict(row, stock_id="1101") for row in self.neon]
@@ -171,7 +171,7 @@ class Virtual2330Tests(unittest.TestCase):
         future = [dict(row, stock_id="1101") for row in self.neon]
         idx = next(i for i, row in enumerate(future)
                    if row["trade_date"] == date(2022, 12, 30))
-        future[idx] = dict(future[idx], close=Decimal("133.25"))
+        future[idx] = dict(future[idx], close=Decimal("102.50"))
         res = self._run_1101(neon=future, cutoff=date(2022, 12, 29))
         self.assertEqual(
             earlier["as_of_raw_prefix_sha256_private"],
