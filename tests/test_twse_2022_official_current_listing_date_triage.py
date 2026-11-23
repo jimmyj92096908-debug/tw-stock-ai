@@ -137,8 +137,32 @@ class CurrentTWSEListingDateOwnerAuditSyntheticTests(unittest.TestCase):
 
     def test_owner_private_conflict_must_match_original_pr234_receipt(self):
         evidence,roster,zero,first=source_inputs()
-        sid=sorted(zero)[0]
-        first[sid]=date(2023,1,3)
+        # Recreate ACTUAL owner PR234 cohort proportions (not the
+        # earlier 75+50+4 parser-validation fixture):
+        # current TWSE listed 2023/24/25/26: 27/37/35/30;
+        # first valid stored Neon source: 28/36/35/30;
+        # one 2024 current listing has a first 2023 source observation.
+        stock_ids=sorted(zero)
+        for index,sid_ in enumerate(stock_ids):
+            if index<27:
+                listed="20230403"
+                observed=date(2023,4,4)
+            elif index<64:
+                listed="20240304"
+                observed=date(2024,3,5)
+            elif index<99:
+                listed="20250505"
+                observed=date(2025,5,6)
+            else:
+                listed="20261102"
+                observed=date(2026,11,3)
+            for row in evidence["rows"]:
+                if row["公司代號"]==sid_:
+                    row["上市日期"]=listed
+                    break
+            first[sid_]=observed
+        sid=stock_ids[27]
+        first[sid]=date(2023,4,4)
         args=dict(
             eligible_ids=roster,no_2022_ids=zero,
             first_2023plus=first,current_day=date(2026,11,23),
@@ -159,6 +183,13 @@ class CurrentTWSEListingDateOwnerAuditSyntheticTests(unittest.TestCase):
         }
         self.assertTrue(validate_private_one_conflict_against_prior_receipt(
             original,private,expected_scope=SCOPE))
+        counts=public["source_listing_date_bucket_counts"]
+        self.assertEqual([counts[f"current_twse_listing_date_{y}"]
+                          for y in (2023,2024,2025,2026)],[27,37,35,30])
+        self.assertEqual(len(private[
+            "owner_private_official_listing_first_neon_date_conflicts"]),1)
+        self.assertEqual(private[
+            "owner_private_official_listing_first_neon_date_conflicts"][0]["stock_id"],sid)
         bad=dict(original,production_neon_writes=1)
         with self.assertRaises(ValueError):
             validate_private_one_conflict_against_prior_receipt(
