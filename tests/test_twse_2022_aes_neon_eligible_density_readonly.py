@@ -100,29 +100,25 @@ class AESNeonCurrentListed2022DensityTests(unittest.TestCase):
         p,b,o,roster,aes,bulk,neon,proof=self.reference
         moved_from=bulk[0]
         moved_to=synthetic_246()[0]
+        moved_ids=set(roster[2:502])
+        self.assertEqual(len(moved_ids),500)
         changed=[]
         moved=0
         for d,s,source in neon:
-            if d==moved_from and moved<500:
+            if d==moved_from and s in moved_ids:
                 changed.append((moved_to,s,SECONDARY))
                 moved+=1
             else:
                 changed.append((d,s,source))
         self.assertEqual(moved,500)
-        # Avoid overwriting the one existing sparse Neon sid on moved_to.
-        changed = [
-            (d,roster[600+i],src)
-            if d==moved_to and src==SECONDARY and i<500
-            else (d,s,src)
-            for i,(d,s,src) in enumerate(changed)
-        ]
-        # Verify mismatch path via an independent low-density AES source
-        # (still valid 162 genuine private source calendar days).
-        args=[p,b,o,roster,aes,bulk,neon,proof]
-        changed_bulk=list(bulk)
-        changed_bulk[0]=synthetic_246()[1]
-        with self.assertRaisesRegex(ValueError,"conflict or overlap"):
-            run((p,b,o,roster,aes,changed_bulk,neon,proof))
+        # Same 84 dense days, same 83,294 rows; but one dense date shifted
+        # outside actual 84 official-bulk days. Must not mark exact parity.
+        r=run((p,b,o,roster,aes,bulk,changed,proof))
+        self.assertEqual(r["neon_2022_dates_with_at_least_500_current_eligible_stock_bars"],84)
+        self.assertFalse(r["neon_bulk_date_set_matches_500_stock_density_date_set"])
+        self.assertEqual(r["neon_bulk_days_below_500"],[moved_from.isoformat()])
+        self.assertEqual(r["neon_high_density_days_outside_original_bulk"],[moved_to.isoformat()])
+        self.assertFalse(r["full_market_all_stock_daily_bar_completeness_certified"])
 
     def test_stale_previous_or_tampered_five_year_report_rejected(self):
         p,b,o,roster,aes,bulk,neon,proof=self.reference
