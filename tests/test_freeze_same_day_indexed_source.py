@@ -34,7 +34,8 @@ def fake_db(*, price_day=TODAY, score_day=TODAY, rows=None):
         {"latest":score_day},
         {"now":CAPTURE},
     ]
-    cur.fetchall.return_value=roster(50) if rows is None else rows
+    cur.fetchall.return_value=([dict(r,as_of_date=TODAY) for r in roster(50)]
+                               if rows is None else rows)
     return conn, cur
 
 
@@ -109,7 +110,7 @@ class SameDayFreezeIndexedTests(unittest.TestCase):
             self.assertNotIn(runner.INSERT_SQL,statements)
 
     def test_owner_excluded_1589_rejected_even_if_mock_bypasses_db_filter(self):
-        records=roster(50)
+        records=[dict(r,as_of_date=TODAY) for r in roster(50)]
         records[4]["stock_id"]="1589"
         self.assertRaisesRegex(
             ValueError,"Unexpected issuer",
