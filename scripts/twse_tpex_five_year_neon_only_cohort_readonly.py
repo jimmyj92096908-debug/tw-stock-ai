@@ -264,7 +264,7 @@ def main():
                 for v in report["market"].values()),
             "neon_only_stocks_at_least_1000_sessions": {
                 k:v["with_at_least_1000_valid_stored_days"]
-                for k,v in report["market"].items(),
+                for k,v in report["market"].items()
             },
             "owner_private_aes_source_included":False,
             "full_five_year_data_complete":False,
