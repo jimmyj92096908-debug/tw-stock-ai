@@ -24,6 +24,9 @@ from scripts.twse_2022_aes_neon_eligible_density_readonly import (
 )
 from scripts.twse_local_aes_gap_dedup import authenticated_archive_days
 from scripts.twse_local_encrypted_archive import verify_archive
+from scripts.twse_2022_aes_factor_readiness import (
+    _ordered_paths as _authenticated_2022_year_paths,
+)
 from scripts.twse_archive_key_vault import resolve_archive_key
 
 STOCK = "2330"
@@ -307,14 +310,27 @@ def capture_neon(url):
 
 
 def _authenticated_selected(paths, key, year, expected_days):
+    # The owner's 2022 private AES directory can contain other-year files.
+    # The audited 2022 producer already authenticates *every* off-year file
+    # before filtering by its separately inspected year-only archive range.
+    # Reuse that exact fail-closed inventory; do NOT reject an intact 2023
+    # file merely because it is stored alongside valid 2022 ciphertext.
+    # For 2021, preserve the existing exact 28-day archive inventory rule.
+    if year == 2022:
+        verified_2022, _skipped_other_years = _authenticated_2022_year_paths(
+            paths, hex_key=key,
+        )
+        selected_paths = [path for _, _, path in verified_2022]
+    else:
+        selected_paths = paths
     source_days = set()
     result = []
-    for path in paths:
+    for path in selected_paths:
         days_in_file = set()
         def consume(r):
             d = r["trade_date"]
             if type(d) is not date or d.year != year:
-                raise ValueError("Unexpected source year in owner AES ciphertext")
+                raise ValueError("Unexpected source year in selected AES ciphertext")
             days_in_file.add(d)
             if r["stock_id"] == STOCK:
                 _validate_bar(r, aes=True)
