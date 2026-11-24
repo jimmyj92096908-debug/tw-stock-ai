@@ -5,7 +5,10 @@ import logging
 import os
 import psycopg
 from psycopg.rows import dict_row
-from smc_indicators import compute_smc
+if __package__:
+    from .smc_indicators import compute_smc
+else:
+    from smc_indicators import compute_smc
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
