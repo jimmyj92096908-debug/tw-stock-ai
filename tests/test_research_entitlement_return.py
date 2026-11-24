@@ -1,4 +1,5 @@
 import copy
+from fractions import Fraction
 import unittest
 from src import research_entitlement_return as m
 
@@ -16,6 +17,20 @@ def fixture(sid="2330",exit_price="100"):
             "end_inclusive":DAYS[-1],"all_action_types_covered_asserted":True,"evidence_sha256":HASH}}
 
 class EntitlementTests(unittest.TestCase):
+    def test_canonical_exact_rounding(self):
+        cases=[(Fraction(0),"0.000000000000"),
+               (Fraction(-1,10**13),"0.000000000000"),
+               (Fraction(1,2*10**12),"0.000000000000"),
+               (Fraction(3,2*10**12),"0.000000000002"),
+               (Fraction(-3,2*10**12),"-0.000000000002"),
+               (Fraction(1,3),"0.333333333333"),
+               (Fraction(2,3),"0.666666666667"),
+               (Fraction(9999999999999,10**13),"1.000000000000"),
+               (Fraction(10**70),"1"+"0"*70+".000000000000")]
+        for value,expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(m.rounded(value),expected)
+
     def test_cash_and_split_order(self):
         x=fixture(exit_price="49")
         x["actions"]=[event(DAYS[1],"STOCK_SPLIT","0","2"),event(DAYS[-1],"CASH_DIVIDEND","1","1")]

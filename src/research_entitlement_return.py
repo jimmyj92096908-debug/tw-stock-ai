@@ -7,7 +7,7 @@ fractional share entitlements valued at exit close, not assumed deliverable.
 Unsupported or ambiguous events reject the entire signal-date cohort.
 """
 from datetime import date
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Decimal
 from fractions import Fraction
 import re
 from hashlib import sha256
@@ -46,9 +46,14 @@ def digest(s):
 
 
 def rounded(v):
-    with localcontext() as ctx:
-        ctx.prec=60
-        return str((Decimal(v.numerator)/Decimal(v.denominator)).quantize(Decimal("0.000000000001")))
+    """Exact rational half-even rounding, canonical fixed 12 decimals."""
+    scale=10**12
+    magnitude,remainder=divmod(abs(v.numerator)*scale,v.denominator)
+    if 2*remainder>v.denominator or (2*remainder==v.denominator and magnitude%2):
+        magnitude+=1
+    whole,fraction=divmod(magnitude,scale)
+    sign="-" if v<0 and magnitude else ""
+    return f"{sign}{whole}.{fraction:012d}"
 
 
 def hypothetical_return(*,market,stock_id,signal_date,sessions,prices,actions,coverage):
