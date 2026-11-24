@@ -119,7 +119,10 @@ def merge_sources(roster,local,neon,late,calendar,counts):
     expected={(s,y):n for s,y,n,distinct in counts if s in selected}
     if dict(observed)!=expected:
         raise ValueError("Selected issuer annual source counts changed")
-    bad={s for (d,s),r in c.items() if early.exact_core(r) is None}
+    bad={}
+    for (d,s),r in c.items():
+        if early.exact_core(r) is None:
+            bad[s]=min(d,bad.get(s,d))
     groups=defaultdict(list)
     for k in a.keys()|b.keys():
         if k[1] in selected:
@@ -142,7 +145,7 @@ def calculate_sample(selected,groups,bad,calendar,signals):
         observed={r["trade_date"] for r in rows}
         for day in signals:
             i=positions[day]
-            if sid in bad:
+            if sid in bad and bad[sid]<=day:
                 outcomes[day]["issuer_invalid_late_ohlcv"]+=1
                 continue
             if i+1<240 or not set(dates[i-239:i+1])<=observed:
@@ -177,7 +180,8 @@ def calculate_sample(selected,groups,bad,calendar,signals):
         "accepted_feature_rows":len(features),"accepted_feature_values":len(features)*len(FEATURE_NAMES),
         "feature_version":VERSION,"feature_names":list(FEATURE_NAMES),
         "sample_selection":"fixed_hash_current_roster_not_historical_pit",
-        "prefix_only_feature_computation":True,"forward_labels_created":False,
+        "prefix_only_feature_computation":True,"late_invalid_bar_quarantine_asof_signal_only":True,
+        "forward_labels_created":False,
         "full_five_year_factor_panel_recomputed":False,"corporate_actions_adjusted":False,
         "historical_pit_total_return_verified":False,"production_neon_writes":0,
         "line_messages_sent":0,"paid_upgrade_requested":False,"model_release":"BLOCKED"}
