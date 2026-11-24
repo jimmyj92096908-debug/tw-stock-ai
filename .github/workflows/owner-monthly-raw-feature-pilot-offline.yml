@@ -1,0 +1,23 @@
+name: Owner Monthly Raw Feature Pilot (Offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/owner_monthly_raw_feature_pilot_offline.py'
+      - 'scripts/twse_owner_quarterly_raw_feature_sample_readonly.py'
+      - 'tests/test_owner_monthly_raw_feature_pilot_offline.py'
+      - '.github/workflows/owner-monthly-raw-feature-pilot-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ".:src"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest -v tests.test_owner_monthly_raw_feature_pilot_offline tests.test_twse_owner_quarterly_raw_feature_sample_readonly tests.test_twse_owner_full_quarterly_raw_panel_readonly tests.test_tpex_owner_full_quarterly_raw_panel_readonly

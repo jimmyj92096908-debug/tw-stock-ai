@@ -132,10 +132,41 @@ def merge_sources(roster,local,neon,late,calendar,counts):
     return groups,bad,len(overlap),len(a.keys()|b.keys())
 
 
-def calculate_cohort(selected,groups,bad,calendar,signals,*,market="twse"):
+def monthly_signal_schedule(reference_calendar):
+    """Last observed TWSE source date per month; not official calendar proof."""
+    if not isinstance(reference_calendar,(set,list,tuple,frozenset)):
+        raise ValueError("Observed source calendar required")
+    if any(type(d) is not date or not depth.START<=d<depth.END or d.weekday()>=5
+           for d in reference_calendar):
+        raise ValueError("Invalid observed source date")
+    months={}
+    for d in sorted(set(reference_calendar)):
+        if d>=early.CUTOFF:
+            months[d.year,d.month]=d
+    expected=[(2022,12)]+[(y,m) for y in range(2023,2027)
+                         for m in range(1,12 if y==2026 else 13)]
+    if sorted(months)!=expected or months[2022,12]!=early.CUTOFF:
+        raise ValueError("Incomplete fixed monthly source schedule")
+    signals=[months[k] for k in expected]
+    if not set(signal_schedule(reference_calendar))<=set(signals):
+        raise ValueError("Quarterly anchors not reproduced")
+    return signals
+
+
+def calculate_cohort(selected,groups,bad,calendar,signals,*,market="twse",
+                     schedule="quarterly",reference_calendar=None):
     """Recompute using an independent prefix per signal; no forward labels."""
-    if (market not in ("twse","tpex") or (market=="twse" and signals!=signal_schedule(calendar))
-        or (market=="tpex" and (len(signals)!=17 or signals!=sorted(set(signals)) or any(type(d) is not date or not depth.START<=d<depth.END for d in signals)))
+    if schedule=="quarterly":
+        schedule_valid=(signals==signal_schedule(calendar) if market=="twse" else
+            len(signals)==17 and signals==sorted(set(signals)) and
+            all(type(d) is date and depth.START<=d<depth.END for d in signals))
+    elif schedule=="monthly":
+        schedule_valid=(reference_calendar is not None
+            and (market!="twse" or set(calendar)==set(reference_calendar))
+            and signals==monthly_signal_schedule(reference_calendar))
+    else:
+        schedule_valid=False
+    if (market not in ("twse","tpex") or not schedule_valid
         or not 1<=len(selected)<=1092
         or len(set(selected))!=len(selected) or any(type(s) is not str or len(s)!=4 or not s.isascii() or not s.isdigit() or s=="1589" for s in selected)):
         raise ValueError("Fixed sample schedule required")
@@ -179,7 +210,7 @@ def calculate_cohort(selected,groups,bad,calendar,signals,*,market="twse"):
     if any(sum(v.values())!=len(selected) for v in outcomes.values()):
         raise RuntimeError("Signal partition mismatch")
     features.sort(key=lambda r:(r["signal_date"],r["stock_id"]))
-    summary={"schema_version":1,"scope":"OWNER_TWSE_FIXED_FIVE_YEAR_QUARTERLY_RAW_FEATURE_SAMPLE",
+    summary={"schema_version":1,"scope":("OWNER_FIXED_OBSERVED_MONTHLY_RAW_FEATURE_RESEARCH" if schedule=="monthly" else "OWNER_TWSE_FIXED_FIVE_YEAR_QUARTERLY_RAW_FEATURE_SAMPLE"),
         "sample_size":len(selected),"requested_signal_dates":len(signals),
         "signal_date_outcomes":[{"signal_date":d.isoformat(),"accepted":outcomes[d]["accepted"],
             "excluded":{k:v for k,v in sorted(outcomes[d].items()) if k!="accepted"}} for d in signals],
