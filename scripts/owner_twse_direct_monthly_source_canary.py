@@ -39,8 +39,8 @@ def parse_number(v,*,integer=False):
     return n
 
 
-def parse_month(raw,stock,month):
-    if (stock,month) not in QUEUE or type(raw) is not bytes or not 0<len(raw)<=LIMIT:
+def parse_month(raw,stock,month,*,queue=QUEUE):
+    if (stock,month) not in queue or type(raw) is not bytes or not 0<len(raw)<=LIMIT:
         raise ValueError("Outside fixed capture budget")
     body=json.loads(raw,object_pairs_hook=panel.strict_object,parse_constant=panel.reject_constant)
     if type(body) is not dict or body.get("stat")!="OK":
@@ -97,11 +97,16 @@ def private_dir(raw):
     return p
 
 
-def capture(directory,*,get,sleeper=time.sleep):
+def capture(directory,*,get,sleeper=time.sleep,queue=QUEUE):
     directory=private_dir(directory);counts=Counter();receipts=[];requests=0
+    if (type(queue) is not tuple or not 1<=len(queue)<=15 or len(set(queue))!=len(queue)
+        or any(type(s) is not str or not re.fullmatch(r"[0-9]{4}",s) or s=="1589"
+               or type(m) is not str or not re.fullmatch(r"202[3-6]-(0[1-9]|1[012])",m)
+               or m>"2026-11" for s,m in queue)):
+        raise ValueError("Invalid bounded source queue")
     # One raw response and matching capture receipt per fixed key.
     # Missing/mismatched pairs stop rather than overwrite.
-    for stock,month in QUEUE:
+    for stock,month in queue:
         stem=f"twse-stock-day-{stock}-{month}"
         raw_path=directory/(stem+".response.json");meta=directory/(stem+".receipt.json")
         if raw_path.is_symlink() or meta.is_symlink():
@@ -112,7 +117,7 @@ def capture(directory,*,get,sleeper=time.sleep):
             if not raw_path.is_file() or not meta.is_file() or raw_path.stat().st_size>LIMIT or meta.stat().st_size>4096:
                 raise ValueError("Invalid local cache size")
             raw=raw_path.read_bytes();proof=json.loads(meta.read_text(encoding="utf-8"),object_pairs_hook=panel.strict_object)
-            rows=parse_month(raw,stock,month)
+            rows=parse_month(raw,stock,month,queue=queue)
             if (proof.get("scope")!="OWNER_TWSE_STOCK_DAY_DIRECT_CAPTURE" or proof.get("stock_id")!=stock
                 or proof.get("month")!=month or proof.get("response_sha256")!=sha256(raw).hexdigest()
                 or proof.get("row_count")!=len(rows) or proof.get("endpoint")!=ENDPOINT):
@@ -121,7 +126,7 @@ def capture(directory,*,get,sleeper=time.sleep):
         else:
             if requests:sleeper(4)
             raw=fetch(stock,month,get=get);requests+=1
-            rows=parse_month(raw,stock,month)
+            rows=parse_month(raw,stock,month,queue=queue)
             proof={"scope":"OWNER_TWSE_STOCK_DAY_DIRECT_CAPTURE","stock_id":stock,"month":month,
                 "endpoint":ENDPOINT,"response_sha256":sha256(raw).hexdigest(),"row_count":len(rows),
                 "captured_at_utc":datetime.now(timezone.utc).isoformat(),
@@ -131,7 +136,7 @@ def capture(directory,*,get,sleeper=time.sleep):
             counts["new_months"]+=1
         counts["valid_source_rows"]+=len(rows);receipts.append(proof)
     return {"scope":"OWNER_TWSE_DIRECT_LOCAL_MONTHLY_SOURCE_CANARY","schema_version":1,
-        "candidate_issuer_months":len(QUEUE),"verified_format_issuer_months":len(receipts),
+        "candidate_issuer_months":len(queue),"verified_format_issuer_months":len(receipts),
         "new_official_requests":requests,**dict(counts),
         "historical_publication_vintage_verified":False,"official_calendar_completeness_verified":False,
         "cached_source_bytes_independently_authenticated":False,"full_monthly_factor_panel_created":False,
