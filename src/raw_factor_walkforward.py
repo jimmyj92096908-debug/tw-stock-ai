@@ -131,19 +131,31 @@ def frozen_unadjusted_dataset(series_by_stock, *, signal_dates, label_cutoff, ma
         "database_writes":0,
     }
 
-def purged_ridge_prototype(dataset,*,test_start):
-    """Train only labels exited before fold start, evaluate nonoverlap windows.
+def validate_frozen_dataset(dataset, *, test_start):
+    """Validate the research receipt, not independently authenticate its source.
 
-    ALWAYS RETROSPECTIVE AND UNAPPROVED, irrespective of observed returns.
+    A self-computed checksum cannot establish vintage, historical membership,
+    or true returns. Reject malformed receipts even when their hash matches.
+    Return canonical date/code groups so tied ranks cannot depend on input order.
     """
     if (not isinstance(dataset,dict) or
+        type(dataset.get("schema_version")) is not int or dataset["schema_version"] != 1 or
         dataset.get("research_status")!="RAW_ONLY_UNADJUSTED_SOURCE_COHORT_NOT_A_MODEL_RELEASE" or
+        dataset.get("feature_version")!="tw-raw-price-asof-bridge-1" or
         dataset.get("feature_names")!=list(FEATURE_NAMES) or
         dataset.get("existing_tw_factor_ridge_1_feature_schema_compatible") is not False):
         raise ValueError("Incompatible unverified factor input")
+    market=dataset.get("market")
+    roster=dataset.get("frozen_current_stock_roster")
+    if (market not in ("twse","tpex") or not isinstance(roster,list) or
+        not MIN_UNIVERSE<=len(roster)<=MAX_UNIVERSE or
+        any(not isinstance(s,str) or not s.isascii() or not s.isdigit()
+            or not 4<=len(s)<=6 or s=="1589" for s in roster) or
+        len(set(roster))!=len(roster)):
+        raise ValueError("Invalid frozen stock roster")
     rows=dataset.get("rows")
-    if not isinstance(rows,list):
-        raise ValueError("Original rows missing")
+    if not isinstance(rows,list) or len(rows)>MAX_UNIVERSE*MAX_SIGNAL_DAYS:
+        raise ValueError("Missing or unbounded original research rows")
     serial=json.dumps(rows,sort_keys=True,separators=(",",":"),allow_nan=False)
     if sha256(serial.encode()).hexdigest()!=dataset.get("rows_sha256"):
         raise ValueError("Source research dataset fingerprint mismatch")
@@ -153,11 +165,20 @@ def purged_ridge_prototype(dataset,*,test_start):
         raise ValueError("Test start later than actual available labels")
     groups=defaultdict(list)
     for row in rows:
+        if (not isinstance(row,dict) or row.get("market")!=market or
+            row.get("stock_id") not in roster or
+            row.get("forward_label_is_unadjusted_price_only") is not True):
+            raise ValueError("Invalid research row market, stock or label type")
         day=_day(row["as_of_date"])
-        exit_= _day(row["exit_date"])
+        exit_=_day(row["exit_date"])
         entry=_day(row["entry_date"])
-        if not day<entry<exit_<=cutoff:
-            raise ValueError("Unmatured raw label in research dataset")
+        if (not day<entry<exit_<=cutoff or
+            row["as_of_date"]!=day.isoformat() or row["entry_date"]!=entry.isoformat() or
+            row["exit_date"]!=exit_.isoformat()):
+            raise ValueError("Unmatured or noncanonical raw label dates")
+        gross=row.get("raw_unadjusted_gross_return")
+        if type(gross) not in (int,float) or not math.isfinite(gross) or not -1<gross<=10:
+            raise ValueError("Invalid raw gross return outside research bounds")
         if (not isinstance(row.get("feature_vector"),list) or
             len(row["feature_vector"])!=len(FEATURE_NAMES) or
             any(type(v) not in (int,float) or not math.isfinite(v)
@@ -165,14 +186,31 @@ def purged_ridge_prototype(dataset,*,test_start):
             raise ValueError("Incomplete or non-finite as-of input feature")
         groups[day].append(row)
     complete=[]
-    roster=set(dataset["frozen_current_stock_roster"])
     for day,members in sorted(groups.items()):
-        if len(members)!=len(roster) or {x["stock_id"] for x in members}!=roster:
+        if len(members)!=len(roster) or {x["stock_id"] for x in members}!=set(roster):
             raise ValueError("Selection bias: incomplete frozen stock cohort")
         if len({x["entry_date"] for x in members})!=1 or len({
             x["exit_date"] for x in members})!=1:
             raise ValueError("Unaligned true forward sessions")
-        complete.append((day,members))
+        complete.append((day,sorted(members,key=lambda x:x["stock_id"])))
+    requested=dataset.get("requested_signal_days")
+    accepted=dataset.get("accepted_whole_cohort_days")
+    excluded=dataset.get("excluded_whole_cohort_days")
+    if (type(requested) is not int or not 1<=requested<=MAX_SIGNAL_DAYS or
+        type(accepted) is not int or accepted!=len(complete) or
+        not isinstance(excluded,dict) or
+        any(not isinstance(k,str) or type(v) is not int or v<=0 for k,v in excluded.items()) or
+        requested!=accepted+sum(excluded.values())):
+        raise ValueError("Frozen research cohort counts do not reconcile")
+    return complete,test
+
+
+def purged_ridge_prototype(dataset,*,test_start):
+    """Train only labels exited before fold start, evaluate nonoverlap windows.
+
+    ALWAYS RETROSPECTIVE AND UNAPPROVED, irrespective of observed returns.
+    """
+    complete,test=validate_frozen_dataset(dataset,test_start=test_start)
     development=[(d,m) for d,m in complete if d<test and all(
         _day(x["exit_date"])<test for x in m)]
     holdout=[(d,m) for d,m in complete if d>=test]
