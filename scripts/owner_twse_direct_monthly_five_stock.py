@@ -55,6 +55,9 @@ def main():
         with requests.Session() as session:
             result=run(payload,a.cache_dir,a.year,a.quarter,get=session.get)
         print(json.dumps(result,allow_nan=False))
+    except c.CaptureFailure as exc:
+        print(json.dumps(exc.diagnostic(),allow_nan=False))
+        raise SystemExit(1) from None
     except Exception:
         raise SystemExit("FAILED safely; private cache preserved; no Neon or LINE actions") from None
 

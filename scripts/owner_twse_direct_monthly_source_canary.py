@@ -97,6 +97,21 @@ def private_dir(raw):
     return p
 
 
+class CaptureFailure(ValueError):
+    def __init__(self, stock, month, stage, exc):
+        self.stock=stock; self.month=month; self.stage=stage
+        self.error_type=type(exc).__name__
+        response=getattr(exc,"response",None)
+        status=getattr(response,"status_code",None)
+        self.http_status=status if type(status) is int and 100<=status<=599 else None
+        super().__init__("Source capture failed")
+
+    def diagnostic(self):
+        return {"status":"FAILED_SAFELY","stock_id":self.stock,"month":self.month,
+            "stage":self.stage,"error_type":self.error_type,"http_status":self.http_status,
+            "production_neon_reads":0,"production_neon_writes":0,"line_messages_sent":0}
+
+
 def capture(directory,*,get,sleeper=time.sleep,queue=QUEUE):
     directory=private_dir(directory);counts=Counter();receipts=[];requests=0
     if (type(queue) is not tuple or not 1<=len(queue)<=15 or len(set(queue))!=len(queue)
@@ -107,34 +122,41 @@ def capture(directory,*,get,sleeper=time.sleep,queue=QUEUE):
     # One raw response and matching capture receipt per fixed key.
     # Missing/mismatched pairs stop rather than overwrite.
     for stock,month in queue:
-        stem=f"twse-stock-day-{stock}-{month}"
-        raw_path=directory/(stem+".response.json");meta=directory/(stem+".receipt.json")
-        if raw_path.is_symlink() or meta.is_symlink():
-            raise ValueError("No symlinked cache files")
-        if raw_path.exists()!=meta.exists():
-            raise ValueError("Incomplete prior cache pair; manual review required")
-        if raw_path.exists():
-            if not raw_path.is_file() or not meta.is_file() or raw_path.stat().st_size>LIMIT or meta.stat().st_size>4096:
-                raise ValueError("Invalid local cache size")
-            raw=raw_path.read_bytes();proof=json.loads(meta.read_text(encoding="utf-8"),object_pairs_hook=panel.strict_object)
-            rows=parse_month(raw,stock,month,queue=queue)
-            if (proof.get("scope")!="OWNER_TWSE_STOCK_DAY_DIRECT_CAPTURE" or proof.get("stock_id")!=stock
-                or proof.get("month")!=month or proof.get("response_sha256")!=sha256(raw).hexdigest()
-                or proof.get("row_count")!=len(rows) or proof.get("endpoint")!=ENDPOINT):
-                raise ValueError("Cache receipt does not bind source bytes")
-            counts["reused_months"]+=1
-        else:
-            if requests:sleeper(4)
-            raw=fetch(stock,month,get=get);requests+=1
-            rows=parse_month(raw,stock,month,queue=queue)
-            proof={"scope":"OWNER_TWSE_STOCK_DAY_DIRECT_CAPTURE","stock_id":stock,"month":month,
-                "endpoint":ENDPOINT,"response_sha256":sha256(raw).hexdigest(),"row_count":len(rows),
-                "captured_at_utc":datetime.now(timezone.utc).isoformat(),
-                "historical_publication_time_verified":False}
-            with raw_path.open("xb") as f:f.write(raw)
-            with meta.open("x",encoding="utf-8") as f:json.dump(proof,f,allow_nan=False)
-            counts["new_months"]+=1
-        counts["valid_source_rows"]+=len(rows);receipts.append(proof)
+        stage="CACHE_CHECK"
+        try:
+            stem=f"twse-stock-day-{stock}-{month}"
+            raw_path=directory/(stem+".response.json");meta=directory/(stem+".receipt.json")
+            if raw_path.is_symlink() or meta.is_symlink():
+                raise ValueError("No symlinked cache files")
+            if raw_path.exists()!=meta.exists():
+                raise ValueError("Incomplete prior cache pair; manual review required")
+            if raw_path.exists():
+                if not raw_path.is_file() or not meta.is_file() or raw_path.stat().st_size>LIMIT or meta.stat().st_size>4096:
+                    raise ValueError("Invalid local cache size")
+                raw=raw_path.read_bytes();proof=json.loads(meta.read_text(encoding="utf-8"),object_pairs_hook=panel.strict_object)
+                rows=parse_month(raw,stock,month,queue=queue)
+                if (proof.get("scope")!="OWNER_TWSE_STOCK_DAY_DIRECT_CAPTURE" or proof.get("stock_id")!=stock
+                    or proof.get("month")!=month or proof.get("response_sha256")!=sha256(raw).hexdigest()
+                    or proof.get("row_count")!=len(rows) or proof.get("endpoint")!=ENDPOINT):
+                    raise ValueError("Cache receipt does not bind source bytes")
+                counts["reused_months"]+=1
+            else:
+                if requests:sleeper(4)
+                stage="OFFICIAL_HTTP"
+                raw=fetch(stock,month,get=get);requests+=1
+                stage="OFFICIAL_PARSE"
+                rows=parse_month(raw,stock,month,queue=queue)
+                proof={"scope":"OWNER_TWSE_STOCK_DAY_DIRECT_CAPTURE","stock_id":stock,"month":month,
+                    "endpoint":ENDPOINT,"response_sha256":sha256(raw).hexdigest(),"row_count":len(rows),
+                    "captured_at_utc":datetime.now(timezone.utc).isoformat(),
+                    "historical_publication_time_verified":False}
+                stage="CACHE_WRITE"
+                with raw_path.open("xb") as f:f.write(raw)
+                with meta.open("x",encoding="utf-8") as f:json.dump(proof,f,allow_nan=False)
+                counts["new_months"]+=1
+            counts["valid_source_rows"]+=len(rows);receipts.append(proof)
+        except Exception as exc:
+            raise CaptureFailure(stock,month,stage,exc) from None
     return {"scope":"OWNER_TWSE_DIRECT_LOCAL_MONTHLY_SOURCE_CANARY","schema_version":1,
         "candidate_issuer_months":len(queue),"verified_format_issuer_months":len(receipts),
         "new_official_requests":requests,**dict(counts),
