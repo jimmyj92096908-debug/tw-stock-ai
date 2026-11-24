@@ -62,12 +62,22 @@ def parse_month(raw,stock,month,*,queue=QUEUE):
             raise ValueError("Wrong month, weekend or duplicate official day")
         seen.add(day)
         v=parse_number(rec[1],integer=True)
+        # Exact issuer/date, independently documented TWSE suspension and
+        # resumption. Only an explicit zero-trade, all-missing OHLC row is
+        # excluded; no fabricated price, no general missing-data exception.
+        if stock=="1101" and day==date(2025,8,13):
+            if (v==0 and parse_number(rec[2],integer=True)==0
+                and all(type(x) is str and x.strip() in ("--","---","-","") for x in rec[3:7])):
+                continue
+            raise ValueError("Known suspension row conflicts with expected no-trade format")
         o,h,l,c=map(parse_number,rec[3:7])
         if not 0<l<=min(o,c)<=max(o,c)<=h:
             raise ValueError("Invalid official OHLC")
         result.append({"market":"twse","stock_id":stock,"trade_date":day.isoformat(),
             "open":format(o,"f"),"high":format(h,"f"),"low":format(l,"f"),"close":format(c,"f"),
             "volume":v,"source":"TWSE_STOCK_DAY"})
+    if not result:
+        raise ValueError("No valid traded rows")
     return sorted(result,key=lambda r:r["trade_date"])
 
 
@@ -101,6 +111,13 @@ class CaptureFailure(ValueError):
     def __init__(self, stock, month, stage, exc):
         self.stock=stock; self.month=month; self.stage=stage
         self.error_type=type(exc).__name__
+        # Allowlist fixed parser errors only; never expose arbitrary exceptions.
+        known={"Unverified numeric source value","Invalid source share volume",
+            "Invalid official OHLC","Unverified or no-data source response",
+            "Wrong issuer or source column contract","Malformed official row",
+            "Unexpected ROC date","Wrong month, weekend or duplicate official day",
+            "Known suspension row conflicts with expected no-trade format","No valid traded rows"}
+        self.parse_reason=str(exc) if stage=="OFFICIAL_PARSE" and type(exc) is ValueError and str(exc) in known else None
         response=getattr(exc,"response",None)
         status=getattr(response,"status_code",None)
         self.http_status=status if type(status) is int and 100<=status<=599 else None
@@ -109,6 +126,7 @@ class CaptureFailure(ValueError):
     def diagnostic(self):
         return {"status":"FAILED_SAFELY","stock_id":self.stock,"month":self.month,
             "stage":self.stage,"error_type":self.error_type,"http_status":self.http_status,
+            "parse_reason":self.parse_reason,
             "production_neon_reads":0,"production_neon_writes":0,"line_messages_sent":0}
 
 

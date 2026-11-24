@@ -35,3 +35,29 @@ class CaptureTests(unittest.TestCase):
                 p.write_bytes(p.read_bytes()+b" ")
                 with self.assertRaises(ValueError):m.capture(d,get=None,sleeper=lambda _:None)
                 self.assertEqual(f.call_count,4)
+
+
+class SuspensionTests(unittest.TestCase):
+    def test_documented_halt_only(self):
+        q=(("1101","2025-08"),)
+        body={"stat":"OK","title":"1101 stock","fields":list(m.FIELDS),
+              "data":[["114/08/12","1000","100000","100","101","99","100"],
+                      ["114/08/13","0","0","--","--","--","--"],
+                      ["114/08/14","1000","100000","100","101","99","100"]]}
+        def parse():
+            return m.parse_month(json.dumps(body).encode(),"1101","2025-08",queue=q)
+        self.assertEqual([r["trade_date"] for r in parse()],["2025-08-12","2025-08-14"])
+        body["data"][1][1]="1"
+        with self.assertRaises(ValueError):parse()
+        body["data"][1][1]="0"
+        body["data"][1][0]="114/08/15"
+        with self.assertRaises(ValueError):parse()
+        body["data"][1][0]="114/08/13"
+        body["data"][1][3]="100"
+        with self.assertRaises(ValueError):parse()
+
+    def test_diagnostic_allowlist(self):
+        exc=m.CaptureFailure("1101","2025-08","OFFICIAL_PARSE",ValueError("Invalid official OHLC"))
+        self.assertEqual(exc.diagnostic()["parse_reason"],"Invalid official OHLC")
+        exc=m.CaptureFailure("1101","2025-08","OFFICIAL_PARSE",ValueError("private value"))
+        self.assertIsNone(exc.diagnostic()["parse_reason"])
