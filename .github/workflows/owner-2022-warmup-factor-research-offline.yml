@@ -1,0 +1,20 @@
+name: Owner 2022 Warmup Factor Research (Offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/owner_2022_warmup_factor_research_offline.py'
+      - 'tests/test_owner_2022_warmup_factor_research_offline.py'
+      - '.github/workflows/owner-2022-warmup-factor-research-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest -v tests.test_owner_2022_warmup_factor_research_offline tests.test_owner_monthly_raw_feature_pilot_offline
