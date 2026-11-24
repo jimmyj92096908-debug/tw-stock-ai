@@ -4,7 +4,10 @@ import argparse, os
 from decimal import Decimal, InvalidOperation
 import psycopg
 from psycopg.rows import dict_row
-from adjusted_prices import adjust_bars
+if __package__:
+    from .adjusted_prices import adjust_bars
+else:
+    from adjusted_prices import adjust_bars
 
 UPSERT="""
 INSERT INTO daily_adjusted_prices
