@@ -24,7 +24,7 @@ def select(groups):
 
 def queue_for(stocks,year,quarter):
     if (type(stocks) is not tuple or len(stocks)!=5 or len(set(stocks))!=5
-        or not set(c.STOCKS)<=set(stocks) or type(year) is not int or not 2023<=year<=2026
+        or not set(c.STOCKS)<=set(stocks) or type(year) is not int or not 2022<=year<=2026
         or type(quarter) is not int or not 1<=quarter<=4):
         raise ValueError("Fixed five-stock quarterly batch required")
     months=[f"{year}-{i:02d}" for i in range(3*quarter-2,3*quarter+1)

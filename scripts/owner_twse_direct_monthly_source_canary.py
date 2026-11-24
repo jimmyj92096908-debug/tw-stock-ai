@@ -134,7 +134,7 @@ def capture(directory,*,get,sleeper=time.sleep,queue=QUEUE):
     directory=private_dir(directory);counts=Counter();receipts=[];requests=0
     if (type(queue) is not tuple or not 1<=len(queue)<=15 or len(set(queue))!=len(queue)
         or any(type(s) is not str or not re.fullmatch(r"[0-9]{4}",s) or s=="1589"
-               or type(m) is not str or not re.fullmatch(r"202[3-6]-(0[1-9]|1[012])",m)
+               or type(m) is not str or not re.fullmatch(r"202[2-6]-(0[1-9]|1[012])",m)
                or m>"2026-11" for s,m in queue)):
         raise ValueError("Invalid bounded source queue")
     # One raw response and matching capture receipt per fixed key.

@@ -61,3 +61,17 @@ class SuspensionTests(unittest.TestCase):
         self.assertEqual(exc.diagnostic()["parse_reason"],"Invalid official OHLC")
         exc=m.CaptureFailure("1101","2025-08","OFFICIAL_PARSE",ValueError("private value"))
         self.assertIsNone(exc.diagnostic()["parse_reason"])
+
+
+class WarmupCaptureTests(unittest.TestCase):
+    def test_2022_exact_month_cache_and_reuse(self):
+        q=(("1101","2022-01"),)
+        with TemporaryDirectory() as d, patch.object(m,"fetch",side_effect=lambda stock,month,**kw:raw(stock,month)) as f:
+            a=m.capture(d,get=None,queue=q,sleeper=lambda _:None)
+            self.assertEqual(a["new_months"],1)
+            self.assertEqual(a["valid_source_rows"],1)
+            b=m.capture(d,get=None,queue=q,sleeper=lambda _:None)
+            self.assertEqual(b["reused_months"],1)
+            self.assertEqual(f.call_count,1)
+            with self.assertRaises(ValueError):
+                m.capture(d,get=None,queue=(("1101","2021-12"),))

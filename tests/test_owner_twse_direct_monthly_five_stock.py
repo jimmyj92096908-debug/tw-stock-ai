@@ -29,3 +29,14 @@ class ExpansionTests(unittest.TestCase):
                 self.assertEqual(r["verified_format_issuer_months"],15)
                 r2=m.run({},d,2023,1,get=None,sleeper=lambda _:None)
                 self.assertEqual(r2["new_official_requests"],0)
+
+
+class WarmupQueueTests(unittest.TestCase):
+    def test_2022_bounded_quarters(self):
+        ids=("1101","2308","2317","2330","2454")
+        q=[k for quarter in range(1,5) for k in m.queue_for(ids,2022,quarter)]
+        self.assertEqual(len(q),60)
+        self.assertEqual(len(set(q)),60)
+        self.assertEqual({month for _,month in q},{f"2022-{i:02d}" for i in range(1,13)})
+        with self.assertRaises(ValueError):
+            m.queue_for(ids,2021,4)
