@@ -1,0 +1,42 @@
+name: Raw Factor Official Roster - Isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'scripts/tpex_whole_market_raw_factor_audit.py'
+      - 'scripts/twse_raw_factor_canary.py'
+      - 'src/current_official_listing.py'
+      - 'tests/test_raw_factor_official_roster_postgres.py'
+      - 'tests/test_tpex_whole_market_raw_factor_audit.py'
+      - '.github/workflows/raw-factor-official-roster-isolated.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-roster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: raw_factor_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d raw_factor_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: ".:src"
+      RAW_FACTOR_TEST_DATABASE_URL: "postgresql://postgres:test@127.0.0.1:5432/raw_factor_ci"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Execute actual SQL and factor regression tests (fixture only)
+        run: |
+          python -m unittest -v tests.test_raw_factor_official_roster_postgres tests.test_tpex_whole_market_raw_factor_audit tests.test_twse_raw_factor_canary tests.test_raw_factor_feature_bridge
