@@ -62,7 +62,7 @@ def expanding_purged_research(dataset: dict, *, test_start: date) -> dict:
         return evidence
 
     groups: dict[date, list[dict]] = defaultdict(list)
-    for item in dataset["rows"]:
+    for item in sorted(dataset["rows"], key=lambda x: (_day(x["as_of_date"]),x["stock_id"])):
         groups[_day(item["as_of_date"])].append(item)
     start = _day(test_start)
     previous_exit = None
