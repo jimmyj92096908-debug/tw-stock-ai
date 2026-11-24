@@ -132,9 +132,10 @@ def merge_sources(roster,local,neon,late,calendar,counts):
     return groups,bad,len(overlap),len(a.keys()|b.keys())
 
 
-def calculate_sample(selected,groups,bad,calendar,signals):
+def calculate_cohort(selected,groups,bad,calendar,signals):
     """Recompute using an independent prefix per signal; no forward labels."""
-    if signals!=signal_schedule(calendar) or len(selected)!=SAMPLE_SIZE or len(set(selected))!=SAMPLE_SIZE:
+    if (signals!=signal_schedule(calendar) or not 1<=len(selected)<=1092
+        or len(set(selected))!=len(selected) or any(type(s) is not str or len(s)!=4 or not s.isascii() or not s.isdigit() or s=="1589" for s in selected)):
         raise ValueError("Fixed sample schedule required")
     dates=sorted(calendar);positions={d:i for i,d in enumerate(dates)}
     outcomes={d:Counter() for d in signals};features=[]
@@ -186,6 +187,12 @@ def calculate_sample(selected,groups,bad,calendar,signals):
         "historical_pit_total_return_verified":False,"production_neon_writes":0,
         "line_messages_sent":0,"paid_upgrade_requested":False,"model_release":"BLOCKED"}
     return summary,features
+
+
+def calculate_sample(selected,groups,bad,calendar,signals):
+    if len(selected)!=SAMPLE_SIZE:
+        raise ValueError("Fixed 20-stock sample required")
+    return calculate_cohort(selected,groups,bad,calendar,signals)
 
 
 def main():
