@@ -8,7 +8,6 @@ No DB connection, LINE, trading, secret, or production model mutation.
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 from datetime import date
 from hashlib import sha256
 import json
@@ -21,6 +20,7 @@ import numpy as np
 from src.raw_factor_feature_bridge import FEATURE_NAMES
 from src.raw_factor_walkforward import (
     MIN_TRAIN_DAYS, MIN_TRAIN_ROWS, RIDGE_LAMBDA, TOP_FRACTION,
+    validate_frozen_dataset,
 )
 from src.raw_expanding_walkforward import COST_ASSUMPTIONS
 from src.research_execution_costs import stress_test
@@ -109,16 +109,9 @@ def replay(dataset, fixed, expanding, windows):
             or fixed.get("may_update_production_model_weights") is not False
             or fixed.get("may_release_positive_alpha_or_trade_signals") is not False):
         raise ValueError("Original exploratory model boundary is inconsistent")
-    groups = defaultdict(list)
-    for row in dataset["rows"]:
-        groups[row["as_of_date"]].append(row)
-    roster = set(dataset["frozen_current_stock_roster"])
-    for signal, members in groups.items():
-        if len(members) != len(roster) or {x["stock_id"] for x in members} != roster:
-            raise ValueError("Training or test cohort incomplete")
-        if len({x["exit_date"] for x in members}) != 1:
-            raise ValueError("Training label exits differ within cohort")
     test_start = windows[0]["signal_date"]
+    complete, _ = validate_frozen_dataset(dataset, test_start=test_start)
+    groups = {day.isoformat(): members for day, members in complete}
     dev = [(day, group) for day, group in sorted(groups.items())
            if day < test_start and group[0]["exit_date"] < test_start]
     if len(dev) < MIN_TRAIN_DAYS or len(dev) != fixed.get("development_dates"):

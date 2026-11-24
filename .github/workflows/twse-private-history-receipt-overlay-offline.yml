@@ -1,0 +1,30 @@
+name: TWSE Private History Receipt Overlay (Offline)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/twse_private_history_receipt_overlay_offline.py'
+      - 'tests/test_twse_private_history_receipt_overlay_offline.py'
+      - '.github/workflows/twse-private-history-receipt-overlay-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-receipt-arithmetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and execute synthetic arithmetic and CLI acceptance
+        run: |
+          python -m py_compile scripts/twse_private_history_receipt_overlay_offline.py
+          python -m unittest -v tests.test_twse_private_history_receipt_overlay_offline
+          python -m unittest -v tests.test_twse_private_history_receipt_overlay_offline
+      - name: Scope
+        if: always()
+        run: |
+          echo 'Synthetic receipts only; no owner data, AES credentials, Neon or LINE access.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Passing CI does not authenticate historical receipts, prove same roster/snapshot or complete five-year history.' >> "$GITHUB_STEP_SUMMARY"
