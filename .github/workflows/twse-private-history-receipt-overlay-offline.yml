@@ -12,13 +12,17 @@ permissions:
 jobs:
   offline-receipt-arithmetic:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install existing source producer dependencies
+        run: python -m pip install -r requirements.txt
       - name: Compile and execute synthetic arithmetic and CLI acceptance
+        env:
+          PYTHONPATH: ".:src"
         run: |
           python -m py_compile scripts/twse_private_history_receipt_overlay_offline.py
           python -m unittest -v tests.test_twse_private_history_receipt_overlay_offline

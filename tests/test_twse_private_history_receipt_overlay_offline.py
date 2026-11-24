@@ -82,6 +82,43 @@ class ReceiptOverlayTests(unittest.TestCase):
         self.assertFalse(x["five_year_history_complete"])
         self.assertEqual(x["model_release"],"BLOCKED")
 
+    def test_both_existing_producers_interoperate_without_inventing_source_counts(self):
+        from scripts.twse_2021_28day_aes_neon_stockdate_union_readonly import evaluate_2021_union
+        from scripts.twse_2021_28day_aes_neon_stock_date_union_readonly import reconcile_union
+        from tests.test_twse_2021_28day_aes_neon_stockdate_union_readonly import frozen_owner_2021
+        from tests.test_twse_2021_28day_aes_neon_stock_date_union_readonly import source_fixture
+        # Existing producers, synthetic source keys. Force every 552 Neon key
+        # to be an existing AES key to reproduce the fixed owner receipt shape.
+        base, prior, roster, aes, _ = frozen_owner_2021()
+        neon = [(d,sid,"TWSE_STOCK_DAY") for i,d in enumerate(sorted(aes))
+                for sid in roster[:(20 if i<20 else 19)]]
+        original = evaluate_2021_union(prior_aes=prior,prior_neon=base,
+            recomputed_aes=prior,roster=roster,aes_by_day=aes,neon_rows=neon)
+        base, prior, roster, aes, _ = source_fixture()
+        alternate = reconcile_union(base,prior,roster=roster,aes_by_day=aes,
+                                    neon_rows=neon,reverified_241=prior)
+        _,b,c=fixtures()
+        result=overlay.reconcile(original,b,c)
+        self.assertEqual(result,overlay.reconcile(alternate,b,c))
+        self.assertEqual(result["twse_2021_union_observed_keys"],26120)
+        for key,value in (
+            ("duplicated_aes_neon_current_stock_date_pairs",551),
+            ("previous_pr241_receipt_fully_reauthenticated",False),
+            ("historical_point_in_time_universe_verified",True),
+            ("prior_2021_aes_source_stock_date_pairs",26120),
+        ):
+            # Explicitly reject contradictory PIT claims too, if supplied.
+            changed=dict(alternate,**{key:value})
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                overlay.reconcile(changed,b,c)
+
+    def test_duplicate_json_fields_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            file=Path(tmp)/"duplicate.json"
+            file.write_text('{"scope":"wrong","scope":"right"}',encoding="utf-8")
+            with self.assertRaises(ValueError):
+                overlay.load(file)
+
     def test_generated_replacement_delta_and_order_invariance(self):
         rng=random.Random(20261124)
         for _ in range(200):

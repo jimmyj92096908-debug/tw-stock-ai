@@ -14,6 +14,7 @@ N = 1092
 YEARS = tuple(range(2021, 2027))
 WINDOW = ("2021-11-23", "2026-11-23")
 S21 = "OWNER_2021_TWSE_AES_NEON_CURRENT_LISTED_28DAY_STOCK_DATE_UNION_READONLY"
+S21_ALTERNATE = "OWNER_TWSE_2021_28DAY_AES_NEON_CURRENT_COHORT_STOCK_DATE_UNION"
 S22 = "OWNER_2022_TWSE_AES_NEON_CURRENT_OFFICIAL_STOCK_DATE_DENSITY_RESEARCH"
 S5 = "OWNER_TWSE_TPEX_NEON_ONLY_5Y_OFFICIAL_CURRENT_LISTED_SOURCE_DEPTH"
 LIMIT = 100_000
@@ -46,8 +47,45 @@ def receipt(r, scope):
     require(r.get("model_release") == "BLOCKED")
 
 
+def normalize_2021(report):
+    """Accept either existing producer's exact schema, not mixed field aliases."""
+    require(isinstance(report, dict))
+    if report.get("scope") == S21:
+        receipt(report, S21)
+        return report
+    receipt(report, S21_ALTERNATE)
+    require(report.get("previous_pr241_receipt_fully_reauthenticated") is True)
+    require(report.get("2021_current_cohort_aes_neon_deduplicated_stock_day_union_verified") is True)
+    require(report.get("source_key_union_not_price_or_volume_economic_parity") is True)
+    require(report.get("historic_asof_listed_universe_and_ipo_eligibility_not_proven") is True)
+    require(report.get("full_five_year_and_corporate_action_total_return_not_verified") is True)
+    require(report.get("historical_point_in_time_universe_verified", False) is False)
+    same_int(report, "valid_neon_2021_source_days", 28)
+    mapping = {
+        "five_year_baseline_window_start": "study_rolling_five_year_start_inclusive",
+        "five_year_baseline_window_end_exclusive": "study_rolling_five_year_end_exclusive",
+        "official_current_survivor_tickers_excluding_1589": "official_current_twse_survivor_eligible_count",
+        "authenticated_owner_2021_source_dates": "authenticated_2021_aes_source_days",
+        "prior_2021_aes_source_stock_date_pairs": "aes_current_stock_source_date_pairs",
+        "prior_2021_neon_source_stock_date_pairs": "neon_current_stock_source_date_pairs",
+        "aes_neon_overlapping_source_stock_date_pairs": "duplicated_aes_neon_current_stock_date_pairs",
+        "aes_exclusive_source_stock_date_pairs": None,
+        "neon_exclusive_source_stock_date_pairs": "new_neon_current_stock_date_pairs_outside_aes",
+        "actual_deduplicated_aes_neon_stock_date_pairs": "unique_aes_plus_neon_2021_stock_date_pairs",
+        "current_stock_source_day_count_histogram": "owner_private_union_stock_2021_observed_source_day_histogram",
+    }
+    # Neither producer may be accepted by supplying a mixture of both schemas.
+    require(not any(k in report for k in mapping))
+    normalized = {k: report.get(v) for k,v in mapping.items() if v is not None}
+    normalized["aes_exclusive_source_stock_date_pairs"] = (
+        integer(normalized["prior_2021_aes_source_stock_date_pairs"])
+        - integer(normalized["aes_neon_overlapping_source_stock_date_pairs"]))
+    normalized["current_issuer_2026_roster_is_not_historical_2021_pit_roster"] = True
+    return normalized
+
+
 def reconcile(a, b, c):
-    receipt(a, S21)
+    a = normalize_2021(a)
     receipt(b, S22)
     receipt(c, S5)
     require((a.get("five_year_baseline_window_start"),
@@ -165,7 +203,13 @@ def load(p):
     with p.open("rb") as f:
         raw = f.read(LIMIT+1)
     require(len(raw) <= LIMIT)
-    return json.loads(raw), hashlib.sha256(raw).hexdigest()
+    def unique_pairs(pairs):
+        obj = {}
+        for k, v in pairs:
+            require(k not in obj)
+            obj[k] = v
+        return obj
+    return json.loads(raw, object_pairs_hook=unique_pairs), hashlib.sha256(raw).hexdigest()
 
 
 def main():
