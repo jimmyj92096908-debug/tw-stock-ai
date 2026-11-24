@@ -31,9 +31,11 @@ class FoldTests(unittest.TestCase):
     def test_maturity_and_whole_cohort(self):
         a=fixture(31)
         a[0]["complete_label_rows"]=4
-        a[1]["exit_date"]=a[20]["signal_date"]
+        a[1]["exit_date"]=a[21]["signal_date"]
         r=m.plan(a,label_cutoff="2027-01-01",test_start=a[20]["signal_date"])
-        self.assertGreaterEqual(r["exclusions"]["insufficient_mature_training"],2)
+        self.assertEqual(r["exclusions"]["insufficient_mature_training"],2)
+        self.assertEqual(r["test_windows"],9)
+        self.assertEqual(r["folds"][0]["signal_date"],a[22]["signal_date"])
         self.assertFalse(r["exploratory_date_count_gate"])
         a.append(a[0])
         with self.assertRaises(ValueError):
