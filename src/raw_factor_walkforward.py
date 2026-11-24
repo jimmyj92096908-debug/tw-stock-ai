@@ -139,7 +139,7 @@ def validate_frozen_dataset(dataset, *, test_start):
     Return canonical date/code groups so tied ranks cannot depend on input order.
     """
     if (not isinstance(dataset,dict) or
-        dataset.get("schema_version") != 1 or
+        type(dataset.get("schema_version")) is not int or dataset["schema_version"] != 1 or
         dataset.get("research_status")!="RAW_ONLY_UNADJUSTED_SOURCE_COHORT_NOT_A_MODEL_RELEASE" or
         dataset.get("feature_version")!="tw-raw-price-asof-bridge-1" or
         dataset.get("feature_names")!=list(FEATURE_NAMES) or
@@ -172,8 +172,10 @@ def validate_frozen_dataset(dataset, *, test_start):
         day=_day(row["as_of_date"])
         exit_=_day(row["exit_date"])
         entry=_day(row["entry_date"])
-        if not day<entry<exit_<=cutoff:
-            raise ValueError("Unmatured raw label in research dataset")
+        if (not day<entry<exit_<=cutoff or
+            row["as_of_date"]!=day.isoformat() or row["entry_date"]!=entry.isoformat() or
+            row["exit_date"]!=exit_.isoformat()):
+            raise ValueError("Unmatured or noncanonical raw label dates")
         gross=row.get("raw_unadjusted_gross_return")
         if type(gross) not in (int,float) or not math.isfinite(gross) or not -1<gross<=10:
             raise ValueError("Invalid raw gross return outside research bounds")
