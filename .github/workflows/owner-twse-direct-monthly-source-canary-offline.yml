@@ -1,0 +1,19 @@
+name: Owner TWSE Direct Monthly Source Canary (Offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/owner_twse_direct_monthly_source_canary.py'
+      - 'tests/test_owner_twse_direct_monthly_source_canary.py'
+      - '.github/workflows/owner-twse-direct-monthly-source-canary-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest -v tests.test_owner_twse_direct_monthly_source_canary
