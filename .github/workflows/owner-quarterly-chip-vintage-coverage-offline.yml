@@ -1,0 +1,19 @@
+name: Owner Quarterly Chip Vintage Coverage (Offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/owner_quarterly_chip_vintage_coverage_readonly.py'
+      - 'tests/test_owner_quarterly_chip_vintage_coverage_readonly.py'
+      - '.github/workflows/owner-quarterly-chip-vintage-coverage-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest -v tests.test_owner_quarterly_chip_vintage_coverage_readonly
