@@ -24,7 +24,7 @@ def raw(sid,*,n=320,first=date(2025,1,1)):
 def master(*,day,active=("1742","1777")):
     result=[]
     for i in range(898):
-        sid=str(1000+i)
+        sid=str(1000+i+(i>=589))  # 1589 is explicitly excluded
         valid=320 if sid in active else 18
         result.append({"stock_id":sid,"valid_source_days":valid,
             "invalid_source_tags":0,"last_source_day":day,
@@ -46,6 +46,10 @@ class WholeMarketSourceFactorTests(TestCase):
         self.assertEqual(buckets["persisted_adjusted_rows_has_fewer_rows_than_raw"],2)
         bad=[dict(x) for x in table]
         bad[0]["stock_id"]=bad[1]["stock_id"]
+        with self.assertRaises(ValueError):
+            m.classify(bad,market_last=day)
+        bad=[dict(x) for x in table]
+        bad[0]["stock_id"]="1589"
         with self.assertRaises(ValueError):
             m.classify(bad,market_last=day)
         bad=[dict(x) for x in table]
@@ -103,6 +107,8 @@ class WholeMarketSourceFactorTests(TestCase):
         with patch.object(m.psycopg,"connect",return_value=conn) as c:
             report=m.inspect("existing-protected-url")
         self.assertEqual(report["current_master_stocks"],898)
+        self.assertEqual(report["official_current_listed_eligible_stocks"],898)
+        self.assertTrue(report["current_roster_is_not_historical_pit_membership"])
         self.assertEqual(report["eligible_original_source_stock_count"],2)
         self.assertEqual(report["raw_factor_reconstructed_stock_count"],2)
         self.assertEqual(report["raw_factor_failed_stock_count"],0)
