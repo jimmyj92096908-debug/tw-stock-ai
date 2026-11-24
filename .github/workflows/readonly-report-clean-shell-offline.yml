@@ -1,0 +1,39 @@
+name: Read-Only Report Clean Shell (Offline)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/stock_db_audit.py"
+      - "scripts/trained_factor_pipeline.py"
+      - "src/current_official_listing.py"
+      - "src/trained_factor_model.py"
+      - "tests/test_readonly_report_clean_shell.py"
+      - ".github/workflows/readonly-report-clean-shell-offline.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  clean-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing dependencies
+        run: pip install -r requirements.txt
+      - name: Execute actual scheduled CLI entrypoints and no-credential gates
+        run: |
+          unset PYTHONPATH DATABASE_URL
+          python -m unittest -v tests.test_readonly_report_clean_shell
+          python -m unittest -v tests.test_readonly_report_clean_shell
+      - name: Verify existing report acceptance and source contract
+        env:
+          PYTHONPATH: src
+        run: python -m unittest -v tests.test_stock_db_audit tests.test_trained_factor_model tests.test_first_stage_report tests.test_first_stage_acceptance
+      - name: Scope
+        if: always()
+        run: |
+          echo 'Real clean-shell process checks only; no production database or LINE access.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'No change to SQL admission, scoring, model weights, release, or storage limits.' >> "$GITHUB_STEP_SUMMARY"
