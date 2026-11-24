@@ -8,7 +8,10 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 
-from technical_indicators import compute_indicators
+if __package__:
+    from .technical_indicators import compute_indicators
+else:
+    from technical_indicators import compute_indicators
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
