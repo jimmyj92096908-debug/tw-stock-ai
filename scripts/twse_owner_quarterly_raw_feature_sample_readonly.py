@@ -132,9 +132,11 @@ def merge_sources(roster,local,neon,late,calendar,counts):
     return groups,bad,len(overlap),len(a.keys()|b.keys())
 
 
-def calculate_cohort(selected,groups,bad,calendar,signals):
+def calculate_cohort(selected,groups,bad,calendar,signals,*,market="twse"):
     """Recompute using an independent prefix per signal; no forward labels."""
-    if (signals!=signal_schedule(calendar) or not 1<=len(selected)<=1092
+    if (market not in ("twse","tpex") or (market=="twse" and signals!=signal_schedule(calendar))
+        or (market=="tpex" and (len(signals)!=17 or signals!=sorted(set(signals)) or any(type(d) is not date or not depth.START<=d<depth.END for d in signals)))
+        or not 1<=len(selected)<=1092
         or len(set(selected))!=len(selected) or any(type(s) is not str or len(s)!=4 or not s.isascii() or not s.isdigit() or s=="1589" for s in selected)):
         raise ValueError("Fixed sample schedule required")
     dates=sorted(calendar);positions={d:i for i,d in enumerate(dates)}
@@ -145,6 +147,9 @@ def calculate_cohort(selected,groups,bad,calendar,signals):
             raise ValueError("Invalid per-stock bounded source")
         observed={r["trade_date"] for r in rows}
         for day in signals:
+            if day not in positions:
+                outcomes[day]["no_observed_market_source_date"]+=1
+                continue
             i=positions[day]
             if sid in bad and bad[sid]<=day:
                 outcomes[day]["issuer_invalid_late_ohlcv"]+=1
@@ -154,7 +159,7 @@ def calculate_cohort(selected,groups,bad,calendar,signals):
                 continue
             prefix=[r for r in rows if r["trade_date"]<=day]
             try:
-                r=build_research_features(prefix,stock_id=sid,cutoff=day,signal_dates=[day],market="twse")
+                r=build_research_features(prefix,stock_id=sid,cutoff=day,signal_dates=[day],market=market)
             except (ValueError,RuntimeError,ArithmeticError):
                 outcomes[day]["raw_factor_rejected"]+=1
                 continue
@@ -167,7 +172,7 @@ def calculate_cohort(selected,groups,bad,calendar,signals):
                 or not all(type(x) in (int,float) and math.isfinite(x) for x in v)
                 or r["raw_last_date"]!=day.isoformat() or f["label_or_forward_price_observed"] is not False):
                 raise RuntimeError("Unexpected factor engine output")
-            features.append({"stock_id":sid,"market":"twse","signal_date":day.isoformat(),
+            features.append({"stock_id":sid,"market":market,"signal_date":day.isoformat(),
                 "feature_vector":v,"prefix_source_rows":len(prefix),
                 "prefix_source_sha256":r["raw_source_fingerprint_sha256"]})
             outcomes[day]["accepted"]+=1
