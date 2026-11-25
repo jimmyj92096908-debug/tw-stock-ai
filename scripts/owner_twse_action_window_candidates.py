@@ -66,6 +66,14 @@ def classify(raw,kind,start,end,stocks):
     if type(raw) is not bytes or not 0<len(raw)<=LIMIT:raise ValueError("Source byte bound")
     body=json.loads(raw,object_pairs_hook=b.m.strict_object,parse_constant=b.m.reject_constant)
     if type(body) is not dict:raise ValueError("Official object required")
+    # Owner positive control: startDate=20220919/endDate=20220919
+    # returned 2603; 20230103..20230110 returned this exact no-match
+    # status. strDate failed. Recognize only the observed reduction
+    # contract, never certify absence of all corporate action types.
+    if (kind=="reduction" and body.get("stat")=="很抱歉，沒有符合條件的資料!"
+        and body.get("fields",[])==[] and body.get("data",[])==[]):
+        return {"status":"OFFICIAL_REDUCTION_NO_MATCH_ONLY","received_rows":0,
+                "outside_range_rows":0,"candidates":[]}
     if body.get("stat")!="OK":
         return {"status":"NON_OK_UNVERIFIED","received_rows":0,"outside_range_rows":0,"candidates":[]}
     fields=body.get("fields");rows=body.get("data")
@@ -152,7 +160,12 @@ def main():
             for w in queue[a.offset:a.offset+a.count]:
                 if reports:time.sleep(4)
                 reports.append(capture(a.cache_dir,w,get=session.get))
+                if any(s["status"] not in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY")
+                       for s in reports[-1]["sources"]):
+                    break
         summary={"scope":"OWNER_TWSE_ACTION_CANDIDATE_SCAN_ONLY","offset":a.offset,"windows_scanned":len(reports),
+            "batch_requested_windows":a.count,
+            "batch_source_contract_pass":len(reports)==a.count and all(s["status"] in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY") for r in reports for s in r["sources"]),
             "total_frozen_windows":35,"new_official_requests":sum(r["new_requests"] for r in reports),
             "source_status_counts":dict(Counter(s["status"] for r in reports for s in r["sources"])),
             "matched_candidate_rows":sum(len(s["candidates"]) for r in reports for s in r["sources"]),
@@ -165,6 +178,8 @@ def main():
             json.dump({"summary":summary,"private_window_receipts":reports},f,ensure_ascii=False,indent=2,allow_nan=False)
             f.write("\n")
         print(json.dumps(summary,allow_nan=False))
+        if not summary["batch_source_contract_pass"]:
+            raise SystemExit("Stopped on unverified source contract; receipt preserved")
     except Exception:
         raise SystemExit("FAILED safely; diagnostic_stage="+stage+"; no Neon or LINE actions") from None
 if __name__=="__main__":main()

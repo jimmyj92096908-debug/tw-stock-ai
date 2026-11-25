@@ -24,3 +24,16 @@ class CandidateTests(unittest.TestCase):
             z=m.capture(d,w,get=None,sleeper=lambda _:None)
             self.assertEqual(z["new_requests"],0)
             self.assertEqual(f.call_count,2)
+
+    def test_observed_reduction_no_match_is_not_coverage(self):
+        def check(stat,kind="reduction",**extra):
+            raw=json.dumps({"stat":stat,**extra},ensure_ascii=False).encode()
+            return m.classify(raw,kind,"2023-01-03","2023-01-10",("1101",))
+        message="很抱歉，沒有符合條件的資料!"
+        self.assertEqual(check(message)["status"],"OFFICIAL_REDUCTION_NO_MATCH_ONLY")
+        self.assertEqual(check(message,fields=[],data=[])["status"],"OFFICIAL_REDUCTION_NO_MATCH_ONLY")
+        self.assertEqual(check(message,kind="ex")["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check(message,data=[["unexpected"]])["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check(message,fields=["unexpected"])["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check("查詢結束日期小於查詢開始日期，請重新查詢!")["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check("OK",fields=[],data=[])["status"],"SCHEMA_UNVERIFIED")
