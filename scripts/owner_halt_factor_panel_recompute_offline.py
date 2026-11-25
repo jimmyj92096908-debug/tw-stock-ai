@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import date
 import json, math, os
 from pathlib import Path
+from scripts import twse_local_encrypted_archive as enc
 from scripts import owner_2022_warmup_factor_research_offline as w
 from scripts import owner_known_halt_warmup_witness as h
 from scripts import owner_raw_price_ridge_diagnostic_offline as r
@@ -45,11 +46,54 @@ def extend(stocks,features,groups,witnesses):
         raise ValueError("Incomplete reconstructed panel")
     return all_rows
 
+def header_interval(path):
+    # Unauthenticated header is used only to shortlist files.
+    with path.open("rb") as handle:
+        if handle.read(len(enc.MAGIC))!=enc.MAGIC:
+            raise ValueError("Archive magic")
+        n=int.from_bytes(enc._read_exact(handle,4),"big")
+        if not 0<n<=enc.MAX_HEADER_BYTES:
+            raise ValueError("Archive header bound")
+        doc=json.loads(enc._read_exact(handle,n))
+    start,end=date.fromisoformat(doc["start"]),date.fromisoformat(doc["end"])
+    if start>end:raise ValueError("Invalid interval")
+    return start,end
+
+def discover_archive_rows(roots,stocks,key,start,end,expected_days):
+    accepted=[];seen=set();attempts=0
+    for root in roots:
+        try:
+            paths=b.depth._private_archives(root)
+            subset=[]
+            for p in paths:
+                lo,hi=header_interval(p)
+                if lo<end and hi>=start:subset.append(p)
+            if not subset:continue
+            signature=tuple(sorted(b.depth.digest(p) for p in subset))
+            if signature in seen:continue
+            seen.add(signature);attempts+=1
+            rows,days=b.early.archive_bars(subset,key=key,start=start,end=end,
+                expected_days=expected_days,eligible=set(stocks))
+            rows=sorted(rows,key=lambda x:(x["trade_date"],x["stock_id"]))
+            if len(rows)!=expected_days*len(stocks):continue
+            accepted.append((rows,days,subset))
+        except (ValueError,RuntimeError,OSError,KeyError,TypeError,ArithmeticError):
+            continue
+    print(json.dumps({"archive_year":start.year,"unique_candidate_sets_attempted":attempts,
+                      "authenticated_candidate_sets":len(accepted)}),flush=True)
+    if not accepted or any(x[:2]!=accepted[0][:2] for x in accepted[1:]):
+        raise ValueError("No unique authenticated economic archive dataset")
+    return accepted[0]
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    for k in ("monthly","price-cache","calendar-cache","archive-2021","archive-2022","key-vault","out"):
+    for k in ("monthly","price-cache","calendar-cache","key-vault","out"):
         p.add_argument("--"+k,required=True)
+    p.add_argument("--archive-2021");p.add_argument("--archive-2022")
+    p.add_argument("--archive-root",action="append",default=[])
     a=p.parse_args();stage="INPUT"
+    if (a.archive_root and (a.archive_2021 or a.archive_2022)) or (not a.archive_root and not (a.archive_2021 and a.archive_2022)) or len(a.archive_root)>8:
+        p.error("Use bounded archive roots OR both original explicit archive folders")
     try:
         payload,_=b.m.read_panel(b.m.private_path(a.monthly,existing=True))
         stocks=tuple(payload["sample_stock_ids"]);features=payload["private_feature_rows"]
@@ -67,11 +111,17 @@ def main():
         market={k:h.c.capture(directory,k,deny)[0] for k in h.MONTHS}
         witnesses=h.verify(stocks,features,late,market)
         stage="AES_AUTHENTICATION"
-        p21=b.depth._private_archives(a.archive_2021);p22=b.depth._private_archives(a.archive_2022)
-        if set(p21)&set(p22):raise ValueError("Overlapping archives")
         key=b.depth.resolve_archive_key(vault_path=Path(a.key_vault),env_key=os.environ.get("STOCK_ARCHIVE_KEY_HEX",""))
-        a21,d21=b.early.archive_bars(p21,key=key,start=b.depth.START,end=date(2022,1,1),expected_days=28,eligible=set(stocks))
-        a22,d22=b.early.archive_bars(p22,key=key,start=date(2022,1,1),end=b.START,expected_days=162,eligible=set(stocks))
+        if a.archive_root:
+            stage="AUTO_ARCHIVE_2021"
+            a21,d21,p21=discover_archive_rows(a.archive_root,stocks,key,b.depth.START,date(2022,1,1),28)
+            stage="AUTO_ARCHIVE_2022"
+            a22,d22,p22=discover_archive_rows(a.archive_root,stocks,key,date(2022,1,1),b.START,162)
+        else:
+            p21=b.depth._private_archives(a.archive_2021);p22=b.depth._private_archives(a.archive_2022)
+            a21,d21=b.early.archive_bars(p21,key=key,start=b.depth.START,end=date(2022,1,1),expected_days=28,eligible=set(stocks))
+            a22,d22=b.early.archive_bars(p22,key=key,start=date(2022,1,1),end=b.START,expected_days=162,eligible=set(stocks))
+        if set(p21)&set(p22):raise ValueError("Overlapping archives")
         if len(a21)+len(a22)!=950:raise ValueError("Early source count drift")
         stage="REPLAY"
         proof,groups,calendar=w.merge_warmup(stocks,a21+a22,direct,late)
