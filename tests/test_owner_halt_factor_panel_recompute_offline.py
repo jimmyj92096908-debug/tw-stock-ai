@@ -44,3 +44,18 @@ class RecomputeTests(TestCase):
         f[0]["feature_vector"][0]=2.0
         with patch.object(m.r,"FEATURE_HASH",m.b.m.fingerprint(f)),patch.object(m,"build_research_features",side_effect=engine):
             with self.assertRaisesRegex(ValueError,"exact factor replay"):m.extend(s,f,g,p)
+
+    def test_discovery_deduplicates_and_rejects_conflicting_sets(self):
+        start=date(2022,1,1);end=date(2023,1,1)
+        rows=[{"stock_id":"1101","trade_date":date(2022,1,3),"close":1}]
+        with patch.object(m.b.depth,"_private_archives",side_effect=lambda root:[root]), \
+             patch.object(m,"header_interval",return_value=(start,date(2022,12,30))), \
+             patch.object(m.b.depth,"digest",side_effect=lambda p:"same" if p in ("a","copy") else "other"), \
+             patch.object(m.b.early,"archive_bars",return_value=(rows,{date(2022,1,3)})) as replay:
+            found,days,paths=m.discover_archive_rows(["a","copy"],("1101",),"unused",start,end,1)
+            self.assertEqual(found,rows)
+            self.assertEqual(paths,["a"])
+            self.assertEqual(replay.call_count,1)
+            replay.side_effect=[(rows,days),([dict(rows[0],close=2)],days)]
+            with self.assertRaisesRegex(ValueError,"No unique authenticated"):
+                m.discover_archive_rows(["a","b"],("1101",),"unused",start,end,1)
