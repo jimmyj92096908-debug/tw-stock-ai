@@ -77,7 +77,8 @@ def discover_archive_rows(roots,stocks,key,start,end,expected_days):
             rows=sorted(rows,key=lambda x:(x["trade_date"],x["stock_id"]))
             if len(rows)!=expected_days*len(stocks):continue
             accepted.append((rows,days,subset))
-        except (ValueError,RuntimeError,OSError,KeyError,TypeError,ArithmeticError):
+        except Exception:
+            # A rejected candidate never contributes any source rows.
             continue
     print(json.dumps({"archive_year":start.year,"unique_candidate_sets_attempted":attempts,
                       "authenticated_candidate_sets":len(accepted)}),flush=True)
