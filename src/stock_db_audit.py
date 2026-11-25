@@ -12,7 +12,11 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
-from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+# Both the scheduled direct CLI and package-based unittest imports are supported.
+if __package__:
+    from .current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+else:
+    from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 
 
 LATEST_VALID_DAY_COVERAGE_SQL = """

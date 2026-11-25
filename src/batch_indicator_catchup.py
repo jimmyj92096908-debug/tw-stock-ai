@@ -16,10 +16,16 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 
-from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
-from build_adjusted_prices import build as build_adjusted_stock
-from calculate_technicals import calculate_stock as calculate_technical_stock
-from calculate_smc import calculate_stock as calculate_smc_stock
+if __package__:
+    from .current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+    from .build_adjusted_prices import build as build_adjusted_stock
+    from .calculate_technicals import calculate_stock as calculate_technical_stock
+    from .calculate_smc import calculate_stock as calculate_smc_stock
+else:
+    from current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
+    from build_adjusted_prices import build as build_adjusted_stock
+    from calculate_technicals import calculate_stock as calculate_technical_stock
+    from calculate_smc import calculate_stock as calculate_smc_stock
 
 LOGGER=logging.getLogger(__name__)
 MIN_VERIFIED_PRICE_DAYS=60

@@ -1,0 +1,51 @@
+name: TWSE Source Storage Early Guard (Offline)
+
+on:
+  push:
+    branches:
+      - "feature/twse-source-storage-early-guard-*"
+    paths:
+      - "src/twse_dated_history.py"
+      - "tests/test_twse_dated_history.py"
+      - "tests/test_twse_source_storage_early_guard.py"
+      - ".github/workflows/daily-twse-dated-history.yml"
+      - ".github/workflows/twse-source-storage-early-guard-offline.yml"
+      - "docs/twse-source-storage-early-guard-20261124.md"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-storage-early-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing project requirements
+        run: pip install -r requirements.txt
+      - name: Compile historical importer and exercise separate reference tests
+        run: |
+          python -m py_compile src/twse_dated_history.py
+          python -m unittest -v \
+            tests.test_twse_source_storage_early_guard \
+            tests.test_twse_dated_history \
+            tests.test_official_market_feed
+      - name: Second repeat to detect intermittent results
+        run: python -m unittest -v tests.test_twse_source_storage_early_guard
+      - name: Safety boundary
+        if: always()
+        run: |
+          echo '### TWSE early-storage guarded source backfill' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Synthetic exact arithmetic and mocked PostgreSQL server-enforced READ ONLY checked.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Import blocked before HTTP and progress DDL if one day has no storage headroom.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Existing per-day source admission checks are preserved, never bypassed.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- No production DATABASE_URL, Neon billing API, LINE credentials or broker access.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- CI success is not approval to import, pay, change LINE, or release the research model.' >> "$GITHUB_STEP_SUMMARY"

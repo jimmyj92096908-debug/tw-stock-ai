@@ -1,0 +1,19 @@
+name: Research Economic Entitlement Labels (Offline)
+on:
+  pull_request:
+    paths:
+      - 'src/research_entitlement_return.py'
+      - 'tests/test_research_entitlement_return.py'
+      - '.github/workflows/research-economic-entitlement-labels-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest -v tests.test_research_entitlement_return

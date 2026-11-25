@@ -111,7 +111,12 @@ class NeonPrivateArchiveSafetyTests(TestCase):
         upload_encrypted_archive(
             self.archive, hex_key=self.key, url=URL, session=remote
         )
-        remote.payload = remote.payload[:-1] + b"X"
+        # Fixed replacement can accidentally equal the randomized AES tag byte.
+        # XOR one bit to guarantee actual corruption on every execution.
+        original = remote.payload
+        remote.payload = original[:-1] + bytes([original[-1] ^ 1])
+        self.assertNotEqual(remote.payload, original)
+        self.assertEqual(len(remote.payload), len(original))
         with self.assertRaisesRegex(RuntimeError, "verification failed"):
             verify_remote_copy(self.archive, hex_key=self.key,
                                url=URL, session=remote)

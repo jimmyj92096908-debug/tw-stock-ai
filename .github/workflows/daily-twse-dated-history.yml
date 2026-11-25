@@ -39,6 +39,12 @@ jobs:
           if [ -z "$DATABASE_URL" ]; then echo "::error::Missing DATABASE_URL"; exit 1; fi
           python -m py_compile src/twse_dated_history.py
           python -m unittest tests.test_twse_dated_history tests.test_official_market_feed -v
+      - name: Fail closed on Neon Free storage BEFORE scheduled official HTTP preview
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+        # Read-only PostgreSQL size query; a blocked preflight exits nonzero so
+        # the workflow cannot claim success without completing a source import.
+        # The importer still rechecks capacity for every day before writing.
+        run: python src/twse_dated_history.py --preflight
       - name: Preview one official dated session without writes
         run: python src/twse_dated_history.py --batch-days 1 --lookback-days 366
       - name: Import at most 8 official TWSE dates with explicit write gate

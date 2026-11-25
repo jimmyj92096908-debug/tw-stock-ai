@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import date, timedelta
 from hashlib import sha256
 import json
+import random
 import unittest
 
 from src.raw_factor_feature_bridge import FEATURE_NAMES
@@ -31,6 +32,7 @@ def fixture():
                 "as_of_date": signal.isoformat(), "market": "twse", "stock_id": sid,
                 "feature_vector": features, "entry_date": entry.isoformat(),
                 "exit_date": exit_day.isoformat(),
+                "forward_label_is_unadjusted_price_only": True,
                 "raw_unadjusted_gross_return":
                     round(-0.025 + 0.0015*idx + 0.0006*(n % 7)
                           + (0.002 if idx % 3 == 0 else -0.001), 12),
@@ -38,6 +40,10 @@ def fixture():
     digest = sha256(json.dumps(rows, sort_keys=True, separators=(",", ":"),
                                allow_nan=False).encode()).hexdigest()
     dataset = {
+        "schema_version": 1, "feature_version": "tw-raw-price-asof-bridge-1",
+        "requested_signal_days": len(development) + len(holdout),
+        "accepted_whole_cohort_days": len(development) + len(holdout),
+        "excluded_whole_cohort_days": {},
         "market": "twse", "research_status":
             "RAW_ONLY_UNADJUSTED_SOURCE_COHORT_NOT_A_MODEL_RELEASE",
         "feature_names": list(FEATURE_NAMES),
@@ -106,6 +112,18 @@ class ActionAttributionTests(unittest.TestCase):
             self.assertEqual(len(a["expanding_selected_stocks"]), 4)
             self.assertEqual(len(set(a["fixed_selected_stocks"])), 4)
             self.assertTrue(set(a["expanding_selected_stocks"]) <= roster)
+
+    def test_replay_is_invariant_to_rehashed_row_order(self):
+        d, f, e, ready, official = fixture()
+        _, windows, _ = validate_study(d, f, e, ready)
+        expected = replay(d, f, e, windows)
+        for seed in (17, 29, 41):
+            shuffled = deepcopy(d)
+            random.Random(seed).shuffle(shuffled["rows"])
+            shuffled["rows_sha256"] = sha256(json.dumps(
+                shuffled["rows"], sort_keys=True, separators=(",", ":"),
+                allow_nan=False).encode()).hexdigest()
+            self.assertEqual(replay(shuffled, f, e, windows), expected)
 
     def test_signal_date_is_not_held_and_exit_date_is_flagged(self):
         d, f, e, ready, official = fixture()

@@ -16,7 +16,11 @@ import sys
 import psycopg
 from psycopg.rows import dict_row
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+# The model imports both src.* and legacy top-level modules.
+ROOT = Path(__file__).resolve().parents[1]
+for source_path in (ROOT, ROOT / "src"):
+    if str(source_path) not in sys.path:
+        sys.path.insert(0, str(source_path))
 from trained_factor_model import (
     TRAINING_SQL, LATEST_MODEL_SQL, research_rank, train_and_verify,
 )

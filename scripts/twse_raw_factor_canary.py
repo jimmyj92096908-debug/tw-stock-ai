@@ -25,15 +25,26 @@ STOCK_LIMIT=5
 BARS_PER_STOCK=320
 MAX_DB_BYTES=800_000_000
 
-CANDIDATES_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
+ELIGIBLE_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
+, eligible AS (
+ SELECT o.market,o.stock_id FROM official_current_listed o
+ WHERE o.market='twse' AND o.stock_id<>'1589'
+ AND NOT EXISTS (
+  SELECT 1 FROM public.model_stock_exclusions x
+  WHERE x.market=o.market AND x.stock_id=o.stock_id
+ )
+)
+"""
+CANDIDATES_SQL=ELIGIBLE_SQL+"""
 , last_market AS (
- SELECT max(trade_date) AS day FROM public.daily_prices
- WHERE market='twse' AND close>0
+ SELECT max(p.trade_date) AS day FROM public.daily_prices p
+ JOIN eligible e ON e.market=p.market AND e.stock_id=p.stock_id
+ WHERE p.market='twse' AND p.close>0 AND p.volume>=0
 ), maturity AS (
  SELECT listed.stock_id,
         count(p.trade_date) FILTER(WHERE p.close>0 AND p.volume>=0)::int valid_days,
         max(p.trade_date) FILTER(WHERE p.close>0 AND p.volume>=0) latest
- FROM official_current_listed listed
+ FROM eligible listed
  LEFT JOIN public.daily_prices p
    ON p.market=listed.market AND p.stock_id=listed.stock_id
  WHERE listed.market='twse'
@@ -55,7 +66,7 @@ RECENT_MATURED_SQL = (
     )
 )
 
-SOURCE_SQL="""
+SOURCE_SQL=ELIGIBLE_SQL+"""
 SELECT market,stock_id,trade_date,open,high,low,close,volume,
        turnover,price_change,transactions,source
 FROM (
@@ -64,6 +75,7 @@ FROM (
  FROM public.daily_prices
  WHERE market='twse' AND stock_id=%s AND trade_date<=%s
    AND close>0 AND volume>=0
+   AND EXISTS (SELECT 1 FROM eligible e WHERE e.stock_id=daily_prices.stock_id)
  ORDER BY trade_date DESC LIMIT %s
 ) sorted_prices ORDER BY trade_date
 """
@@ -91,7 +103,7 @@ def run(url, *, cohort="deep"):
         for row in selected:
             stock_id=row["stock_id"]
             cutoff=row["market_day"]
-            if (not isinstance(stock_id,str) or type(cutoff) is not date
+            if (not isinstance(stock_id,str) or stock_id=="1589" or type(cutoff) is not date
                 or type(row["valid_days"]) is not int
                 or row["valid_days"]<MIN_WARMUP_SESSIONS):
                 raise RuntimeError("Unverified TWSE source canary maturity")
@@ -131,6 +143,8 @@ def run(url, *, cohort="deep"):
     return {
         "scope":"TWSE_OFFICIAL_CURRENT_ACTIVE_RAW_FACTOR_READONLY_CANARY",
         "source_history_cohort":cohort,
+        "roster_selection":"latest_official_current_listed_excluding_1589_and_model_exclusions",
+        "current_roster_is_not_historical_pit_membership":True,
         "completed_at_utc":datetime.now(timezone.utc).isoformat(),
         "real_stock_sample_count":len(proofs),
         "original_source_price_rows":sum(item["raw_sessions_used"] for item in proofs),

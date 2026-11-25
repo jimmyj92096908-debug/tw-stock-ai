@@ -1,0 +1,20 @@
+name: Owner AES Direct Factor Research (Offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/owner_five_stock_aes_direct_factor_research_offline.py'
+      - 'tests/test_owner_five_stock_aes_direct_factor_research_offline.py'
+      - '.github/workflows/owner-aes-direct-factor-research-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest -v tests.test_owner_five_stock_aes_direct_factor_research_offline

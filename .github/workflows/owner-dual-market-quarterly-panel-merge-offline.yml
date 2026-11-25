@@ -1,0 +1,19 @@
+name: Owner Dual Market Quarterly Panel Merge (Offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/owner_twse_tpex_quarterly_panel_merge_offline.py'
+      - 'tests/test_owner_twse_tpex_quarterly_panel_merge_offline.py'
+      - '.github/workflows/owner-dual-market-quarterly-panel-merge-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest -v tests.test_owner_twse_tpex_quarterly_panel_merge_offline

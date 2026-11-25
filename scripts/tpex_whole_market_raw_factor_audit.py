@@ -18,6 +18,7 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 
+from src.current_official_listing import CURRENT_OFFICIAL_LISTED_CTE
 from src.raw_factor_feature_bridge import (
     FEATURE_NAMES,VERSION,MIN_WARMUP_SESSIONS,build_research_features
 )
@@ -29,11 +30,23 @@ MAX_PAGES=45
 MAX_PREFIX_TESTS=20
 SAFETY_STOP_BYTES=800_000_000
 
-META_SQL="""SELECT
-(SELECT MAX(trade_date) FROM public.daily_prices
- WHERE market='tpex' AND close>0) AS last_market_day,
+ELIGIBLE_SQL=CURRENT_OFFICIAL_LISTED_CTE+"""
+, eligible AS (
+ SELECT o.stock_id FROM official_current_listed o
+ WHERE o.market='tpex' AND o.stock_id <> '1589'
+ AND NOT EXISTS (
+  SELECT 1 FROM public.model_stock_exclusions x
+  WHERE x.market=o.market AND x.stock_id=o.stock_id
+ )
+)
+"""
+META_SQL=ELIGIBLE_SQL+"""SELECT
+(SELECT MAX(p.trade_date) FROM public.daily_prices p
+ JOIN eligible e ON e.stock_id=p.stock_id
+ WHERE p.market='tpex' AND p.close>0 AND p.volume>=0) AS last_market_day,
 pg_database_size(current_database())::bigint AS db_bytes"""
-STOCK_COUNTS_SQL="""WITH raw AS (
+STOCK_COUNTS_SQL=ELIGIBLE_SQL+"""
+, raw AS (
  SELECT stock_id,
  COUNT(*) FILTER(WHERE close>0 AND volume>=0)::int AS valid_source_days,
  COUNT(*) FILTER(WHERE source NOT IN (
@@ -64,16 +77,15 @@ SELECT m.stock_id,
  COALESCE(tech.n,0)::int AS persisted_technical_rows,
  COALESCE(smc.n,0)::int AS persisted_smc_rows,
  COALESCE(adjusted.n,0)::int AS persisted_adjusted_rows
-FROM public.stock_master m
+FROM eligible m
 LEFT JOIN raw ON raw.stock_id=m.stock_id
 LEFT JOIN tech ON tech.stock_id=m.stock_id
 LEFT JOIN smc ON smc.stock_id=m.stock_id
 LEFT JOIN adjusted ON adjusted.stock_id=m.stock_id
-WHERE m.market='tpex'
 ORDER BY m.stock_id"""
-BARS_SQL="""SELECT b.market,b.stock_id,b.trade_date,b.open,b.high,b.low,b.close,
+BARS_SQL=ELIGIBLE_SQL+"""SELECT b.market,b.stock_id,b.trade_date,b.open,b.high,b.low,b.close,
 b.volume,b.turnover,b.price_change,b.transactions,b.source
-FROM public.stock_master m
+FROM eligible m
 CROSS JOIN LATERAL (
  SELECT market,stock_id,trade_date,open,high,low,close,volume,
  turnover,price_change,transactions,source
@@ -83,7 +95,7 @@ CROSS JOIN LATERAL (
  AND p.close>0 AND p.volume>=0
  ORDER BY p.trade_date DESC LIMIT %s
 ) b
-WHERE m.market='tpex' AND m.stock_id=ANY(%s)
+WHERE m.stock_id=ANY(%s)
 ORDER BY b.stock_id,b.trade_date"""
 
 def classify(master,*,market_last):
@@ -100,7 +112,7 @@ def classify(master,*,market_last):
         unknown=row.get("invalid_source_tags")
         legacy=row.get("legacy_monthly_rows")
         if (not isinstance(sid,str) or not sid.isascii() or
-            len(sid)!=4 or not sid.isdigit() or sid in names or
+            len(sid)!=4 or not sid.isdigit() or sid=="1589" or sid in names or
             any(type(row.get(k)) is not int or row[k]<0 for k in (
                 "valid_source_days","invalid_source_tags","legacy_monthly_rows",
                 "source_nonquoted_rows",
@@ -196,7 +208,10 @@ def summarize(*,market_last,db_bytes,master,candidates,buckets,results,failed,pr
     return {
         "schema_version":1,"scope":"TPEX_ALL_CURRENT_MASTER_CAUSAL_RAW_FACTOR_IN_MEMORY_AUDIT",
         "cutoff_market_day":market_last.isoformat(),
-        "current_master_stocks":len(master),
+        "current_master_stocks":len(master),  # legacy alias; now strict official roster
+        "official_current_listed_eligible_stocks":len(master),
+        "roster_selection":"latest_official_current_listed_excluding_1589_and_model_exclusions",
+        "current_roster_is_not_historical_pit_membership":True,
         "minimum_real_source_warmup_sessions":MIN_WARMUP_SESSIONS,
         "eligible_original_source_stock_count":len(candidates),
         "raw_factor_reconstructed_stock_count":completed,
@@ -214,7 +229,8 @@ def summarize(*,market_last,db_bytes,master,candidates,buckets,results,failed,pr
         "original_source_bars_fetched":sum(x["input_original_bars"] for x in results),
         "database_bytes":db_bytes,
         "database_hard_safety_stop_bytes":SAFETY_STOP_BYTES,
-        "all_eligible_current_master_stocks_reconstructed":not failed,
+        "all_eligible_current_master_stocks_reconstructed":bool(candidates) and not failed,
+        "all_mature_official_current_eligible_stocks_reconstructed":bool(candidates) and not failed,
         "corporate_action_disclosure_vintage_verified":False,
         "features_are_dividend_adjusted_total_return":False,
         "delisted_and_suspended_historic_universe_proven":False,
@@ -240,7 +256,7 @@ def inspect(url,*,report_path=None):
         master=[dict(r) for r in conn.execute(
             STOCK_COUNTS_SQL,(market_last,)*4).fetchall()]
         candidates,buckets=classify(master,market_last=market_last)
-        if len(candidates)>MAX_STOCKS or (
+        if not candidates or len(candidates)>MAX_STOCKS or (
             len(candidates)+buckets.get("below_240_valid_days",0)+
             buckets.get("unknown_original_source_unit",0)!=len(master)):
             raise ValueError("Candidate source cohort or excluded universe counts are incoherent")
