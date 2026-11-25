@@ -26,3 +26,25 @@ class HaltWitnessTests(TestCase):
         market,rows,features=self.fixture()
         del market["2025-08"]
         with self.assertRaises(ValueError):m.verify(["1101","1231"],features,rows,market)
+
+    def test_json_list_is_normalized_for_real_cache_queue(self):
+        stocks=["1101","1231","1301","2330","2881"]
+        features=[{} for _ in range(228)]
+        payload={"sample_stock_ids":stocks,"private_feature_rows":features}
+        b=m.r.b
+        argv=["halt","--monthly","panel.json","--price-cache","prices",
+              "--calendar-cache","calendar","--out","out.json"]
+        def cache_probe(actual_stocks,directory):
+            self.assertIs(type(actual_stocks),tuple)
+            self.assertEqual(actual_stocks,tuple(stocks))
+            self.assertEqual(len(b.five.queue_for(actual_stocks,2025,3)),15)
+            return [],m.r.LATE_HASH
+        with patch("sys.argv",argv), patch.object(b.m,"private_path",return_value="panel.json"), \
+             patch.object(b.m,"read_panel",return_value=(payload,"hash")), \
+             patch.object(b,"SAMPLE_HASH",b.m.fingerprint(stocks)), \
+             patch.object(m.r,"FEATURE_HASH",b.m.fingerprint(features)), \
+             patch.object(b,"load_late",side_effect=cache_probe) as loader, \
+             patch.object(b.c,"private_dir",side_effect=ValueError("test stop")):
+            with self.assertRaisesRegex(SystemExit,"halt_stage=PRIVATE_PATHS"):
+                m.main()
+            loader.assert_called_once_with(tuple(stocks),"prices")
