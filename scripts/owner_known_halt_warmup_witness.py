@@ -53,11 +53,13 @@ def main():
         if not 0<=a.max_new<=5:raise ValueError("Request budget")
         b=r.b
         payload,_=b.m.read_panel(b.m.private_path(a.monthly,existing=True))
-        stocks=payload["sample_stock_ids"];features=payload["private_feature_rows"]
-        if b.m.fingerprint(stocks)!=b.SAMPLE_HASH or len(features)!=228 or b.m.fingerprint(features)!=r.FEATURE_HASH:
+        stocks=tuple(payload["sample_stock_ids"]);features=payload["private_feature_rows"]
+        if b.m.fingerprint(list(stocks))!=b.SAMPLE_HASH or len(features)!=228 or b.m.fingerprint(features)!=r.FEATURE_HASH:
             raise ValueError("Frozen panel changed")
+        stage="PRICE_CACHE"
         late,h=b.load_late(stocks,a.price_cache)
         if h!=r.LATE_HASH:raise ValueError("Frozen source changed")
+        stage="PRIVATE_PATHS"
         directory=b.c.private_dir(a.calendar_cache);out=b.m.private_path(a.out,existing=False)
         stage="CALENDAR";new=0;market={}
         import requests
