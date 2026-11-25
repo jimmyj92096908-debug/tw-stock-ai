@@ -32,8 +32,20 @@ class CandidateTests(unittest.TestCase):
         message="很抱歉，沒有符合條件的資料!"
         self.assertEqual(check(message)["status"],"OFFICIAL_REDUCTION_NO_MATCH_ONLY")
         self.assertEqual(check(message,fields=[],data=[])["status"],"OFFICIAL_REDUCTION_NO_MATCH_ONLY")
-        self.assertEqual(check(message,kind="ex")["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check(message,kind="ex")["status"],"OFFICIAL_EX_NO_MATCH_ONLY")
         self.assertEqual(check(message,data=[["unexpected"]])["status"],"NON_OK_UNVERIFIED")
         self.assertEqual(check(message,fields=["unexpected"])["status"],"NON_OK_UNVERIFIED")
         self.assertEqual(check("查詢結束日期小於查詢開始日期，請重新查詢!")["status"],"NON_OK_UNVERIFIED")
         self.assertEqual(check("OK",fields=[],data=[])["status"],"SCHEMA_UNVERIFIED")
+
+    def test_observed_ex_no_match_null_contract(self):
+        message="很抱歉，沒有符合條件的資料!"
+        def check(stat,**extra):
+            raw=json.dumps({"stat":stat,**extra},ensure_ascii=False).encode()
+            return m.classify(raw,"ex","2023-05-02","2023-05-09",("1101",))
+        r=check(message,fields=None,data=None)
+        self.assertEqual(r["status"],"OFFICIAL_EX_NO_MATCH_ONLY")
+        self.assertEqual(r["candidates"],[])
+        self.assertEqual(check(message,fields=[],data=[])["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check(message,data=[["unexpected"]])["status"],"NON_OK_UNVERIFIED")
+        self.assertEqual(check("查詢結束日期小於查詢開始日期，請重新查詢!")["status"],"NON_OK_UNVERIFIED")

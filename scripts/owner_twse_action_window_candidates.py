@@ -74,6 +74,13 @@ def classify(raw,kind,start,end,stocks):
         and body.get("fields",[])==[] and body.get("data",[])==[]):
         return {"status":"OFFICIAL_REDUCTION_NO_MATCH_ONLY","received_rows":0,
                 "outside_range_rows":0,"candidates":[]}
+    # Owner hash-checked TWT49U response for 2023-05-02..09:
+    # exact no-match status, fields/data absent or null.
+    # This is an exchange response classification, not absence proof.
+    if (kind=="ex" and body.get("stat")=="很抱歉，沒有符合條件的資料!"
+        and body.get("fields") is None and body.get("data") is None):
+        return {"status":"OFFICIAL_EX_NO_MATCH_ONLY","received_rows":0,
+                "outside_range_rows":0,"candidates":[]}
     if body.get("stat")!="OK":
         return {"status":"NON_OK_UNVERIFIED","received_rows":0,"outside_range_rows":0,"candidates":[]}
     fields=body.get("fields");rows=body.get("data")
@@ -160,12 +167,12 @@ def main():
             for w in queue[a.offset:a.offset+a.count]:
                 if reports:time.sleep(4)
                 reports.append(capture(a.cache_dir,w,get=session.get))
-                if any(s["status"] not in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY")
+                if any(s["status"] not in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY","OFFICIAL_EX_NO_MATCH_ONLY")
                        for s in reports[-1]["sources"]):
                     break
         summary={"scope":"OWNER_TWSE_ACTION_CANDIDATE_SCAN_ONLY","offset":a.offset,"windows_scanned":len(reports),
             "batch_requested_windows":a.count,
-            "batch_source_contract_pass":len(reports)==a.count and all(s["status"] in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY") for r in reports for s in r["sources"]),
+            "batch_source_contract_pass":len(reports)==a.count and all(s["status"] in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY","OFFICIAL_EX_NO_MATCH_ONLY") for r in reports for s in r["sources"]),
             "total_frozen_windows":35,"new_official_requests":sum(r["new_requests"] for r in reports),
             "source_status_counts":dict(Counter(s["status"] for r in reports for s in r["sources"])),
             "matched_candidate_rows":sum(len(s["candidates"]) for r in reports for s in r["sources"]),
