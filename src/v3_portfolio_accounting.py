@@ -16,7 +16,8 @@ from src.v3_probability_calibration import _day
 def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                        commission=0.001425, sell_tax=0.003, slippage=0.001,
                        corporate_action_mode=False, exit_stress_mode=False,
-                       stop_fraction=0.05, profit_fraction=0.10, trailing_fraction=0.05):
+                       stop_fraction=0.05, profit_fraction=0.10, trailing_fraction=0.05,
+                       close_allocator=None):
     """Target maps are full desired account weights; absent maps mean no rebalance.
 
     Targets at close t can affect open t+1 only. Opening price is used for
@@ -31,6 +32,11 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
     stop = _num(stop_fraction,"stop fraction",0.0001,0.99)
     profit = _num(profit_fraction,"profit fraction",0.0001,10)
     trail = _num(trailing_fraction,"trailing fraction",0.0001,0.99)
+    if close_allocator is not None and (not callable(close_allocator) or not exit_stress_mode):
+        raise ValueError("Close allocator requires exit stress mode")
+    # Incremental allocation is separate from full target rebalancing.
+    # A frozen close-time dollar budget may only shrink at the next open.
+    pending_incremental, allocation_log = None, []
     # Exit mode uses explicit scenario capacities, not verified execution.
     # No scale-ins to existing episodes; pending exit blocks new buys.
     # Opening gap exits and pending exits precede target rebalance.
@@ -170,6 +176,34 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                     e["pending_exit"] = True
                     blocked_today.add(s)
                     sell(s,holdings[s],op,reason)
+        if pending_incremental is not None:
+            frozen_equity, increments = pending_incremental
+            open_equity = cash + dividend_balance + fsum(v for _,v in pending_cash) + fsum(
+                qty*prices[s][0] for s,qty in holdings.items())
+            open_gross = fsum(q*prices[s][0] for s,q in holdings.items())
+            # No new buying above global gross ceiling, even after gaps.
+            open_room = max(0.0,0.8*open_equity-open_gross)
+            for s in sorted(increments):
+                if s in blocked_today or s in holdings:
+                    continue
+                unit = prices[s][0]*(1+slip)*(1+fee)
+                budget = min(increments[s]*min(frozen_equity,open_equity),
+                             cash,open_room)
+                qty = min(floor(max(0,budget)/(unit*lot_size))*lot_size,buy_capacity[s])
+                if qty<=0:
+                    continue
+                cost = qty*unit
+                cash -= cost
+                open_room = max(0.0,open_room-cost)
+                holdings[s] = qty
+                entry = prices[s][0]*(1+slip)
+                episodes[s] = dict(entry_date=day.isoformat(),cost=cost,proceeds=0.0,
+                                   fixed_stop=entry*(1-stop),profit_target=entry*(1+profit),
+                                   high_water=entry,trailing_stop=entry*(1-trail),pending_exit=False)
+                trades.append({"date":day.isoformat(),"stock_id":s,"side":"BUY",
+                               "shares":qty,"fill":entry,"cash_flow":-cost,
+                               "reason":"FROZEN_INCREMENTAL_ALLOCATION"})
+            pending_incremental = None
         if targets is not None:
             equity = cash + dividend_balance + fsum(v for _,v in pending_cash) + fsum(
                 qty*prices[s][0] for s,qty in holdings.items())
@@ -235,6 +269,33 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                      "equity":equity,"holdings":dict(holdings),
                      "pending_exit_stocks":sorted(s for s in holdings if episodes[s].get("pending_exit"))})
         targets = session.get("close_targets")
+        if close_allocator is not None:
+            if targets is not None:
+                raise ValueError("Cannot mix incremental allocator with full target maps")
+            position_state = []
+            for s,q in sorted(holdings.items()):
+                close = prices[s][1]
+                e = episodes[s]
+                level = min(close,max(e["fixed_stop"],e["trailing_stop"]))
+                estimated_exit = level*(1-slip)*(1-fee-tax)
+                position_state.append({"stock_id":s,"market":bars[s]["market"],
+                    "account_weight":q*close/equity if equity else 0.0,
+                    "remaining_stop_risk_fraction":max(0.0,1-estimated_exit/close),
+                    "pending_exit":bool(e.get("pending_exit"))})
+            snapshot = {"date":day.isoformat(),"equity":equity,
+                        "cash_available":cash/equity if equity else 0.0,
+                        "drawdown":1-equity/peak,"positions":position_state}
+            proposal = close_allocator(snapshot)
+            if not isinstance(proposal,dict) or not set(proposal)<=universe:
+                raise ValueError("Invalid incremental proposal")
+            proposal = {s:_num(w,"incremental weight",0,0.1) for s,w in proposal.items()}
+            gross = fsum(x["account_weight"] for x in position_state)
+            if (set(proposal)&set(holdings)
+                    or fsum(proposal.values())>min(snapshot["cash_available"],max(0.0,0.8-gross))+1e-10
+                    or (any(x["pending_exit"] for x in position_state) and any(proposal.values()))):
+                raise ValueError("Incremental proposal exceeds close-state limits")
+            pending_incremental = (equity,proposal) if proposal else None
+            allocation_log.append({"date":day.isoformat(),"weights":dict(proposal)})
         if targets is not None:
             if not isinstance(targets,dict) or not set(targets)<=universe:
                 raise ValueError("Invalid target map")
@@ -242,7 +303,9 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
             if fsum(targets.values())>0.8+1e-12:
                 raise ValueError("Gross target exceeds research ceiling")
     return {"path":path,"fills":trades,"closed_position_episodes":closed,
-            "open_position_count":len(holdings),"terminal_target_unexecuted":targets is not None,
+            "open_position_count":len(holdings),"terminal_target_unexecuted":targets is not None or pending_incremental is not None,
+            "incremental_allocation_log":allocation_log,
+            "incremental_allocator_integrated":close_allocator is not None,
             "net_marked_return":path[-1]["equity"]/initial-1,
             "maximum_close_drawdown":max_dd,
             "closed_episode_win_rate":sum(e["net_pnl"]>0 for e in closed)/len(closed) if closed else None,
