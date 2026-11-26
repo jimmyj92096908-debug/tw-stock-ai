@@ -22,7 +22,7 @@ MIN_DATES=20
 MIN_ROWS=200
 
 
-def adaptive_five_blend(archives):
+def adaptive_five_blend(archives, *, regimes=None):
     """Return forecasts, matched mature outcomes and auditable weight history.
 
     Archives must contain distinct protocols and matched forecasts/outcomes.
@@ -82,6 +82,25 @@ def adaptive_five_blend(archives):
             raise ValueError("Immature archive outcome")
         y=int(_num(row["net_return"],"net return",-1,1000)>0)
         cohorts[key[0]].append((cohort,key,[p[key]["probability"]-y for p in preds]))
+    states={}
+    if regimes is not None:
+        if (regimes["index_id"]!="TWSE_TAIEX" or
+                _hash(regimes["states"])!=regimes["states_sha256"]):
+            raise ValueError("Invalid regime archive")
+        for state in regimes["states"]:
+            d=_day(state["signal_date"])
+            trend=state["regime"]
+            volatile=state["volatile_heuristic"]
+            if (d in states or trend not in ("UPTREND","DOWNTREND","RANGE_OR_TRANSITION","UNKNOWN_HISTORY")
+                    or type(volatile) is not bool
+                    or (trend!="UNKNOWN_HISTORY" and state["last_available_close"]!=d.isoformat())):
+                raise ValueError("Invalid regime state")
+            states[d]=(trend,volatile)
+        if not set(days)<=set(states):
+            raise ValueError("Missing forecast-date regime")
+        protocol=_hash(dict(recipe="five_model_regime_simplex_v1",base_protocol=protocol,
+                            min_dates=MIN_DATES,min_rows=MIN_ROWS,
+                            fallback="global_then_uniform",unknown="uniform_no_new_exposure"))
     mature=[]
     for day,records in sorted(cohorts.items()):
         if (len(records)!=len(days[day]) or len({r[0] for r in records})!=1
@@ -93,31 +112,60 @@ def adaptive_five_blend(archives):
     gram=np.zeros((5,5))
     grid=np.asarray(GRID,dtype=np.float64)/5
     pointer=count=0
+    by_state={}
+    latest_global=None
     forecasts,outcomes,weight_log=[],[],[]
     for day,keys in sorted(days.items()):
         while pointer<len(mature) and mature[pointer][0]<day:
-            gram+=mature[pointer][3]
-            count+=mature[pointer][2]
+            available,signal,n,matrix=mature[pointer]
+            gram+=matrix
+            count+=n
+            latest_global=available
+            if regimes is not None:
+                state=states[signal]
+                if state[0]!="UNKNOWN_HISTORY":
+                    g,nd,nr,_=by_state.get(state,(np.zeros((5,5)),0,0,None))
+                    by_state[state]=(g+matrix,nd+1,nr+n,available)
             pointer+=1
-        if pointer>=MIN_DATES and count>=MIN_ROWS:
-            scores=np.einsum("ij,jk,ik->i",grid,gram/pointer,grid)
+        state=states.get(day)
+        chosen_gram,nd,nr,latest=gram,pointer,count,latest_global
+        status="PAST_ONLY_SIMPLEX_SELECTION"
+        if state is not None:
+            g,dn,rn,la=by_state.get(state,(None,0,0,None))
+            if state[0]=="UNKNOWN_HISTORY":
+                nd=nr=0
+                latest=None
+            elif dn>=MIN_DATES and rn>=MIN_ROWS:
+                chosen_gram,nd,nr,latest=g,dn,rn,la
+                status="REGIME_MATCHED_SELECTION"
+            else:
+                status="GLOBAL_FALLBACK_SELECTION"
+        if nd>=MIN_DATES and nr>=MIN_ROWS:
+            scores=np.einsum("ij,jk,ik->i",grid,chosen_gram/nd,grid)
             best=min(range(len(GRID)),key=lambda i:(round(float(scores[i]),12),
                        sum((x-1)**2 for x in GRID[i]),GRID[i]))
             units=GRID[best]
-            status="PAST_ONLY_SIMPLEX_SELECTION"
         else:
             units=(1,1,1,1,1)
             status="UNIFORM_FALLBACK"
         weights=[x/5 for x in units]
         weight_log.append(dict(signal_date=day.isoformat(),weights=dict(zip(MODELS,weights)),
-                               status=status,mature_training_dates=pointer,mature_training_rows=count,
-                               latest_cohort_available=mature[pointer-1][0].isoformat() if pointer else None))
+                               status=status,mature_training_dates=nd,mature_training_rows=nr,
+                               latest_cohort_available=latest.isoformat() if latest else None))
+        if state is not None:
+            weight_log[-1].update(regime=state[0],volatile_heuristic=state[1],
+                                  new_exposure_blocked_by_regime=state[0]=="UNKNOWN_HISTORY")
         for key in keys:
             probability=min(1.,max(0.,fsum(w*p[key]["probability"] for w,p in zip(weights,preds))))
             row=dict(preds[0][key],probability=probability,protocol_sha256=protocol)
+            if state is not None:
+                # Meta-estimator also learns from mature forecast cohorts.
+                if latest is not None and status!="UNIFORM_FALLBACK":
+                    row["training_labels_through"]=max(row["training_labels_through"],latest.isoformat())
+                row.update(regime=state[0],volatile_heuristic=state[1])
             forecasts.append(row)
             if key in outs[0]:
-                outcomes.append(dict(row,**{f:outs[0][key][f] for f in fields}))
+                outcomes.append(dict(row,**{f:outs[0][key][f] for f in fields if f!="training_labels_through"}))
     return {"protocol_sha256":protocol,"archive_cutoff":cutoff.isoformat(),
             "predictions":forecasts,"mature_outcomes":outcomes,"weight_log":weight_log,
             "forecast_sha256":_hash(forecasts),"weight_log_sha256":_hash(weight_log),
