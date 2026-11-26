@@ -25,6 +25,8 @@ MIN_CLASS_ROWS = 20
 ITERATIONS = 300
 L2 = 0.1
 LEARNING_RATE = 0.1
+# Fixed, bounded research candidates; never accept arbitrary caller parameters.
+LOGISTIC_L2_GRID = (0.01, 0.1, 1.0)
 
 
 def _hash(obj):
@@ -43,7 +45,7 @@ def _symbol(row):
 
 def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                                 training_rows, prediction_rows, decision_date,
-                                model_kind="logistic"):
+                                model_kind="logistic", logistic_l2=0.1):
     """Fit only complete supplied signal cohorts with mature labels.
 
     A date cohort with any label not available strictly before decision is
@@ -54,6 +56,9 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     """
     if model_kind not in ("logistic","forest","ensemble","lightgbm","xgboost","catboost"):
         raise ValueError("Unsupported model kind")
+    if (isinstance(logistic_l2,bool) or logistic_l2 not in LOGISTIC_L2_GRID
+            or (model_kind!="logistic" and logistic_l2!=L2)):
+        raise ValueError("Unsupported logistic regularization candidate")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
             or any(not isinstance(n,str) or not re.fullmatch("[a-zA-Z][a-zA-Z0-9_]{0,63}",n)
@@ -68,7 +73,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
         raise ValueError("Invalid research rows")
     protocol = _hash(dict(recipe="numpy_logistic_fixed_v1",features=list(feature_names),
                           label_protocol_sha256=label_protocol_sha256,
-                          iterations=ITERATIONS,l2=L2,learning_rate=LEARNING_RATE,
+                          iterations=ITERATIONS,l2=logistic_l2,learning_rate=LEARNING_RATE,
                           min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                           min_class=MIN_CLASS_ROWS,clip=8))
     logistic_protocol = protocol
@@ -172,7 +177,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
         for _ in range(ITERATIONS):
             p=1/(1+np.exp(-np.clip(X@w+bias,-35,35)))
             err=p-y
-            w-=LEARNING_RATE*((X.T@err)/len(y)+L2*w)
+            w-=LEARNING_RATE*((X.T@err)/len(y)+logistic_l2*w)
             bias-=LEARNING_RATE*float(err.mean())
         if not np.isfinite(w).all() or not np.isfinite(bias):
             raise ValueError("Nonfinite fit")
