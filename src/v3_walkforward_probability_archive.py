@@ -16,7 +16,7 @@ from src.v3_capital_risk_research import _num
 
 
 def walkforward_logistic_archive(*, rows, feature_names, label_protocol_sha256,
-                                 evaluation_dates, archive_cutoff, model_kind="logistic"):
+                                 evaluation_dates, archive_cutoff, model_kind="logistic", logistic_l2=0.1):
     """Fit independently at each declared decision date using older cohorts.
 
     All supplied rows carry realized labels for offline research. Evaluation
@@ -68,7 +68,7 @@ def walkforward_logistic_archive(*, rows, feature_names, label_protocol_sha256,
         fit=purged_logistic_predictions(feature_names=feature_names,
                      label_protocol_sha256=label_protocol_sha256,
                      training_rows=past,prediction_rows=candidates,
-                     decision_date=day.isoformat(),model_kind=model_kind)
+                     decision_date=day.isoformat(),model_kind=model_kind,logistic_l2=logistic_l2)
         if protocol is not None and protocol!=fit["protocol_sha256"]:
             raise AssertionError("Strategy protocol changed between folds")
         protocol=fit["protocol_sha256"]
