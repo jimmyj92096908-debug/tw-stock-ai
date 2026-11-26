@@ -19,13 +19,15 @@ CATBOOST_RECIPE={
 }
 
 
-def fit_catboost(X,y):
+def fit_catboost(X,y,*,depth=4):
     """Fit only on arrays already validated by the chronological gate.
 
     This adapter currently accepts numeric features only. Model export is
     temporary; hashable predictive structure excludes volatile model_info
     metadata (e.g. training timestamps). No prediction-label eval set.
     """
+    if type(depth) is not int or depth not in (2,4,6):
+        raise ValueError("Unsupported booster depth")
     try:
         installed=version("catboost")
     except PackageNotFoundError as exc:
@@ -35,7 +37,7 @@ def fit_catboost(X,y):
     lib=import_module("catboost")
     if lib.__version__!=CATBOOST_VERSION:
         raise RuntimeError("Imported CatBoost version mismatch")
-    estimator=lib.CatBoostClassifier(**CATBOOST_RECIPE)
+    estimator=lib.CatBoostClassifier(**dict(CATBOOST_RECIPE,depth=depth))
     estimator.fit(X,y.astype(int))
     if list(estimator.classes_)!=[0,1]:
         raise ValueError("Unexpected classifier classes")
