@@ -1,6 +1,6 @@
-"""Deterministic NumPy logistic baseline for purged V3 probability research.
+"""Deterministic NumPy logistic, forest and fixed ensemble probability research.
 
-This is a baseline, not the planned tree ensemble. No new dependencies,
+Fixed research recipes, no optimized ensemble weights. No new dependencies,
 database access, or live trading. Labels are supplied net outcomes of a
 declared frozen strategy; source flags and hashes are not authentication.
 """
@@ -49,7 +49,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     Prediction rows must not contain outcome fields. Fixed recipe, no tuning.
     Feature availability is checked at date granularity, not intraday time.
     """
-    if model_kind not in ("logistic","forest"):
+    if model_kind not in ("logistic","forest","ensemble"):
         raise ValueError("Unsupported model kind")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
@@ -68,11 +68,16 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                           iterations=ITERATIONS,l2=L2,learning_rate=LEARNING_RATE,
                           min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                           min_class=MIN_CLASS_ROWS,clip=8))
-    if model_kind == "forest":
+    logistic_protocol = protocol
+    if model_kind in ("forest","ensemble"):
         protocol = _hash(dict(recipe="numpy_forest_fixed_v1",features=list(feature_names),
                               label_protocol_sha256=label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                               min_class=MIN_CLASS_ROWS,forest=FOREST_RECIPE))
+    if model_kind == "ensemble":
+        protocol = _hash(dict(recipe="fixed_equal_probability_ensemble_v1",
+                              logistic=logistic_protocol,forest=protocol,
+                              weights=[0.5,0.5]))
     def features(row,signal):
         if (_day(row["feature_available_date"])>signal
                 or row.get("feature_vintage_declared") is not True):
@@ -121,13 +126,13 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     if min(y.sum(),len(y)-y.sum())<MIN_CLASS_ROWS:
         return report
     X=np.asarray([r[2] for r in samples],dtype=np.float64)
-    if model_kind == "forest":
+    if model_kind in ("forest","ensemble"):
         trees=fit_forest(X,y)
         fit_parameters={"trees":trees}
         status="RETROSPECTIVE_NUMPY_FOREST"
         def predict(x):
             return forest_probability(trees,x)
-    else:
+    if model_kind in ("logistic","ensemble"):
         means=X.mean(axis=0)
         scales=X.std(axis=0)
         scales=np.where(scales<1e-12,1.0,scales)
@@ -141,11 +146,19 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
             bias-=LEARNING_RATE*float(err.mean())
         if not np.isfinite(w).all() or not np.isfinite(bias):
             raise ValueError("Nonfinite fit")
-        fit_parameters=dict(w=w.tolist(),bias=bias,means=means.tolist(),scales=scales.tolist())
-        status="RETROSPECTIVE_LOGISTIC_BASELINE"
-        def predict(x):
+        logistic_parameters=dict(w=w.tolist(),bias=bias,means=means.tolist(),scales=scales.tolist())
+        def logistic_predict(x):
             z=np.clip((np.asarray(x)-means)/scales,-8,8)
             return float(1/(1+np.exp(-np.clip(z@w+bias,-35,35))))
+        if model_kind == "ensemble":
+            fit_parameters={"forest":fit_parameters,"logistic":logistic_parameters}
+            status="RETROSPECTIVE_FIXED_ENSEMBLE"
+            def predict(x):
+                return 0.5*logistic_predict(x)+0.5*forest_probability(trees,x)
+        else:
+            fit_parameters=logistic_parameters
+            status="RETROSPECTIVE_LOGISTIC_BASELINE"
+            predict=logistic_predict
     last=max(r[1] for r in samples).isoformat()
     report.update(status=status,
                   training_labels_through=last,
