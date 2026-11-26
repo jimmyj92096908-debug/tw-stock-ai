@@ -48,6 +48,21 @@ def parse(raw,kind):
                            source_row_sha256=digest(rec)))
     return result
 
+def parse_response(raw,kind):
+    """Recognize only explicit reduction no-match; never certify zero events."""
+    body=json.loads(raw)
+    if kind=="reduction" and isinstance(body,dict):
+        stat=body.get("stat")
+        if isinstance(stat,str):
+            normalized=re.sub(r"[\s，。！!,.]", "",stat)
+            if normalized in ("很抱歉沒有符合條件的資料","沒有符合條件的資料",
+                              "查無資料","沒有資料","無符合條件的資料",
+                              "NODATA","NoData","nodata"):
+                if any(k in body and body[k] != [] for k in ("data","aaData","records","tables")):
+                    raise ValueError("No-match response contains unexpected rows")
+                return [],"OFFICIAL_REDUCTION_NO_MATCH_ONLY"
+    return parse(raw,kind),"CANDIDATE_SCAN_ONLY"
+
 def scan(audit,plan,lookup):
     if build_review(audit)!=plan:
         raise ValueError("Frozen action window mismatch")
@@ -67,9 +82,11 @@ def scan(audit,plan,lookup):
             if result is None:
                 sources.append(dict(kind=kind,status="CAPTURE_PENDING"))
                 continue
-            rows,receipt=result
+            rows,receipt,status=result
+            if status not in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY") or (status=="OFFICIAL_REDUCTION_NO_MATCH_ONLY" and (kind!="reduction" or rows)):
+                raise ValueError("Unexpected source classification")
             selected=[r for r in rows if start<=r["event_date"]<=end]
-            sources.append(dict(kind=kind,status="CANDIDATE_SCAN_ONLY",response_sha256=receipt,
+            sources.append(dict(kind=kind,status=status,response_sha256=receipt,
                                 parsed_rows=len(rows),in_range_rows=len(selected),
                                 outside_range_rows=len(rows)-len(selected)))
             for r in selected:
@@ -88,13 +105,15 @@ def scan(audit,plan,lookup):
                                    entry_close_no_entitlement_candidate=event==start,
                                    response_sha256=receipt))
         reports.append(dict(signal_date=d,sources=sources,
-                            both_candidate_scans_present=all(s["status"]=="CANDIDATE_SCAN_ONLY" for s in sources)))
+                            both_candidate_scans_present=all(s["status"] in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY") for s in sources)))
     counts=Counter(s["status"] for r in reports for s in r["sources"])
     return dict(summary=dict(scope="V3_TWSE_ACTION_CANDIDATE_SCAN_ONLY",
         action_windows_sha256=plan["summary"]["action_windows_sha256"],
         raw_paths_sha256=audit["summary"]["raw_paths_sha256"],requested_windows=len(windows),
         windows_with_both_candidate_scans=sum(r["both_candidate_scans_present"] for r in reports),
         source_status_counts=dict(counts),candidate_event_rows=len(events),
+        reduction_no_match_is_not_zero_action_proof=True,
+        windows_with_both_non_no_match_scans=sum(all(s["status"]=="CANDIDATE_SCAN_ONLY" for s in r["sources"]) for r in reports),
         candidate_kind_counts=dict(Counter(r["kind"] for r in events)),
         in_holding_affected_paths=len(affected),entry_day_candidate_paths=len(entry),
         outside_saved_session_candidate_paths=len(outside),
@@ -107,7 +126,7 @@ def scan(audit,plan,lookup):
 
 class Capture:
     def __init__(self,root,budget):
-        self.root=root; self.budget=budget; self.requests=0; self.hits=0; self.stop=None
+        self.root=root; self.budget=budget; self.requests=0; self.hits=0; self.stop=None; self.diagnostic=None
     def __call__(self,kind,start,end):
         path=self.root/(kind+"-"+start+"-"+end+".json")
         params={"startDate":start.replace("-",""),"endDate":end.replace("-",""),"response":"json"}
@@ -119,7 +138,7 @@ class Capture:
             if (receipt["endpoint"]!=URLS[kind] or receipt["params"]!=params or
                 len(raw)>LIMIT or sha256(raw).hexdigest()!=receipt["response_sha256"]):
                 raise ValueError("Action source cache mismatch")
-            rows=parse(raw,kind)
+            rows,status=parse_response(raw,kind)
             self.hits+=1
         else:
             if self.stop or self.requests>=self.budget:
@@ -133,6 +152,7 @@ class Capture:
                     "User-Agent":"tw-stock-ai-owner-action-review","Accept":"application/json"},
                     timeout=(10,35),stream=True,allow_redirects=False) as resp:
                     if resp.status_code!=200:
+                        self.diagnostic=dict(kind=kind,start=start,end=end,category="HTTP_STATUS",http_status=resp.status_code)
                         raise ValueError("HTTP not 200")
                     buf=bytearray()
                     for chunk in resp.iter_content(65536):
@@ -140,16 +160,31 @@ class Capture:
                         if len(buf)>LIMIT:
                             raise ValueError("Oversized response")
                 raw=bytes(buf)
-                rows=parse(raw,kind)
-            except (requests.RequestException,ValueError):
+                rows,status=parse_response(raw,kind)
+            except (requests.RequestException,ValueError) as exc:
                 self.stop="NETWORK_OR_ACTION_SCHEMA_PAUSED"
+                if self.diagnostic is None:
+                    self.diagnostic=dict(kind=kind,start=start,end=end,
+                        category="NETWORK_EXCEPTION" if isinstance(exc,requests.RequestException) else "RESPONSE_SCHEMA_REJECTED",
+                        exception_type=type(exc).__name__)
+                    if "raw" in locals():
+                        self.diagnostic["response_sha256"]=sha256(raw).hexdigest()
+                        try:
+                            obj=json.loads(raw)
+                            if isinstance(obj,dict):
+                                self.diagnostic["response_keys"]=sorted(str(k)[:80] for k in obj)[:25]
+                                stat=obj.get("stat")
+                                if isinstance(stat,str):
+                                    self.diagnostic["official_status"]=stat[:150]
+                        except ValueError:
+                            pass
                 return None
             receipt=dict(endpoint=URLS[kind],params=params,response_sha256=sha256(raw).hexdigest(),
                          captured_at_utc=datetime.now(timezone.utc).isoformat(),
                          raw_base64=base64.b64encode(raw).decode("ascii"))
             with path.open("x",encoding="utf-8") as f:
                 json.dump(receipt,f,separators=(",",":"))
-        return rows,receipt["response_sha256"]
+        return rows,receipt["response_sha256"],status
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -173,7 +208,7 @@ def main():
     capture=Capture(a.cache,a.max_new)
     r=scan(audit,plan,capture)
     r["summary"].update(network_requests=capture.requests,source_cache_hits=capture.hits,
-                        network_stop_reason=capture.stop,paid_upgrade_requested=False)
+                        network_stop_reason=capture.stop,stop_diagnostic=capture.diagnostic,paid_upgrade_requested=False)
     with a.output.open("x",encoding="utf-8") as f:
         json.dump(r,f,separators=(",",":"),allow_nan=False)
     print(json.dumps(r["summary"],indent=2))
