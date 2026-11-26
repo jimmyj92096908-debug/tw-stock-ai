@@ -15,7 +15,7 @@ import numpy as np
 from src.v3_probability_calibration import _day
 from src.v3_capital_risk_research import _num
 from src.v3_numpy_forest import FOREST_RECIPE, fit_forest, forest_probability
-from src.v3_lightgbm_adapter import LIGHTGBM_VERSION, LIGHTGBM_RECIPE, fit_lightgbm
+from src.v3_lightgbm_adapter import LIGHTGBM_VERSION, LIGHTGBM_RECIPE, LIGHTGBM_ROUNDS, fit_lightgbm
 from src.v3_xgboost_adapter import XGBOOST_VERSION, XGBOOST_RECIPE, XGBOOST_ROUNDS, fit_xgboost
 from src.v3_catboost_adapter import CATBOOST_VERSION, CATBOOST_RECIPE, fit_catboost
 
@@ -82,11 +82,11 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                               logistic=logistic_protocol,forest=protocol,
                               weights=[0.5,0.5]))
     if model_kind == "lightgbm":
-        protocol = _hash(dict(recipe="cpu_lightgbm_fixed_v1",features=list(feature_names),
+        protocol = _hash(dict(recipe="cpu_lightgbm_native_fixed_v2",features=list(feature_names),
                               label_protocol_sha256=label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                               min_class=MIN_CLASS_ROWS,version=LIGHTGBM_VERSION,
-                              parameters=LIGHTGBM_RECIPE))
+                              parameters=LIGHTGBM_RECIPE,rounds=LIGHTGBM_ROUNDS))
     if model_kind == "xgboost":
         protocol = _hash(dict(recipe="cpu_xgboost_fixed_v1",features=list(feature_names),
                               label_protocol_sha256=label_protocol_sha256,
