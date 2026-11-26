@@ -54,8 +54,7 @@ class ActionCandidateScanTests(unittest.TestCase):
     def test_explicit_reduction_no_match_never_certifies_zero_actions(self):
         raw=json.dumps({"stat":"很抱歉，沒有符合條件的資料!"}).encode()
         self.assertEqual(parse_response(raw,"reduction"),([],"OFFICIAL_REDUCTION_NO_MATCH_ONLY"))
-        with self.assertRaises(ValueError):
-            parse_response(raw,"ex")
+        self.assertEqual(parse_response(raw,"ex"),([],"OFFICIAL_EX_NO_MATCH_ONLY"))
         a,p=self.inputs()
         r=scan(a,p,lambda kind,start,end: (self.rows(),"a"*64,"CANDIDATE_SCAN_ONLY")
                if kind=="ex" else ([],"b"*64,"OFFICIAL_REDUCTION_NO_MATCH_ONLY"))
@@ -71,5 +70,28 @@ class ActionCandidateScanTests(unittest.TestCase):
         for body in ({"stat":"很抱歉，系統忙碌"},
                      {"stat":"查無資料","data":[["unexpected"]]},
                      {"stat":"error","data":[]}):
-            with self.assertRaises(ValueError):
-                parse_response(json.dumps(body).encode(),"reduction")
+            for kind in ("ex","reduction"):
+                with self.assertRaises(ValueError):
+                    parse_response(json.dumps(body).encode(),kind)
+
+    def test_both_no_match_responses_are_observations_not_coverage(self):
+        a,p=self.inputs()
+        raw=json.dumps({"stat":"很抱歉，沒有符合條件的資料!"}).encode()
+        def lookup(kind,start,end):
+            rows,status=parse_response(raw,kind)
+            return rows,"a"*64,status
+        r=scan(a,p,lookup)
+        m=r["summary"]
+        self.assertEqual(m["windows_with_both_candidate_scans"],1)
+        self.assertEqual(m["windows_with_both_non_no_match_scans"],0)
+        self.assertEqual(m["source_status_counts"],{
+            "OFFICIAL_EX_NO_MATCH_ONLY":1,"OFFICIAL_REDUCTION_NO_MATCH_ONLY":1})
+        self.assertEqual(m["candidate_event_rows"],0)
+        self.assertTrue(m["ex_no_match_is_not_zero_action_proof"])
+        self.assertFalse(m["corporate_action_coverage_verified"])
+        self.assertEqual(m["execution_labels_approved"],0)
+
+    def test_wrong_endpoint_status_rejected(self):
+        a,p=self.inputs()
+        with self.assertRaises(ValueError):
+            scan(a,p,lambda *args:([],"a"*64,"OFFICIAL_REDUCTION_NO_MATCH_ONLY"))
