@@ -9,6 +9,9 @@ on:
       - 'src/v3_*adapter.py'
       - 'src/v3_purged_logistic_baseline.py'
       - 'tests/test_v3_*adapter.py'
+      - 'src/v3_frozen_booster_tuning.py'
+      - 'tests/test_v3_frozen_booster_tuning.py'
+      - 'src/v3_walkforward_probability_archive.py'
 
 permissions:
   contents: read
@@ -35,7 +38,7 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: "numpy==1.26.4" -r requirements-v3-lightgbm.txt -r requirements-v3-xgboost.txt -r requirements-v3-catboost.txt
           python -m pip check
-      - name: Require all three actual synthetic fits, no skips
+      - name: Require actual synthetic fits and depth tuning, no skips
         run: |
           python - <<'PY'
           import unittest
@@ -43,10 +46,11 @@ jobs:
               "test_v3_lightgbm_adapter.LightGBMTests.test_real_backend_smoke",
               "test_v3_xgboost_adapter.XGBoostTests.test_real_backend_smoke",
               "test_v3_catboost_adapter.CatBoostTests.test_real_backend_smoke",
+              "test_v3_frozen_booster_tuning.FrozenBoosterTests.test_real_all_booster_depths",
           ]
           suite = unittest.defaultTestLoader.loadTestsFromNames(names)
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           if not result.wasSuccessful() or result.skipped or result.testsRun != len(names):
               raise SystemExit("V3 CPU BACKEND SMOKE FAILED OR SKIPPED")
-          print("V3 CPU BACKEND SMOKE PASS: 3/3 actual synthetic fits; model_release=BLOCKED")
+          print("V3 CPU BACKEND SMOKE PASS: 4/4 actual fit and tuning tests; model_release=BLOCKED")
           PY
