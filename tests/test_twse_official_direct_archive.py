@@ -132,8 +132,14 @@ class DirectOfficialEncryptedArchiveTests(TestCase):
         manifest = _validate_manifest(json.loads(self.manifest.read_text()))
         self.assertEqual(manifest["authenticated_rows"], 1440)
         self.assertEqual(manifest["object_key"], KEY)
-        self.assertNotIn("1589", self.archive.read_bytes().decode("latin1").split("C", 1)[0])
-        self.assertNotIn("9999", str(manifest))
+        # Random nonce/ciphertext/digests can coincidentally contain ticker digits.
+        # Check structured metadata and actual authenticated decrypted row IDs.
+        self.assertEqual(set(manifest), {"authenticated_rows", "bucket",
+                         "canonical_rows_sha256", "does_not_authorize_source_deletion",
+                         "encrypted_bytes", "encrypted_sha256", "format",
+                         "manifest_version", "object_key"})
+        self.assertNotIn("1589", manifest["object_key"])
+        self.assertNotIn("9999", manifest["object_key"])
         self.assertNotIn(self.key, self.manifest.read_text())
         restored = []
         verify_archive(self.archive, hex_key=self.key, on_verified_row=restored.append)
