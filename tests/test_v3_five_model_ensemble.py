@@ -88,5 +88,18 @@ class FiveModelEnsembleTests(unittest.TestCase):
         self.assertEqual(r,adaptive_five_blend(a))
 
 
+    def test_selector_cutoff_reflects_latest_used_label(self):
+        a=self.archives()
+        for archive in a.values():
+            for field in ("predictions","mature_outcomes"):
+                for row in archive[field]:
+                    row["training_labels_through"]="2024-01-01"
+        r=adaptive_five_blend(a)
+        self.assertEqual(r["predictions"][210]["training_labels_through"],"2024-01-01")
+        self.assertEqual(r["predictions"][220]["training_labels_through"],"2024-01-23")
+        self.assertEqual(r["mature_outcomes"][220]["training_labels_through"],"2024-01-23")
+        self.assertEqual(r["weight_log"][22]["latest_cohort_available"],"2024-01-23")
+
+
 if __name__=="__main__":
     unittest.main()
