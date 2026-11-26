@@ -81,13 +81,46 @@ def audit_receipt(receipt):
                 model_release="BLOCKED")
 
 
+def audit_private_structure(receipt):
+    """Return only aggregate field statistics; do not print row values or paths."""
+    report=audit_receipt(receipt)
+    from collections import Counter
+    factors=receipt["private_candidate_factors"]
+    sources=receipt["source_receipts"]
+    def inspect(rows, expected):
+        if not isinstance(rows,list) or len(rows)!=expected:
+            raise ValueError("Private row count mismatch")
+        fields=Counter()
+        nulls=Counter()
+        types={}
+        for row in rows:
+            if not isinstance(row,dict):
+                raise ValueError("Invalid private row")
+            for k,v in row.items():
+                fields[k]+=1
+                if v is None:
+                    nulls[k]+=1
+                types.setdefault(k,set()).add(type(v).__name__)
+        return {"row_count":len(rows),"fields":[
+            {"name":k,"present":fields[k],"null":nulls[k],
+             "types":sorted(types[k])} for k in sorted(fields)]}
+    report["private_candidate_structure"]=inspect(factors,report["complete_factor_candidates"])
+    report["source_receipt_structure"]=inspect(sources,report["source_dates"])
+    report["private_payload_counts_consistent"]=True
+    report["stock_date_keys_verified"]=False
+    return report
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("receipt",type=Path)
+    p.add_argument("--structure",action="store_true",help="Audit only aggregate private row structure")
     a=p.parse_args()
     if a.receipt.stat().st_size>64*1024*1024:
         raise ValueError("Receipt too large")
-    print(json.dumps(audit_receipt(json.loads(a.receipt.read_text(encoding="utf-8-sig"))),
+    receipt=json.loads(a.receipt.read_text(encoding="utf-8-sig"))
+    report=audit_private_structure(receipt) if a.structure else audit_receipt(receipt)
+    print(json.dumps(report,
                      ensure_ascii=False,indent=2,allow_nan=False))
 
 
