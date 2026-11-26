@@ -49,9 +49,11 @@ def parse(raw,kind):
     return result
 
 def parse_response(raw,kind):
-    """Recognize only explicit reduction no-match; never certify zero events."""
+    """Recognize explicit no-match for either official endpoint; never certify zero events."""
     body=json.loads(raw)
-    if kind=="reduction" and isinstance(body,dict):
+    if kind not in URLS:
+        raise ValueError("Unknown action source")
+    if isinstance(body,dict):
         stat=body.get("stat")
         if isinstance(stat,str):
             normalized=re.sub(r"[\s，。！!,.]", "",stat)
@@ -60,7 +62,7 @@ def parse_response(raw,kind):
                               "NODATA","NoData","nodata"):
                 if any(k in body and body[k] != [] for k in ("data","aaData","records","tables")):
                     raise ValueError("No-match response contains unexpected rows")
-                return [],"OFFICIAL_REDUCTION_NO_MATCH_ONLY"
+                return [],("OFFICIAL_REDUCTION_NO_MATCH_ONLY" if kind=="reduction" else "OFFICIAL_EX_NO_MATCH_ONLY")
     return parse(raw,kind),"CANDIDATE_SCAN_ONLY"
 
 def scan(audit,plan,lookup):
@@ -83,7 +85,8 @@ def scan(audit,plan,lookup):
                 sources.append(dict(kind=kind,status="CAPTURE_PENDING"))
                 continue
             rows,receipt,status=result
-            if status not in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY") or (status=="OFFICIAL_REDUCTION_NO_MATCH_ONLY" and (kind!="reduction" or rows)):
+            expected_empty="OFFICIAL_REDUCTION_NO_MATCH_ONLY" if kind=="reduction" else "OFFICIAL_EX_NO_MATCH_ONLY"
+            if status not in ("CANDIDATE_SCAN_ONLY",expected_empty) or (status==expected_empty and rows):
                 raise ValueError("Unexpected source classification")
             selected=[r for r in rows if start<=r["event_date"]<=end]
             sources.append(dict(kind=kind,status=status,response_sha256=receipt,
@@ -105,7 +108,7 @@ def scan(audit,plan,lookup):
                                    entry_close_no_entitlement_candidate=event==start,
                                    response_sha256=receipt))
         reports.append(dict(signal_date=d,sources=sources,
-                            both_candidate_scans_present=all(s["status"] in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY") for s in sources)))
+                            both_candidate_scans_present=all(s["status"] in ("CANDIDATE_SCAN_ONLY","OFFICIAL_REDUCTION_NO_MATCH_ONLY","OFFICIAL_EX_NO_MATCH_ONLY") for s in sources)))
     counts=Counter(s["status"] for r in reports for s in r["sources"])
     return dict(summary=dict(scope="V3_TWSE_ACTION_CANDIDATE_SCAN_ONLY",
         action_windows_sha256=plan["summary"]["action_windows_sha256"],
@@ -113,6 +116,7 @@ def scan(audit,plan,lookup):
         windows_with_both_candidate_scans=sum(r["both_candidate_scans_present"] for r in reports),
         source_status_counts=dict(counts),candidate_event_rows=len(events),
         reduction_no_match_is_not_zero_action_proof=True,
+        ex_no_match_is_not_zero_action_proof=True,
         windows_with_both_non_no_match_scans=sum(all(s["status"]=="CANDIDATE_SCAN_ONLY" for s in r["sources"]) for r in reports),
         candidate_kind_counts=dict(Counter(r["kind"] for r in events)),
         in_holding_affected_paths=len(affected),entry_day_candidate_paths=len(entry),
