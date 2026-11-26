@@ -1,0 +1,3 @@
+# Optional offline V3 research only; install explicitly in an isolated environment.
+# Existing production and default CI requirements remain unchanged.
+lightgbm==4.6.0
