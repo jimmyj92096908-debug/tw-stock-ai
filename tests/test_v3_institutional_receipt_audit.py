@@ -1,7 +1,7 @@
 """Offline summary receipt consistency tests."""
 import copy
 import unittest
-from scripts.v3_institutional_receipt_audit import audit_receipt
+from scripts.v3_institutional_receipt_audit import audit_receipt, audit_private_structure
 
 
 class InstitutionalReceiptAuditTests(unittest.TestCase):
@@ -50,6 +50,20 @@ class InstitutionalReceiptAuditTests(unittest.TestCase):
         a["summary"]["reports"].reverse()
         with self.assertRaises(ValueError):
             audit_receipt(a)
+
+    def test_private_structure_aggregates_only_and_rejects_wrong_counts(self):
+        a=self.receipt()
+        a["private_candidate_factors"]=[{"score":1,"private_value":"NOT_FOR_OUTPUT"} for _ in range(135)]
+        a["private_candidate_factors"][0]["score"]=None
+        a["source_receipts"]=[{"date":"2024-01-01"} for _ in range(30)]
+        r=audit_private_structure(a)
+        self.assertTrue(r["private_payload_counts_consistent"])
+        self.assertNotIn("NOT_FOR_OUTPUT",str(r))
+        self.assertEqual(r["private_candidate_structure"]["fields"][1],
+                         {"name":"score","present":135,"null":1,"types":["NoneType","int"]})
+        a["source_receipts"].pop()
+        with self.assertRaises(ValueError):
+            audit_private_structure(a)
 
     def test_provenance_declaration_not_independent_verification(self):
         a=self.receipt()
