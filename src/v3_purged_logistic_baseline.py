@@ -45,7 +45,7 @@ def _symbol(row):
 
 def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                                 training_rows, prediction_rows, decision_date,
-                                model_kind="logistic", logistic_l2=0.1, forest_depth=4):
+                                model_kind="logistic", logistic_l2=0.1, forest_depth=4, booster_depth=4):
     """Fit only complete supplied signal cohorts with mature labels.
 
     A date cohort with any label not available strictly before decision is
@@ -62,6 +62,9 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     if (type(forest_depth) is not int or forest_depth not in FOREST_DEPTH_GRID
             or (model_kind!="forest" and forest_depth!=4)):
         raise ValueError("Unsupported forest depth candidate")
+    if (type(booster_depth) is not int or booster_depth not in (2,4,6)
+            or (model_kind not in ("lightgbm","xgboost","catboost") and booster_depth!=4)):
+        raise ValueError("Unsupported booster depth candidate")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
             or any(not isinstance(n,str) or not re.fullmatch("[a-zA-Z][a-zA-Z0-9_]{0,63}",n)
@@ -94,19 +97,19 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                               label_protocol_sha256=label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                               min_class=MIN_CLASS_ROWS,version=LIGHTGBM_VERSION,
-                              parameters=LIGHTGBM_RECIPE,rounds=LIGHTGBM_ROUNDS))
+                              parameters=dict(LIGHTGBM_RECIPE,max_depth=booster_depth),rounds=LIGHTGBM_ROUNDS))
     if model_kind == "xgboost":
         protocol = _hash(dict(recipe="cpu_xgboost_fixed_v1",features=list(feature_names),
                               label_protocol_sha256=label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                               min_class=MIN_CLASS_ROWS,version=XGBOOST_VERSION,
-                              parameters=XGBOOST_RECIPE,rounds=XGBOOST_ROUNDS))
+                              parameters=dict(XGBOOST_RECIPE,max_depth=booster_depth),rounds=XGBOOST_ROUNDS))
     if model_kind == "catboost":
         protocol = _hash(dict(recipe="cpu_catboost_numeric_fixed_v1",features=list(feature_names),
                               label_protocol_sha256=label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                               min_class=MIN_CLASS_ROWS,version=CATBOOST_VERSION,
-                              parameters=CATBOOST_RECIPE))
+                              parameters=dict(CATBOOST_RECIPE,depth=booster_depth)))
     def features(row,signal):
         if (_day(row["feature_available_date"])>signal
                 or row.get("feature_vintage_declared") is not True):
@@ -156,13 +159,13 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
         return report
     X=np.asarray([r[2] for r in samples],dtype=np.float64)
     if model_kind == "lightgbm":
-        fit_parameters,predict=fit_lightgbm(X,y)
+        fit_parameters,predict=fit_lightgbm(X,y,depth=booster_depth)
         status="RETROSPECTIVE_LIGHTGBM"
     if model_kind == "xgboost":
-        fit_parameters,predict=fit_xgboost(X,y)
+        fit_parameters,predict=fit_xgboost(X,y,depth=booster_depth)
         status="RETROSPECTIVE_XGBOOST"
     if model_kind == "catboost":
-        fit_parameters,predict=fit_catboost(X,y)
+        fit_parameters,predict=fit_catboost(X,y,depth=booster_depth)
         status="RETROSPECTIVE_CATBOOST"
     if model_kind in ("forest","ensemble"):
         trees=fit_forest(X,y,max_depth=forest_depth)
