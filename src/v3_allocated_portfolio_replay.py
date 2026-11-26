@@ -31,7 +31,9 @@ def replay_allocated_portfolio(sessions, *, daily_evidence, protocol_sha256,
         raise ValueError("Evidence outside replay dates")
     fee,tax,slip=(_num(v,"cost",0,0.1) for v in (commission,sell_tax,slippage))
     stop=_num(stop_fraction,"stop",0.0001,0.99)
-    cost_stop=1-(1-stop)*(1-slip)*(1-fee-tax)/(1+fee)
+    # Avoid cancellation at exact lot boundaries (zero costs => exact stop).
+    exit_ratio=(1-slip)*(1-fee-tax)/(1+fee)
+    cost_stop=stop+(1-stop)*(1-exit_ratio)
     diagnostics=[]
     def allocate(snapshot):
         day=snapshot["date"]
