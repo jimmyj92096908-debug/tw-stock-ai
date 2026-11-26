@@ -238,16 +238,70 @@ def audit_factor_integrity(receipt):
     return report
 
 
+def screen_research_candidates(receipt):
+    """Separate explicitly excluded codes without modifying the source rows.
+
+    The output is retrospective research material, not PIT training data.
+    Unknown invalid formats or any other integrity anomaly stop export.
+    """
+    from collections import Counter
+    from hashlib import sha256
+    report=audit_factor_integrity(receipt)
+    anomalies=report["anomaly_counts"]
+    reasons=report["excluded_stock_reason_counts"]
+    if (set(anomalies)-{"invalid_or_excluded_stock"} or
+            set(reasons)-{"1589","1808"} or
+            report["trailing_20_receipt_window_mismatch_rows"] or
+            report["net_over_turnover_hypothesis_mismatch_rows"] or
+            not report["declared_factor_digest_matches"]):
+        raise ValueError("Unresolved integrity anomalies; export blocked")
+    original=receipt["private_candidate_factors"]
+    rows=[dict(r,source_dates=list(r["source_dates"])) for r in original
+          if r["stock_id"] not in ("1589","1808")]
+    removed=len(original)-len(rows)
+    if removed!=sum(reasons.values()) or removed!=anomalies.get("invalid_or_excluded_stock",0):
+        raise ValueError("Exclusion count mismatch")
+    per_date=Counter(r["signal_date"] for r in rows)
+    digest=sha256(json.dumps(rows,sort_keys=True,separators=(",",":"),
+                            ensure_ascii=True,allow_nan=False).encode("utf-8")).hexdigest()
+    summary=dict(scope="V3_TWSE_RETROSPECTIVE_SCREENED_RESEARCH_ONLY",
+                 original_factor_rows=len(original),screened_factor_rows=len(rows),
+                 excluded_rows=removed,excluded_stock_reason_counts=reasons,
+                 source_factor_sha256=report["declared_factor_sha256"],
+                 screened_factor_sha256=digest,source_dates=report["source_dates"],
+                 source_expansion_complete=report["source_expansion_complete"],
+                 signal_windows=len(per_date),screened_rows_by_signal_date=dict(sorted(per_date.items())),
+                 historical_listing_eligibility_verified=False,
+                 historical_publication_time_verified=False,
+                 immutable_historical_vintage_verified=False,
+                 approved_training_feature_rows=0,v3_model_trained=False,
+                 model_release="BLOCKED",production_neon_reads=0,
+                 production_neon_writes=0,line_messages_sent=0)
+    return {"summary":summary,"retrospective_research_factors":rows}
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("receipt",type=Path)
     p.add_argument("--structure",action="store_true",help="Audit only aggregate private row structure")
     p.add_argument("--integrity",action="store_true",help="Audit private stock/date keys and source windows offline")
+    p.add_argument("--screen-output",type=Path,help="Create a new local research-only JSON; never overwrite")
     a=p.parse_args()
     if a.receipt.stat().st_size>64*1024*1024:
         raise ValueError("Receipt too large")
     receipt=json.loads(a.receipt.read_text(encoding="utf-8-sig"))
-    report=audit_factor_integrity(receipt) if a.integrity else (audit_private_structure(receipt) if a.structure else audit_receipt(receipt))
+    if a.screen_output:
+        dataset=screen_research_candidates(receipt)
+        report=dataset["summary"]
+        if not report["source_expansion_complete"]:
+            raise ValueError("Full source expansion required for export")
+        if a.screen_output.resolve()==a.receipt.resolve():
+            raise ValueError("Cannot overwrite input")
+        payload=json.dumps(dataset,ensure_ascii=True,separators=(",",":"),allow_nan=False)
+        with a.screen_output.open("x",encoding="utf-8") as stream:
+            stream.write(payload)
+    else:
+        report=audit_factor_integrity(receipt) if a.integrity else (audit_private_structure(receipt) if a.structure else audit_receipt(receipt))
     print(json.dumps(report,
                      ensure_ascii=False,indent=2,allow_nan=False))
 
