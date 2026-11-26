@@ -86,3 +86,21 @@ class RawPathOverlapTests(unittest.TestCase):
         from scripts.v3_raw_path_overlap_audit import positive_close
         for value in (True,None,{},[],0,-1,"0.0","-1","NaN","Infinity","1,000"," 1","1e3"):
             self.assertFalse(positive_close(value))
+
+    def test_reported_return_and_cost_sensitivity(self):
+        j,a=self.inputs()
+        p=a["private_matched_rows"][0]
+        p["raw_gross_return"]="0.05"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["raw_gross_return_reconciliation"],{"recomputed_match":1})
+        self.assertAlmostEqual(r["close_to_close_proxy_mean_gross"],.05)
+        costs=r["close_to_close_cost_sensitivity"]
+        self.assertEqual([x["slippage_each_way_bps"] for x in costs],[0,10,25])
+        self.assertGreater(costs[0]["mean_net_return"],costs[1]["mean_net_return"])
+        self.assertGreater(costs[1]["mean_net_return"],costs[2]["mean_net_return"])
+        self.assertTrue(r["proxy_statistics_not_model_performance"])
+        self.assertEqual(r["approved_total_return_labels"],0)
+        p["raw_gross_return"]="0.07"
+        self.assertEqual(audit_overlap(j,a)["raw_gross_return_reconciliation"],{"recomputed_mismatch":1})
+        p["raw_gross_return"]="NaN"
+        self.assertEqual(audit_overlap(j,a)["raw_gross_return_reconciliation"],{"missing_or_invalid_reported_return":1})
