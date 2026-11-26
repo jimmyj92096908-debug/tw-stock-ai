@@ -1,7 +1,7 @@
 """Offline long-only V3 portfolio accounting prototype.
 
 Caller supplies aligned raw-price bars and prior-close frozen target weights.
-No data authentication, stop execution or live orders. Optional limited gross
+No data authentication or live orders. Optional OHLC exit stress simulation. Optional limited gross
 cash dividends and immediate whole-share conversions; other actions blocked.
 Assumes idealized opening fills with proportional costs and T+2 session settlement.
 """
@@ -15,7 +15,8 @@ from src.v3_probability_calibration import _day
 
 def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                        commission=0.001425, sell_tax=0.003, slippage=0.001,
-                       corporate_action_mode=False):
+                       corporate_action_mode=False, exit_stress_mode=False,
+                       stop_fraction=0.05, profit_fraction=0.10, trailing_fraction=0.05):
     """Target maps are full desired account weights; absent maps mean no rebalance.
 
     Targets at close t can affect open t+1 only. Opening price is used for
@@ -25,6 +26,14 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
     """
     if type(corporate_action_mode) is not bool:
         raise ValueError("Invalid corporate action mode")
+    if type(exit_stress_mode) is not bool:
+        raise ValueError("Invalid exit stress mode")
+    stop = _num(stop_fraction,"stop fraction",0.0001,0.99)
+    profit = _num(profit_fraction,"profit fraction",0.0001,10)
+    trail = _num(trailing_fraction,"trailing fraction",0.0001,0.99)
+    # Exit mode uses explicit scenario capacities, not verified execution.
+    # No scale-ins to existing episodes; pending exit blocks new buys.
+    # Opening gap exits and pending exits precede target rebalance.
     # Opt-in requires explicit daily action lists and bar-level event markers.
     # First session must have no events; account starts entirely in cash.
     dividend_pending, applied_ids = [], []
@@ -53,6 +62,8 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
         if set(bars) != universe:
             raise ValueError("Incomplete aligned bar universe")
         prices = {}
+        sell_capacity, buy_capacity, ranges = {}, {}, {}
+        blocked_today = set()
         action_stocks = set()
         actions = session.get("corporate_actions", [])
         if not isinstance(actions, list):
@@ -76,6 +87,21 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                 raise ValueError("Corporate action marker mismatch or unsupported event")
             prices[stock] = (_num(row["open"], "open", 0.01, 1e7),
                              _num(row["close"], "close", 0.01, 1e7))
+            if exit_stress_mode:
+                op, close = prices[stock]
+                lo = _num(row["low"],"low",0.01,1e7)
+                hi = _num(row["high"],"high",0.01,1e7)
+                if not lo <= min(op,close) <= max(op,close) <= hi:
+                    raise ValueError("Invalid OHLC")
+                ranges[stock] = (lo,hi)
+                for side, capacities in (("sell",sell_capacity),("buy",buy_capacity)):
+                    flag = row.get(side+"_eligible")
+                    cap = row.get(side+"_capacity_shares")
+                    if flag is not None and type(flag) is not bool:
+                        raise ValueError("Invalid execution eligibility")
+                    if cap is not None and (type(cap) is not int or cap < 0):
+                        raise ValueError("Invalid scenario capacity")
+                    capacities[stock] = (cap//lot_size)*lot_size if flag is True and cap is not None else 0
         cash += fsum(v for due,v in pending_cash if due <= i)
         pending_cash = [(due,v) for due,v in pending_cash if due > i]
         dividend_balance = 0.0
@@ -92,6 +118,17 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                     e = episodes[s]
                     e["gross_dividends"] = e.get("gross_dividends",0.0) + (
                         holdings[s]*float(a["cash_per_share"]))
+                if exit_stress_mode and holdings.get(s,0):
+                    e = episodes[s]
+                    # Adjust actual price levels rather than recomputing
+                    # percentage stops from an already reduced entry price.
+                    for k in ("fixed_stop","profit_target","high_water","trailing_stop"):
+                        if a["kind"] == "CASH_DIVIDEND":
+                            e[k] -= float(a["cash_per_share"])
+                        else:
+                            e[k] *= a["old_shares"]/a["new_shares"]
+                        if e[k] <= 0:
+                            raise ValueError("Unsupported nonpositive adjusted exit level")
             holdings = result["holdings"]
             if any(q % lot_size for q in holdings.values()):
                 raise ValueError("Conversion requires unsupported odd-lot execution mode")
@@ -99,6 +136,40 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
             applied_ids = result["applied_event_ids"]
             cash += float(result["gross_cash_credited"])
             dividend_balance = float(result["gross_receivable_balance"])
+        def sell(s, qty, reference, reason):
+            if exit_stress_mode:
+                qty = min(qty,sell_capacity[s])
+            if qty <= 0:
+                return
+            fill = reference*(1-slip)
+            proceeds = qty*fill*(1-fee-tax)
+            pending_cash.append((i+2,proceeds))
+            holdings[s] -= qty
+            if exit_stress_mode:
+                sell_capacity[s] -= qty
+            episodes[s]["proceeds"] += proceeds
+            trades.append({"date":day.isoformat(),"stock_id":s,"side":"SELL",
+                           "shares":qty,"fill":fill,"cash_flow":proceeds,"reason":reason})
+            if not holdings[s]:
+                e = episodes.pop(s)
+                dividends = e.get("gross_dividends",0.0)
+                closed.append({"stock_id":s,"entry_date":e["entry_date"],
+                               "exit_date":day.isoformat(),"gross_dividends":dividends,
+                               "net_pnl":e["proceeds"]+dividends-e["cost"],
+                               "net_return":(e["proceeds"]+dividends)/e["cost"]-1})
+                del holdings[s]
+
+        if exit_stress_mode:
+            for s in sorted(holdings):
+                e = episodes[s]
+                op = prices[s][0]
+                reason = ("PENDING_EXIT" if e.get("pending_exit") else
+                          "GAP_STOP" if op <= max(e["fixed_stop"],e["trailing_stop"]) else
+                          "OPEN_PROFIT" if op >= e["profit_target"] else None)
+                if reason:
+                    e["pending_exit"] = True
+                    blocked_today.add(s)
+                    sell(s,holdings[s],op,reason)
         if targets is not None:
             equity = cash + dividend_balance + fsum(v for _,v in pending_cash) + fsum(
                 qty*prices[s][0] for s,qty in holdings.items())
@@ -106,27 +177,16 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                          (prices[s][0]*(1+slip)*(1+fee)*lot_size))*lot_size
                        for s in universe}
             for s in sorted(holdings):
-                qty = holdings[s] - desired[s]
-                if qty <= 0:
-                    continue
-                fill = prices[s][0]*(1-slip)
-                proceeds = qty*fill*(1-fee-tax)
-                pending_cash.append((i+2,proceeds))
-                holdings[s] -= qty
-                episodes[s]["proceeds"] += proceeds
-                trades.append({"date":day.isoformat(),"stock_id":s,"side":"SELL",
-                               "shares":qty,"fill":fill,"cash_flow":proceeds})
-                if not holdings[s]:
-                    e = episodes.pop(s)
-                    closed.append({"stock_id":s,"entry_date":e["entry_date"],
-                                   "exit_date":day.isoformat(),
-                                   "gross_dividends":e.get("gross_dividends",0.0),
-                                   "net_pnl":e["proceeds"]+e.get("gross_dividends",0.0)-e["cost"],
-                                   "net_return":(e["proceeds"]+e.get("gross_dividends",0.0))/e["cost"]-1})
+                if s not in blocked_today:
+                    sell(s,holdings[s]-desired[s],prices[s][0],"REBALANCE")
             # Deterministic ticker order; not a ranked execution optimizer.
             for s in sorted(universe):
+                if exit_stress_mode and (s in blocked_today or s in holdings):
+                    continue
                 unit = prices[s][0]*(1+slip)*(1+fee)
                 qty = min(desired[s]-holdings.get(s,0), floor(max(0,cash)/(unit*lot_size))*lot_size)
+                if exit_stress_mode:
+                    qty = min(qty,buy_capacity[s])
                 if qty <= 0:
                     continue
                 cost = qty*unit
@@ -134,9 +194,34 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
                 holdings[s] = holdings.get(s,0)+qty
                 e = episodes.setdefault(s,{"entry_date":day.isoformat(),"cost":0.0,"proceeds":0.0})
                 e["cost"] += cost
+                if exit_stress_mode:
+                    entry = prices[s][0]*(1+slip)
+                    e.update(fixed_stop=entry*(1-stop),profit_target=entry*(1+profit),
+                             high_water=entry,trailing_stop=entry*(1-trail),pending_exit=False)
                 trades.append({"date":day.isoformat(),"stock_id":s,"side":"BUY",
                                "shares":qty,"fill":prices[s][0]*(1+slip),"cash_flow":-cost})
             holdings = {s:q for s,q in holdings.items() if q}
+        if exit_stress_mode:
+            for s in sorted(holdings):
+                if s in blocked_today:
+                    continue
+                e = episodes[s]
+                lo,hi = ranges[s]
+                level = max(e["fixed_stop"],e["trailing_stop"])
+                target = e["profit_target"]
+                if lo <= level or hi >= target:
+                    # Same-session dual touch is pessimistically stop first.
+                    reason = ("STOP_FIRST" if hi >= target else "STOP") if lo <= level else "PROFIT"
+                    reference = min(prices[s][0],level) if lo <= level else target
+                    e["pending_exit"] = True
+                    sell(s,holdings[s],reference,reason)
+                if s in holdings:
+                    e = episodes[s]
+                    if hi > e["high_water"]:
+                        # Increase the stop only by the new high-water increment.
+                        # Preserves additive cash-dividend adjustment.
+                        e["trailing_stop"] += (hi-e["high_water"])*(1-trail)
+                        e["high_water"] = hi
         receivable = fsum(v for _,v in pending_cash)
         marked = fsum(q*prices[s][1] for s,q in holdings.items())
         equity = cash+receivable+marked+dividend_balance
@@ -147,7 +232,8 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
         path.append({"date":day.isoformat(),"available_cash":cash,
                      "unsettled_sale_proceeds":receivable,"market_value":marked,
                      "gross_dividend_receivable":dividend_balance,
-                     "equity":equity,"holdings":dict(holdings)})
+                     "equity":equity,"holdings":dict(holdings),
+                     "pending_exit_stocks":sorted(s for s in holdings if episodes[s].get("pending_exit"))})
         targets = session.get("close_targets")
         if targets is not None:
             if not isinstance(targets,dict) or not set(targets)<=universe:
@@ -163,5 +249,6 @@ def simulate_portfolio(sessions, *, starting_cash=1000000, lot_size=1000,
             "calendar_provenance_verified":False,"corporate_actions_supported":corporate_action_mode,
             "corporate_action_scope":"GROSS_CASH_AND_IMMEDIATE_INTEGER_CONVERSION" if corporate_action_mode else "NONE",
             "dividend_taxes_supported":False,"corporate_action_provenance_verified":False,
-            "stop_execution_supported":False,"liquidity_stress_verified":False,
+            "stop_execution_supported":exit_stress_mode,"liquidity_stress_verified":False,
+            "exit_scenario_capacity_verified":False,"intraday_sequence_verified":False,
             "target_provenance_verified":False,"model_release":"BLOCKED","trading_approved":False}
