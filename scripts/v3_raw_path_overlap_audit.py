@@ -178,16 +178,62 @@ def audit_overlap(joined,actions):
                 v3_model_trained=False,model_release="BLOCKED",
                 production_neon_reads=0,production_neon_writes=0,line_messages_sent=0)
 
+def expansion_plan(joined,actions):
+    """Freeze exact missing keys; no network, synthetic bars or label approval."""
+    report=audit_overlap(joined,actions)
+    overlap=report["exact_key_overlap_rows"]
+    if (not report["action_canonical_digest_matches"] or
+        report["matching_technical_vectors"]!=overlap or
+        report["jointly_valid_post_signal_price_paths"]!=overlap or
+        report["raw_gross_return_reconciliation"].get("recomputed_match",0)!=overlap):
+        raise ValueError("Existing path integrity not reconciled")
+    rows=joined["retrospective_joined_factors"]
+    paths=actions["private_matched_rows"]
+    known={key(r) for r in paths}
+    missing=[dict(market=m,stock_id=s,signal_date=d)
+             for m,s,d in sorted({key(r) for r in rows}-known,key=lambda k:(k[2],k[0],k[1]))]
+    counts=Counter(r["signal_date"] for r in missing)
+    overlap_dates={r["signal_date"] for r in report["coverage_by_signal_date"] if r["overlap_rows"]}
+    if len(missing)!=report["no_raw_path_rows"]:
+        raise ValueError("Missing key reconciliation failed")
+    return {"summary":dict(scope="V3_OFFLINE_RAW_PATH_EXPANSION_PLAN_ONLY",
+                joined_rows=len(rows),existing_path_rows=overlap,missing_path_rows=len(missing),
+                dates_with_missing_rows=len(counts),
+                dates_without_any_saved_path=sum(d not in overlap_dates for d in counts),
+                missing_rows_by_signal_date=dict(sorted(counts.items())),
+                joined_rows_sha256=joined["summary"]["matched_rows_sha256"],
+                existing_paths_sha256=report["action_array_digest_computed"],
+                missing_keys_sha256=digest(missing),
+                official_calendar_sessions_verified=False,
+                execution_labels_approved=0,approved_training_feature_rows=0,
+                v3_model_trained=False,model_release="BLOCKED",
+                network_requests=0,production_neon_reads=0,production_neon_writes=0,
+                line_messages_sent=0),
+            "private_missing_keys":missing}
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--joined",type=Path,required=True)
     p.add_argument("--actions",type=Path,required=True)
+    p.add_argument("--plan-output",type=Path,help="Write a new local missing-key plan; no overwrite")
     a=p.parse_args()
     def load(path):
         if path.stat().st_size>128*1024*1024:
             raise ValueError("Input too large")
         return json.loads(path.read_text(encoding="utf-8-sig"))
-    print(json.dumps(audit_overlap(load(a.joined),load(a.actions)),indent=2,allow_nan=False))
+    joined,actions=load(a.joined),load(a.actions)
+    if a.plan_output:
+        if a.plan_output.resolve() in (a.joined.resolve(),a.actions.resolve()):
+            raise ValueError("Cannot overwrite source")
+        result=expansion_plan(joined,actions)
+        payload=json.dumps(result,ensure_ascii=True,separators=(",",":"),allow_nan=False)
+        with a.plan_output.open("x",encoding="utf-8") as stream:
+            stream.write(payload)
+        report=result["summary"]
+    else:
+        report=audit_overlap(joined,actions)
+    print(json.dumps(report,indent=2,allow_nan=False))
 
 if __name__=="__main__":
     main()
