@@ -100,7 +100,7 @@ def reconcile(joined,actions,plan,saved,lookup):
         cutoff=cutoff.isoformat(),close_to_close_proxy_mean_gross=stats["close_to_close_proxy_mean_gross"],
         close_to_close_cost_sensitivity=stats["close_to_close_cost_sensitivity"],
         proxy_cost_assumptions=stats["proxy_cost_assumptions"],proxy_statistics_not_model_performance=True,
-        coverage_by_signal_date=stats["coverage_by_signal_date"],
+        coverage_by_signal_date=[{k:v for k,v in r.items() if k!="vector_parity_rows"} for r in stats["coverage_by_signal_date"]],
         official_calendar_independently_verified=False,historical_publication_vintage_verified=False,
         approved_total_return_labels=0,execution_labels_approved=0,approved_training_feature_rows=0,
         v3_model_trained=False,model_release="BLOCKED",network_requests=0,
