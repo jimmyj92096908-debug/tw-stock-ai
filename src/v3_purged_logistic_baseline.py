@@ -14,7 +14,7 @@ import numpy as np
 
 from src.v3_probability_calibration import _day
 from src.v3_capital_risk_research import _num
-from src.v3_numpy_forest import FOREST_RECIPE, fit_forest, forest_probability
+from src.v3_numpy_forest import FOREST_RECIPE, FOREST_DEPTH_GRID, fit_forest, forest_probability
 from src.v3_lightgbm_adapter import LIGHTGBM_VERSION, LIGHTGBM_RECIPE, LIGHTGBM_ROUNDS, fit_lightgbm
 from src.v3_xgboost_adapter import XGBOOST_VERSION, XGBOOST_RECIPE, XGBOOST_ROUNDS, fit_xgboost
 from src.v3_catboost_adapter import CATBOOST_VERSION, CATBOOST_RECIPE, fit_catboost
@@ -45,7 +45,7 @@ def _symbol(row):
 
 def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                                 training_rows, prediction_rows, decision_date,
-                                model_kind="logistic", logistic_l2=0.1):
+                                model_kind="logistic", logistic_l2=0.1, forest_depth=4):
     """Fit only complete supplied signal cohorts with mature labels.
 
     A date cohort with any label not available strictly before decision is
@@ -59,6 +59,9 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     if (isinstance(logistic_l2,bool) or logistic_l2 not in LOGISTIC_L2_GRID
             or (model_kind!="logistic" and logistic_l2!=L2)):
         raise ValueError("Unsupported logistic regularization candidate")
+    if (type(forest_depth) is not int or forest_depth not in FOREST_DEPTH_GRID
+            or (model_kind!="forest" and forest_depth!=4)):
+        raise ValueError("Unsupported forest depth candidate")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
             or any(not isinstance(n,str) or not re.fullmatch("[a-zA-Z][a-zA-Z0-9_]{0,63}",n)
@@ -81,7 +84,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
         protocol = _hash(dict(recipe="numpy_forest_fixed_v1",features=list(feature_names),
                               label_protocol_sha256=label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
-                              min_class=MIN_CLASS_ROWS,forest=FOREST_RECIPE))
+                              min_class=MIN_CLASS_ROWS,forest=dict(FOREST_RECIPE,max_depth=forest_depth)))
     if model_kind == "ensemble":
         protocol = _hash(dict(recipe="fixed_equal_probability_ensemble_v1",
                               logistic=logistic_protocol,forest=protocol,
@@ -162,7 +165,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
         fit_parameters,predict=fit_catboost(X,y)
         status="RETROSPECTIVE_CATBOOST"
     if model_kind in ("forest","ensemble"):
-        trees=fit_forest(X,y)
+        trees=fit_forest(X,y,max_depth=forest_depth)
         fit_parameters={"trees":trees}
         status="RETROSPECTIVE_NUMPY_FOREST"
         def predict(x):
