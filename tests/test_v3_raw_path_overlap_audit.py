@@ -62,3 +62,27 @@ class RawPathOverlapTests(unittest.TestCase):
         a["private_matched_rows"][0]["approved_total_return"]=True
         with self.assertRaises(ValueError):
             audit_overlap(j,a)
+
+    def test_decimal_strings_and_independent_chronology(self):
+        j,a=self.inputs()
+        p=a["private_matched_rows"][0]
+        p["raw_closes"]=["100.00","101","102.5","103","104","105"]
+        r=audit_overlap(j,a)
+        self.assertEqual(r["six_positive_closes"],1)
+        self.assertEqual(r["positive_decimal_string_paths"],1)
+        self.assertEqual(r["jointly_valid_post_signal_price_paths"],1)
+        self.assertEqual(r["raw_close_element_types"],{"str":6})
+        p["raw_closes"][0]="NaN"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["six_positive_closes"],0)
+        self.assertEqual(r["strictly_post_signal_ordered_paths"],1)
+        self.assertEqual(r["jointly_valid_post_signal_price_paths"],0)
+        p["sessions"][0]="2024-04-30"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["ordered_session_start_relation"],{"at_signal":1})
+        self.assertEqual(r["strictly_post_signal_ordered_paths"],0)
+
+    def test_invalid_prices_not_coerced(self):
+        from scripts.v3_raw_path_overlap_audit import positive_close
+        for value in (True,None,{},[],0,-1,"0.0","-1","NaN","Infinity","1,000"," 1","1e3"):
+            self.assertFalse(positive_close(value))
