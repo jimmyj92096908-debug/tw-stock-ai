@@ -17,13 +17,15 @@ XGBOOST_RECIPE={
 }
 
 
-def fit_xgboost(X,y):
+def fit_xgboost(X,y,*,depth=4):
     """Train the native binary booster only on chronologically purged rows.
 
     The optional CPU-only distribution is required exactly; neither a
     missing package nor a different package may silently select a fallback.
     Fixed rounds and no prediction-label evaluation or early stopping.
     """
+    if type(depth) is not int or depth not in (2,4,6):
+        raise ValueError("Unsupported booster depth")
     try:
         installed=version("xgboost-cpu")
     except PackageNotFoundError as exc:
@@ -40,7 +42,7 @@ def fit_xgboost(X,y):
     if lib.__version__!=XGBOOST_VERSION:
         raise RuntimeError("Imported XGBoost version mismatch")
     matrix=lib.DMatrix(X,label=y,nthread=1)
-    booster=lib.train(dict(XGBOOST_RECIPE),matrix,num_boost_round=XGBOOST_ROUNDS)
+    booster=lib.train(dict(XGBOOST_RECIPE,max_depth=depth),matrix,num_boost_round=XGBOOST_ROUNDS)
     fingerprint=sha256(bytes(booster.save_raw(raw_format="ubj"))).hexdigest()
     def predict(x):
         p=float(booster.predict(lib.DMatrix(np.asarray([x]),nthread=1))[0])
