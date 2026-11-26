@@ -1,0 +1,63 @@
+name: V3 CPU Backend Smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/v3-cpu-backend-smoke.yml'
+      - 'requirements-v3-*.txt'
+      - 'src/v3_*adapter.py'
+      - 'src/v3_purged_logistic_baseline.py'
+      - 'tests/test_v3_*adapter.py'
+      - 'src/v3_frozen_booster_tuning.py'
+      - 'tests/test_v3_frozen_booster_tuning.py'
+      - 'src/v3_walkforward_probability_archive.py'
+      - 'src/v3_tuned_five_ensemble.py'
+      - 'tests/test_v3_tuned_five_ensemble.py'
+      - 'src/v3_five_model_ensemble.py'
+      - 'src/v3_frozen_logistic_tuning.py'
+      - 'src/v3_frozen_forest_tuning.py'
+      - 'src/v3_numpy_forest.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v3-cpu-backend-smoke-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  actual-cpu-fit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PYTHONPATH: ".:tests"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install isolated optional CPU backends
+        run: |
+          python -m pip install --only-binary=:all: "numpy==1.26.4" -r requirements-v3-lightgbm.txt -r requirements-v3-xgboost.txt -r requirements-v3-catboost.txt
+          python -m pip check
+      - name: Require actual synthetic fits and depth tuning, no skips
+        run: |
+          python - <<'PY'
+          import unittest
+          names = [
+              "test_v3_lightgbm_adapter.LightGBMTests.test_real_backend_smoke",
+              "test_v3_xgboost_adapter.XGBoostTests.test_real_backend_smoke",
+              "test_v3_catboost_adapter.CatBoostTests.test_real_backend_smoke",
+              "test_v3_frozen_booster_tuning.FrozenBoosterTests.test_real_all_booster_depths",
+              "test_v3_tuned_five_ensemble.TunedFiveTests.test_real_tuned_five_ensemble",
+          ]
+          suite = unittest.defaultTestLoader.loadTestsFromNames(names)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped or result.testsRun != len(names):
+              raise SystemExit("V3 CPU BACKEND SMOKE FAILED OR SKIPPED")
+          print("V3 CPU BACKEND SMOKE PASS: 5/5 actual fit and tuning tests; model_release=BLOCKED")
+          PY

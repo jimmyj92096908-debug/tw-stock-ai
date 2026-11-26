@@ -1,0 +1,132 @@
+import copy
+import unittest
+from scripts.v3_raw_path_overlap_audit import audit_overlap,digest
+
+
+class RawPathOverlapTests(unittest.TestCase):
+    def inputs(self):
+        names=["f"+str(i) for i in range(12)]+[
+            "institutional_net_shares_20","institutional_turnover_shares_20","institutional_imbalance_20"]
+        row=dict(market="TWSE",stock_id="2330",signal_date="2024-04-30",
+                 features=dict(zip(names,[.1]*12+[20,100,.2])),
+                 historical_reconstruction_only=True,strict_point_in_time_verified=False,
+                 approved_training_feature=False)
+        joined=dict(summary=dict(status="RETROSPECTIVE_JOIN_RESEARCH_ONLY",
+                  model_release="BLOCKED",approved_training_feature_rows=0,matched_rows=1,
+                  matched_rows_sha256=digest([row]),feature_names=names),
+                  retrospective_joined_factors=[row])
+        path=dict(market="twse",stock_id="2330",signal_date="2024-04-30",
+                  feature_vector=[.1]*12,approved_total_return=False,
+                  corporate_action_coverage_verified=False,
+                  sessions=["2024-05-02","2024-05-03","2024-05-06","2024-05-07","2024-05-08","2024-05-09"],
+                  raw_closes=[100,101,102,103,104,105])
+        actions=dict(summary=dict(model_release="BLOCKED",approved_total_return_labels=0,
+                     corporate_action_coverage_verified=False,matched_raw_feature_label_rows=1,
+                     matched_panel_sha256=digest([path])),private_matched_rows=[path])
+        return joined,actions
+
+    def test_exact_overlap_does_not_approve_labels(self):
+        j,a=self.inputs()
+        r=audit_overlap(j,a)
+        self.assertEqual(r["exact_key_overlap_rows"],1)
+        self.assertEqual(r["matching_technical_vectors"],1)
+        self.assertEqual(r["strictly_post_signal_ordered_paths"],1)
+        self.assertTrue(r["action_canonical_digest_matches"])
+        self.assertEqual(r["approved_total_return_labels"],0)
+        self.assertEqual(r["model_release"],"BLOCKED")
+
+    def test_no_cross_market_match(self):
+        j,a=self.inputs()
+        a["private_matched_rows"][0]["market"]="tpex"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["exact_key_overlap_rows"],0)
+        self.assertEqual(r["no_raw_path_rows"],1)
+
+    def test_mismatched_vector_and_session_are_not_hidden(self):
+        j,a=self.inputs()
+        p=a["private_matched_rows"][0]
+        p["feature_vector"][0]=.2
+        p["sessions"][0]="2024-04-30"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["exact_key_overlap_rows"],1)
+        self.assertEqual(r["matching_technical_vectors"],0)
+        self.assertEqual(r["strictly_post_signal_ordered_paths"],0)
+        self.assertFalse(r["action_canonical_digest_matches"])
+
+    def test_tampering_or_approval_rejected(self):
+        j,a=self.inputs()
+        j["retrospective_joined_factors"][0]["features"]["f0"]=.2
+        with self.assertRaises(ValueError):
+            audit_overlap(j,a)
+        j,a=self.inputs()
+        a["private_matched_rows"][0]["approved_total_return"]=True
+        with self.assertRaises(ValueError):
+            audit_overlap(j,a)
+
+    def test_decimal_strings_and_independent_chronology(self):
+        j,a=self.inputs()
+        p=a["private_matched_rows"][0]
+        p["raw_closes"]=["100.00","101","102.5","103","104","105"]
+        r=audit_overlap(j,a)
+        self.assertEqual(r["six_positive_closes"],1)
+        self.assertEqual(r["positive_decimal_string_paths"],1)
+        self.assertEqual(r["jointly_valid_post_signal_price_paths"],1)
+        self.assertEqual(r["raw_close_element_types"],{"str":6})
+        p["raw_closes"][0]="NaN"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["six_positive_closes"],0)
+        self.assertEqual(r["strictly_post_signal_ordered_paths"],1)
+        self.assertEqual(r["jointly_valid_post_signal_price_paths"],0)
+        p["sessions"][0]="2024-04-30"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["ordered_session_start_relation"],{"at_signal":1})
+        self.assertEqual(r["strictly_post_signal_ordered_paths"],0)
+
+    def test_invalid_prices_not_coerced(self):
+        from scripts.v3_raw_path_overlap_audit import positive_close
+        for value in (True,None,{},[],0,-1,"0.0","-1","NaN","Infinity","1,000"," 1","1e3"):
+            self.assertFalse(positive_close(value))
+
+    def test_reported_return_and_cost_sensitivity(self):
+        j,a=self.inputs()
+        p=a["private_matched_rows"][0]
+        p["raw_gross_return"]="0.05"
+        r=audit_overlap(j,a)
+        self.assertEqual(r["raw_gross_return_reconciliation"],{"recomputed_match":1})
+        self.assertAlmostEqual(r["close_to_close_proxy_mean_gross"],.05)
+        costs=r["close_to_close_cost_sensitivity"]
+        self.assertEqual([x["slippage_each_way_bps"] for x in costs],[0,10,25])
+        self.assertGreater(costs[0]["mean_net_return"],costs[1]["mean_net_return"])
+        self.assertGreater(costs[1]["mean_net_return"],costs[2]["mean_net_return"])
+        self.assertTrue(r["proxy_statistics_not_model_performance"])
+        self.assertEqual(r["approved_total_return_labels"],0)
+        p["raw_gross_return"]="0.07"
+        self.assertEqual(audit_overlap(j,a)["raw_gross_return_reconciliation"],{"recomputed_mismatch":1})
+        p["raw_gross_return"]="NaN"
+        self.assertEqual(audit_overlap(j,a)["raw_gross_return_reconciliation"],{"missing_or_invalid_reported_return":1})
+
+    def test_expansion_plan_freezes_only_missing_keys(self):
+        from scripts.v3_raw_path_overlap_audit import expansion_plan
+        j,a=self.inputs()
+        a["private_matched_rows"][0]["raw_gross_return"]="0.05"
+        a["summary"]["matched_panel_sha256"]=digest(a["private_matched_rows"])
+        row=copy.deepcopy(j["retrospective_joined_factors"][0])
+        row["stock_id"]="2317"
+        j["retrospective_joined_factors"].append(row)
+        row=copy.deepcopy(row)
+        row["signal_date"]="2024-05-31"
+        j["retrospective_joined_factors"].append(row)
+        j["summary"]["matched_rows"]=3
+        j["summary"]["matched_rows_sha256"]=digest(j["retrospective_joined_factors"])
+        before=copy.deepcopy((j,a))
+        result=expansion_plan(j,a)
+        self.assertEqual(result["private_missing_keys"],[
+            dict(market="twse",stock_id="2317",signal_date="2024-04-30"),
+            dict(market="twse",stock_id="2317",signal_date="2024-05-31")])
+        self.assertEqual(result["summary"]["dates_without_any_saved_path"],1)
+        self.assertEqual(result["summary"]["missing_path_rows"],2)
+        self.assertEqual(result["summary"]["execution_labels_approved"],0)
+        self.assertEqual((j,a),before)
+        a["private_matched_rows"][0]["raw_gross_return"]="0.07"
+        with self.assertRaises(ValueError):
+            expansion_plan(j,a)
