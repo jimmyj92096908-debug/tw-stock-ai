@@ -17,6 +17,7 @@ from src.v3_capital_risk_research import _num
 from src.v3_numpy_forest import FOREST_RECIPE, fit_forest, forest_probability
 from src.v3_lightgbm_adapter import LIGHTGBM_VERSION, LIGHTGBM_RECIPE, fit_lightgbm
 from src.v3_xgboost_adapter import XGBOOST_VERSION, XGBOOST_RECIPE, XGBOOST_ROUNDS, fit_xgboost
+from src.v3_catboost_adapter import CATBOOST_VERSION, CATBOOST_RECIPE, fit_catboost
 
 MIN_TRAIN_DATES = 20
 MIN_TRAIN_ROWS = 200
@@ -51,7 +52,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     Prediction rows must not contain outcome fields. Fixed recipe, no tuning.
     Feature availability is checked at date granularity, not intraday time.
     """
-    if model_kind not in ("logistic","forest","ensemble","lightgbm","xgboost"):
+    if model_kind not in ("logistic","forest","ensemble","lightgbm","xgboost","catboost"):
         raise ValueError("Unsupported model kind")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
@@ -92,6 +93,12 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                               min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                               min_class=MIN_CLASS_ROWS,version=XGBOOST_VERSION,
                               parameters=XGBOOST_RECIPE,rounds=XGBOOST_ROUNDS))
+    if model_kind == "catboost":
+        protocol = _hash(dict(recipe="cpu_catboost_numeric_fixed_v1",features=list(feature_names),
+                              label_protocol_sha256=label_protocol_sha256,
+                              min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
+                              min_class=MIN_CLASS_ROWS,version=CATBOOST_VERSION,
+                              parameters=CATBOOST_RECIPE))
     def features(row,signal):
         if (_day(row["feature_available_date"])>signal
                 or row.get("feature_vintage_declared") is not True):
@@ -146,6 +153,9 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     if model_kind == "xgboost":
         fit_parameters,predict=fit_xgboost(X,y)
         status="RETROSPECTIVE_XGBOOST"
+    if model_kind == "catboost":
+        fit_parameters,predict=fit_catboost(X,y)
+        status="RETROSPECTIVE_CATBOOST"
     if model_kind in ("forest","ensemble"):
         trees=fit_forest(X,y)
         fit_parameters={"trees":trees}
