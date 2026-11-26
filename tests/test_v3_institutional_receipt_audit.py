@@ -87,12 +87,18 @@ class InstitutionalReceiptAuditTests(unittest.TestCase):
                  institutional_net_shares_20=20,institutional_turnover_shares_20=100,
                  institutional_imbalance_20=.2)
             for r in a["summary"]["reports"] for i in range(r["complete_factor_candidates"])]
+        import hashlib,json
+        a["summary"]["factor_sha256"]=hashlib.sha256(json.dumps(
+            a["private_candidate_factors"],sort_keys=True,separators=(",",":"),
+            ensure_ascii=True,allow_nan=False).encode("utf-8")).hexdigest()
         return a
 
     def test_private_integrity_pass_not_training_approval(self):
         r=audit_factor_integrity(self.integrity_fixture())
         self.assertEqual(r["private_integrity_status"],"STRUCTURE_CHECKS_PASS")
         self.assertEqual(r["unique_stock_signal_keys"],135)
+        self.assertTrue(r["declared_factor_digest_matches"])
+        self.assertTrue(r["underlying_digest_recomputed"])
         self.assertEqual(r["post_signal_capture_date_rows"],135)
         self.assertEqual(r["net_over_turnover_hypothesis_mismatch_rows"],0)
         self.assertEqual(r["approved_training_feature_rows"],0)
@@ -107,6 +113,9 @@ class InstitutionalReceiptAuditTests(unittest.TestCase):
         r=audit_factor_integrity(a)
         self.assertEqual(r["private_integrity_status"],"INTEGRITY_REVIEW_REQUIRED")
         self.assertEqual(r["anomaly_counts"]["invalid_or_excluded_stock"],1)
+        self.assertEqual(r["excluded_stock_reason_counts"],{"1589":1})
+        self.assertEqual(r["stock_format_and_exclusion_screen_rows"],134)
+        self.assertFalse(r["declared_factor_digest_matches"])
         self.assertEqual(r["anomaly_counts"]["source_not_strictly_before_signal"],1)
         self.assertEqual(r["anomaly_counts"]["missing_source_receipt"],1)
         self.assertEqual(r["anomaly_counts"]["unexpected_training_flag"],1)
