@@ -111,15 +111,128 @@ def audit_private_structure(receipt):
     return report
 
 
+def audit_factor_integrity(receipt):
+    """Audit actual private rows without exposing values, IDs or source URLs.
+
+    Source receipts are retrospective captures, not verified original releases.
+    The ratio check is a diagnostic hypothesis until the producer recipe is
+    independently reproduced. All anomalies remain visible in aggregate.
+    """
+    from collections import Counter
+    from datetime import datetime, timezone, timedelta
+    from hashlib import sha256
+    from bisect import bisect_left
+    report=audit_private_structure(receipt)
+    factors=receipt["private_candidate_factors"]
+    sources=receipt["source_receipts"]
+    summary=receipt["summary"]
+    problems=Counter()
+    dates=set()
+    capture_days={}
+    def day(value):
+        if not isinstance(value,str) or date.fromisoformat(value).isoformat()!=value:
+            raise ValueError("Invalid canonical date")
+        return date.fromisoformat(value)
+    for source in sources:
+        d=day(source["date"])
+        if d in dates:
+            problems["duplicate_source_date"]+=1
+        dates.add(d)
+        if not isinstance(source["response_sha256"],str) or not re.fullmatch("[0-9a-fA-F]{64}",source["response_sha256"]):
+            problems["invalid_response_digest"]+=1
+        if not isinstance(source["source"],str) or not source["source"] or not isinstance(source["params"],dict):
+            problems["invalid_source_metadata"]+=1
+        try:
+            timestamp=datetime.fromisoformat(source["captured_at_utc"].replace("Z","+00:00"))
+            if timestamp.utcoffset()!=timedelta(0):
+                raise ValueError("Non-UTC timestamp")
+            capture_days[d]=timestamp.astimezone(timezone.utc).date()
+            if capture_days[d]<d:
+                problems["capture_before_source_date"]+=1
+        except (ValueError,TypeError,AttributeError):
+            problems["invalid_capture_timestamp"]+=1
+    ordered=sorted(dates)
+    keys=set()
+    per_date=Counter()
+    markets=Counter()
+    retrospective=0
+    ratio_mismatch=0
+    late_capture_rows=0
+    unexpected_windows=0
+    for row in factors:
+        d=day(row["signal_date"])
+        stock=row["stock_id"]
+        market=row["market"]
+        if not isinstance(market,str) or market.upper()!="TWSE":
+            problems["unexpected_market"]+=1
+        else:
+            markets[market.upper()]+=1
+        if (not isinstance(stock,str) or not re.fullmatch("[0-9]{4,6}",stock)
+                or stock in ("1589","1808")):
+            problems["invalid_or_excluded_stock"]+=1
+        key=(d,market.upper() if isinstance(market,str) else str(market),str(stock))
+        if key in keys:
+            problems["duplicate_stock_signal_key"]+=1
+        keys.add(key)
+        per_date[d.isoformat()]+=1
+        if (row["historical_reconstruction_only"] is not True or
+            row["strict_point_in_time_verified"] is not False or
+            row["approved_training_feature"] is not False):
+            problems["unexpected_training_flag"]+=1
+        else:
+            retrospective+=1
+        if not isinstance(row["source_dates"],list):
+            problems["invalid_source_window"]+=1
+            continue
+        window=[day(x) for x in row["source_dates"]]
+        if len(window)!=20 or len(set(window))!=20 or window!=sorted(window):
+            problems["invalid_source_window"]+=1
+        if any(x>=d for x in window):
+            problems["source_not_strictly_before_signal"]+=1
+        if any(x not in dates for x in window):
+            problems["missing_source_receipt"]+=1
+        idx=bisect_left(ordered,d)
+        if window!=ordered[max(0,idx-20):idx]:
+            unexpected_windows+=1
+        if any(capture_days.get(x,date.min)>d for x in window):
+            late_capture_rows+=1
+        net=row["institutional_net_shares_20"]
+        turnover=row["institutional_turnover_shares_20"]
+        ratio=row["institutional_imbalance_20"]
+        if (type(net) is not int or type(turnover) is not int or turnover<=0
+                or isinstance(ratio,bool) or not isinstance(ratio,(int,float)) or not math.isfinite(ratio)):
+            problems["invalid_factor_numbers"]+=1
+        elif not math.isclose(ratio,net/turnover,rel_tol=1e-8,abs_tol=1e-10):
+            ratio_mismatch+=1
+    expected={r["signal_date"]:r["complete_factor_candidates"] for r in summary["reports"]}
+    if dict(per_date)!=expected:
+        problems["per_signal_count_mismatch"]+=1
+    canonical=json.dumps(factors,sort_keys=True,separators=(",",":"),ensure_ascii=True,allow_nan=False)
+    report.update(private_integrity_status="STRUCTURE_CHECKS_PASS" if not problems else "INTEGRITY_REVIEW_REQUIRED",
+                  anomaly_counts=dict(sorted(problems.items())),unique_stock_signal_keys=len(keys),
+                  unique_source_dates=len(dates),per_signal_counts_match=dict(per_date)==expected,
+                  market_counts=dict(markets),retrospective_flag_rows=retrospective,
+                  post_signal_capture_date_rows=late_capture_rows,
+                  trailing_20_receipt_window_mismatch_rows=unexpected_windows,
+                  net_over_turnover_hypothesis_mismatch_rows=ratio_mismatch,
+                  canonical_factor_array_sha256=sha256(canonical.encode("utf-8")).hexdigest(),
+                  original_producer_digest_recipe_verified=False,
+                  stock_date_keys_verified=not any(problems[k] for k in
+                      ("duplicate_stock_signal_key","invalid_or_excluded_stock","unexpected_market")),
+                  approved_training_feature_rows=0)
+    return report
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("receipt",type=Path)
     p.add_argument("--structure",action="store_true",help="Audit only aggregate private row structure")
+    p.add_argument("--integrity",action="store_true",help="Audit private stock/date keys and source windows offline")
     a=p.parse_args()
     if a.receipt.stat().st_size>64*1024*1024:
         raise ValueError("Receipt too large")
     receipt=json.loads(a.receipt.read_text(encoding="utf-8-sig"))
-    report=audit_private_structure(receipt) if a.structure else audit_receipt(receipt)
+    report=audit_factor_integrity(receipt) if a.integrity else (audit_private_structure(receipt) if a.structure else audit_receipt(receipt))
     print(json.dumps(report,
                      ensure_ascii=False,indent=2,allow_nan=False))
 
