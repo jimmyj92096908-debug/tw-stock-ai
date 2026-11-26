@@ -15,6 +15,7 @@ import numpy as np
 from src.v3_probability_calibration import _day
 from src.v3_capital_risk_research import _num
 from src.v3_numpy_forest import FOREST_RECIPE, fit_forest, forest_probability
+from src.v3_lightgbm_adapter import LIGHTGBM_VERSION, LIGHTGBM_RECIPE, fit_lightgbm
 
 MIN_TRAIN_DATES = 20
 MIN_TRAIN_ROWS = 200
@@ -49,7 +50,7 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     Prediction rows must not contain outcome fields. Fixed recipe, no tuning.
     Feature availability is checked at date granularity, not intraday time.
     """
-    if model_kind not in ("logistic","forest","ensemble"):
+    if model_kind not in ("logistic","forest","ensemble","lightgbm"):
         raise ValueError("Unsupported model kind")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
@@ -78,6 +79,12 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
         protocol = _hash(dict(recipe="fixed_equal_probability_ensemble_v1",
                               logistic=logistic_protocol,forest=protocol,
                               weights=[0.5,0.5]))
+    if model_kind == "lightgbm":
+        protocol = _hash(dict(recipe="cpu_lightgbm_fixed_v1",features=list(feature_names),
+                              label_protocol_sha256=label_protocol_sha256,
+                              min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
+                              min_class=MIN_CLASS_ROWS,version=LIGHTGBM_VERSION,
+                              parameters=LIGHTGBM_RECIPE))
     def features(row,signal):
         if (_day(row["feature_available_date"])>signal
                 or row.get("feature_vintage_declared") is not True):
@@ -126,6 +133,9 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     if min(y.sum(),len(y)-y.sum())<MIN_CLASS_ROWS:
         return report
     X=np.asarray([r[2] for r in samples],dtype=np.float64)
+    if model_kind == "lightgbm":
+        fit_parameters,predict=fit_lightgbm(X,y)
+        status="RETROSPECTIVE_LIGHTGBM"
     if model_kind in ("forest","ensemble"):
         trees=fit_forest(X,y)
         fit_parameters={"trees":trees}
