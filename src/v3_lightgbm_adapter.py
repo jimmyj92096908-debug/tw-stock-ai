@@ -17,13 +17,15 @@ LIGHTGBM_RECIPE={
 }
 
 
-def fit_lightgbm(X,y):
+def fit_lightgbm(X,y,*,depth=4):
     """Train only on already validated and purged arrays.
 
     Require the exact optional package version; no substitute estimator.
     CPU-only single thread, fixed iterations, no evaluation/early stopping
     on prediction labels. Model text is used only for fingerprinting.
     """
+    if type(depth) is not int or depth not in (2,4,6):
+        raise ValueError("Unsupported booster depth")
     try:
         installed=version("lightgbm")
     except PackageNotFoundError as exc:
@@ -36,7 +38,7 @@ def fit_lightgbm(X,y):
     if set(np.unique(y))!={0,1}:
         raise ValueError("Unexpected binary labels")
     dataset=lib.Dataset(X,label=y)
-    booster=lib.train(dict(LIGHTGBM_RECIPE),dataset,num_boost_round=LIGHTGBM_ROUNDS)
+    booster=lib.train(dict(LIGHTGBM_RECIPE,max_depth=depth),dataset,num_boost_round=LIGHTGBM_ROUNDS)
     model_text=booster.model_to_string()
     def predict(x):
         p=float(booster.predict(np.asarray([x]),num_threads=1)[0])
