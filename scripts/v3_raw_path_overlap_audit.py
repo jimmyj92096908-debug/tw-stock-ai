@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 import math
@@ -19,6 +20,25 @@ def key(row):
     if m not in ("twse","tpex") or not isinstance(s,str) or not re.fullmatch("[0-9]{4,6}",s) or date.fromisoformat(d).isoformat()!=d:
         raise ValueError("Invalid historical key")
     return m,s,d
+
+def positive_close(value):
+    # Some historical producers serialize Decimal prices as JSON strings.
+    # Do not accept booleans, formatted currency, whitespace or nonfinite data.
+    if type(value) in (int,float):
+        return math.isfinite(value) and value>0
+    if isinstance(value,str) and len(value)<=64 and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?",value):
+        try:
+            n=Decimal(value)
+            return n.is_finite() and n>0
+        except InvalidOperation:
+            return False
+    return False
+
+def canonical_day(value):
+    try:
+        return isinstance(value,str) and date.fromisoformat(value).isoformat()==value
+    except ValueError:
+        return False
 
 def audit_overlap(joined,actions):
     jm=joined["summary"]
@@ -53,6 +73,13 @@ def audit_overlap(joined,actions):
     parity=Counter()
     close_shapes=Counter()
     chronology=Counter()
+    joint_valid=Counter()
+    date_starts=Counter()
+    close_types=Counter()
+    session_types=Counter()
+    close_lengths=Counter()
+    session_lengths=Counter()
+    string_price_paths=0
     for p in paths:
         k=key(p)
         if k in seen:
@@ -68,11 +95,24 @@ def audit_overlap(joined,actions):
             parity[k[2]]+=1
         sessions=p["sessions"]
         closes=p["raw_closes"]
-        if (isinstance(sessions,list) and isinstance(closes,list) and len(sessions)==len(closes)==6 and
-            all(type(x) in (int,float) and math.isfinite(x) and x>0 for x in closes)):
+
+        close_lengths[str(len(closes)) if isinstance(closes,list) else "not_array"]+=1
+        session_lengths[str(len(sessions)) if isinstance(sessions,list) else "not_array"]+=1
+        if isinstance(closes,list):
+            close_types.update(type(x).__name__ for x in closes)
+        if isinstance(sessions,list):
+            session_types.update(type(x).__name__ for x in sessions)
+        valid_prices=isinstance(closes,list) and len(closes)==6 and all(positive_close(x) for x in closes)
+        if valid_prices:
             close_shapes[k[2]]+=1
-            if all(isinstance(x,str) and date.fromisoformat(x).isoformat()==x for x in sessions) and sessions[0]>k[2] and all(a<b for a,b in zip(sessions,sessions[1:])):
+            string_price_paths+=int(any(isinstance(x,str) for x in closes))
+        ordered=isinstance(sessions,list) and len(sessions)==6 and all(canonical_day(x) for x in sessions) and all(a<b for a,b in zip(sessions,sessions[1:]))
+        if ordered:
+            date_starts["after_signal" if sessions[0]>k[2] else ("at_signal" if sessions[0]==k[2] else "before_signal")]+=1
+            if sessions[0]>k[2]:
                 chronology[k[2]]+=1
+                if valid_prices:
+                    joint_valid[k[2]]+=1
     expected=Counter(k[2] for k in index)
     return dict(status="RAW_PATH_OVERLAP_AUDITED_RESEARCH_ONLY",
                 joined_rows=len(rows),joined_signal_dates=len(expected),
@@ -81,6 +121,11 @@ def audit_overlap(joined,actions):
                 six_positive_closes=sum(close_shapes.values()),
                 strictly_post_signal_ordered_paths=sum(chronology.values()),
                 overlap_signal_dates=len(matched),
+                raw_close_element_types=dict(close_types),session_element_types=dict(session_types),
+                raw_close_array_lengths=dict(close_lengths),session_array_lengths=dict(session_lengths),
+                positive_decimal_string_paths=string_price_paths,
+                ordered_session_start_relation=dict(date_starts),
+                jointly_valid_post_signal_price_paths=sum(joint_valid.values()),
                 no_raw_path_rows=len(rows)-sum(matched.values()),
                 coverage_by_signal_date=[dict(signal_date=d,joined_rows=expected[d],
                     overlap_rows=matched[d],vector_parity_rows=parity[d],
