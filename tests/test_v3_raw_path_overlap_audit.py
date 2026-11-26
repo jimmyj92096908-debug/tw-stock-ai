@@ -104,3 +104,29 @@ class RawPathOverlapTests(unittest.TestCase):
         self.assertEqual(audit_overlap(j,a)["raw_gross_return_reconciliation"],{"recomputed_mismatch":1})
         p["raw_gross_return"]="NaN"
         self.assertEqual(audit_overlap(j,a)["raw_gross_return_reconciliation"],{"missing_or_invalid_reported_return":1})
+
+    def test_expansion_plan_freezes_only_missing_keys(self):
+        from scripts.v3_raw_path_overlap_audit import expansion_plan
+        j,a=self.inputs()
+        a["private_matched_rows"][0]["raw_gross_return"]="0.05"
+        a["summary"]["matched_panel_sha256"]=digest(a["private_matched_rows"])
+        row=copy.deepcopy(j["retrospective_joined_factors"][0])
+        row["stock_id"]="2317"
+        j["retrospective_joined_factors"].append(row)
+        row=copy.deepcopy(row)
+        row["signal_date"]="2024-05-31"
+        j["retrospective_joined_factors"].append(row)
+        j["summary"]["matched_rows"]=3
+        j["summary"]["matched_rows_sha256"]=digest(j["retrospective_joined_factors"])
+        before=copy.deepcopy((j,a))
+        result=expansion_plan(j,a)
+        self.assertEqual(result["private_missing_keys"],[
+            dict(market="twse",stock_id="2317",signal_date="2024-04-30"),
+            dict(market="twse",stock_id="2317",signal_date="2024-05-31")])
+        self.assertEqual(result["summary"]["dates_without_any_saved_path"],1)
+        self.assertEqual(result["summary"]["missing_path_rows"],2)
+        self.assertEqual(result["summary"]["execution_labels_approved"],0)
+        self.assertEqual((j,a),before)
+        a["private_matched_rows"][0]["raw_gross_return"]="0.07"
+        with self.assertRaises(ValueError):
+            expansion_plan(j,a)
