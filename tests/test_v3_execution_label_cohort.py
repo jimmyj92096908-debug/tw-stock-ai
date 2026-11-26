@@ -45,12 +45,22 @@ class ExecutionLabelCohortTests(unittest.TestCase):
 
     def test_costs_and_protocol_change(self):
         a=self.args()
+        # Allow affordable whole shares when testing proportional costs.
+        a["lot_size"]=1
         r=execution_label_cohort(**a)
         a.update(commission=.001425,sell_tax=.003,slippage=.001)
         q=execution_label_cohort(**a)
         self.assertEqual(len(q["training_rows"]),2)
         self.assertLess(q["training_rows"][0]["net_return"],r["training_rows"][0]["net_return"])
         self.assertNotEqual(r["label_protocol_sha256"],q["label_protocol_sha256"])
+
+    def test_costs_at_exact_board_lot_budget_block_entry(self):
+        a=self.args()
+        a.update(commission=.001425,sell_tax=.003,slippage=.001)
+        r=execution_label_cohort(**a)
+        self.assertEqual(r["status"],"INCOMPLETE_COHORT_BLOCKED")
+        self.assertEqual(r["training_rows"],[])
+        self.assertTrue(all(d["status"]=="NO_ENTRY" for d in r["diagnostics"]))
 
     def test_stop_first_and_pending_exit(self):
         a=self.args()
