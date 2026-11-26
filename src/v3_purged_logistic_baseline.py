@@ -14,6 +14,7 @@ import numpy as np
 
 from src.v3_probability_calibration import _day
 from src.v3_capital_risk_research import _num
+from src.v3_numpy_forest import FOREST_RECIPE, fit_forest, forest_probability
 
 MIN_TRAIN_DATES = 20
 MIN_TRAIN_ROWS = 200
@@ -38,7 +39,8 @@ def _symbol(row):
 
 
 def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
-                                training_rows, prediction_rows, decision_date):
+                                training_rows, prediction_rows, decision_date,
+                                model_kind="logistic"):
     """Fit only complete supplied signal cohorts with mature labels.
 
     A date cohort with any label not available strictly before decision is
@@ -47,6 +49,8 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     Prediction rows must not contain outcome fields. Fixed recipe, no tuning.
     Feature availability is checked at date granularity, not intraday time.
     """
+    if model_kind not in ("logistic","forest"):
+        raise ValueError("Unsupported model kind")
     cutoff = _day(decision_date)
     if (not isinstance(feature_names,(tuple,list)) or not 1<=len(feature_names)<=64
             or any(not isinstance(n,str) or not re.fullmatch("[a-zA-Z][a-zA-Z0-9_]{0,63}",n)
@@ -64,6 +68,11 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
                           iterations=ITERATIONS,l2=L2,learning_rate=LEARNING_RATE,
                           min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
                           min_class=MIN_CLASS_ROWS,clip=8))
+    if model_kind == "forest":
+        protocol = _hash(dict(recipe="numpy_forest_fixed_v1",features=list(feature_names),
+                              label_protocol_sha256=label_protocol_sha256,
+                              min_dates=MIN_TRAIN_DATES,min_rows=MIN_TRAIN_ROWS,
+                              min_class=MIN_CLASS_ROWS,forest=FOREST_RECIPE))
     def features(row,signal):
         if (_day(row["feature_available_date"])>signal
                 or row.get("feature_vintage_declared") is not True):
@@ -112,28 +121,39 @@ def purged_logistic_predictions(*, feature_names, label_protocol_sha256,
     if min(y.sum(),len(y)-y.sum())<MIN_CLASS_ROWS:
         return report
     X=np.asarray([r[2] for r in samples],dtype=np.float64)
-    means=X.mean(axis=0)
-    scales=X.std(axis=0)
-    scales=np.where(scales<1e-12,1.0,scales)
-    X=np.clip((X-means)/scales,-8,8)
-    w=np.zeros(X.shape[1],dtype=np.float64)
-    bias=0.0
-    for _ in range(ITERATIONS):
-        p=1/(1+np.exp(-np.clip(X@w+bias,-35,35)))
-        err=p-y
-        w-=LEARNING_RATE*((X.T@err)/len(y)+L2*w)
-        bias-=LEARNING_RATE*float(err.mean())
-    if not np.isfinite(w).all() or not np.isfinite(bias):
-        raise ValueError("Nonfinite fit")
+    if model_kind == "forest":
+        trees=fit_forest(X,y)
+        fit_parameters={"trees":trees}
+        status="RETROSPECTIVE_NUMPY_FOREST"
+        def predict(x):
+            return forest_probability(trees,x)
+    else:
+        means=X.mean(axis=0)
+        scales=X.std(axis=0)
+        scales=np.where(scales<1e-12,1.0,scales)
+        X=np.clip((X-means)/scales,-8,8)
+        w=np.zeros(X.shape[1],dtype=np.float64)
+        bias=0.0
+        for _ in range(ITERATIONS):
+            p=1/(1+np.exp(-np.clip(X@w+bias,-35,35)))
+            err=p-y
+            w-=LEARNING_RATE*((X.T@err)/len(y)+L2*w)
+            bias-=LEARNING_RATE*float(err.mean())
+        if not np.isfinite(w).all() or not np.isfinite(bias):
+            raise ValueError("Nonfinite fit")
+        fit_parameters=dict(w=w.tolist(),bias=bias,means=means.tolist(),scales=scales.tolist())
+        status="RETROSPECTIVE_LOGISTIC_BASELINE"
+        def predict(x):
+            z=np.clip((np.asarray(x)-means)/scales,-8,8)
+            return float(1/(1+np.exp(-np.clip(z@w+bias,-35,35))))
     last=max(r[1] for r in samples).isoformat()
-    report.update(status="RETROSPECTIVE_LOGISTIC_BASELINE",
+    report.update(status=status,
                   training_labels_through=last,
-                  fit_sha256=_hash(dict(w=w.tolist(),bias=bias,means=means.tolist(),scales=scales.tolist())),
+                  fit_sha256=_hash(fit_parameters),
                   training_fingerprint=_hash([(d.isoformat(),[(s,a.isoformat(),x,y) for s,a,x,y in v])
                                               for d,v in mature]))
     for s,market,x in sorted(candidates):
-        z=np.clip((np.asarray(x)-means)/scales,-8,8)
-        p=float(1/(1+np.exp(-np.clip(z@w+bias,-35,35))))
+        p=predict(x)
         report["predictions"].append(dict(stock_id=s,market=market,currently_listed=True,
                   signal_date=decision_date,training_labels_through=last,
                   probability=p,protocol_sha256=protocol))
