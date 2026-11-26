@@ -1,0 +1,2 @@
+# Optional CPU research backend. Install explicitly in an isolated environment.
+catboost==1.2.8
