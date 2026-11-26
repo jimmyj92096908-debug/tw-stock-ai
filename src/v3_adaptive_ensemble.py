@@ -35,7 +35,7 @@ def adaptive_blend_archives(logistic, forest):
                                      or any(c not in "0123456789abcdef" for c in p)
                                      for p in protocols)):
         raise ValueError("Distinct component protocols required")
-    protocol=_hash(dict(recipe="adaptive_brier_grid_v1",components=protocols,
+    protocol=_hash(dict(recipe="adaptive_brier_grid_v2",components=protocols,
                         logistic_weights=list(GRID),min_dates=MIN_DATES,
                         min_rows=MIN_ROWS,fallback=0.5,objective="date_equal_brier",
                         tie="nearest_half_then_lower"))
@@ -111,6 +111,8 @@ def adaptive_blend_archives(logistic, forest):
         for key in keys:
             p=dict(pa[key],probability=w*pa[key]["probability"]+(1-w)*pb[key]["probability"],
                    protocol_sha256=protocol)
+            if status=="PAST_ONLY_GRID_SELECTION":
+                p["training_labels_through"]=max(p["training_labels_through"],mature[pointer-1][0].isoformat())
             prediction_rows.append(p)
             if key in oa:
                 outcomes.append(dict(p,**{f:oa[key][f] for f in ("net_return","exit_date",
