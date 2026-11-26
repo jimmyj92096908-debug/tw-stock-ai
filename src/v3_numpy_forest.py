@@ -15,8 +15,13 @@ FOREST_RECIPE = dict(trees=24,max_depth=4,min_leaf=10,
                      feature_subset="ceil_sqrt",split="gini")
 
 
-def fit_forest(X,y):
+FOREST_DEPTH_GRID = (2, 4, 6)
+
+
+def fit_forest(X,y,*,max_depth=4):
     """Inputs are validated, chronologically purged training arrays."""
+    if type(max_depth) is not int or max_depth not in FOREST_DEPTH_GRID:
+        raise ValueError("Unsupported forest depth")
     rng=np.random.default_rng(FOREST_RECIPE["seed"])
     n,d=X.shape
     mtry=max(1,math.ceil(math.sqrt(d)))
@@ -27,7 +32,7 @@ def fit_forest(X,y):
         positives=float(labels.sum())
         size=len(indices)
         node={"p":(positives+1)/(size+2)}
-        if depth>=FOREST_RECIPE["max_depth"] or size<2*leaf or positives in (0,size):
+        if depth>=max_depth or size<2*leaf or positives in (0,size):
             return node
         p=positives/size
         best_gain=0.0
