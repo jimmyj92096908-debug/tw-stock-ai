@@ -1,6 +1,6 @@
 """Regression tests for exact-key retrospective factor integration."""
 import unittest
-from src.v3_retrospective_factor_join import join_reconstructed_factors,_digest
+from src.v3_retrospective_factor_join import join_reconstructed_factors,join_monthly_panel,_digest
 from src.raw_factor_feature_bridge import FEATURE_NAMES,VERSION
 
 
@@ -60,6 +60,44 @@ class RetrospectiveJoinTests(unittest.TestCase):
         a["raw_reports"][0]["requested_cutoff"]="2024-04-29"
         with self.assertRaises(ValueError):
             join_reconstructed_factors(**a)
+
+
+    def panel_inputs(self):
+        a=self.inputs()
+        rows=[dict(market=market,stock_id=stock,signal_date="2024-04-30",
+                   feature_vector=[.1]*12,prefix_source_rows=240,prefix_source_sha256="a"*64)
+              for market,stock in (("twse","2330"),("twse","1808"),("tpex","2330"))]
+        markets={m:dict(accepted_feature_rows=n,prefix_only_features=True,
+                       approved_total_return_labels=0,model_release="BLOCKED")
+                 for m,n in (("twse",2),("tpex",1))}
+        panel=dict(summary=dict(total_feature_rows=3,total_feature_values=36,
+                         model_release="BLOCKED",approved_total_return_labels=0,
+                         production_neon_writes=0,line_messages_sent=0,
+                         historical_pit_roster_verified=False,corporate_action_coverage_verified=False,
+                         feature_panel_sha256=_digest(rows),market_summaries=markets),
+                   private_feature_rows=rows)
+        return dict(screened=a["screened"],panel=panel)
+
+    def test_panel_join_does_not_cross_market_and_excludes_known_code(self):
+        r=join_monthly_panel(**self.panel_inputs())
+        self.assertEqual(r["summary"]["matched_rows"],1)
+        self.assertEqual(r["summary"]["monthly_panel_market_counts"],{"twse":2,"tpex":1})
+        self.assertEqual(r["summary"]["monthly_panel_excluded_codes"],{"1808":1})
+        self.assertTrue(r["summary"]["monthly_panel_digest_matches"])
+        self.assertFalse(r["summary"]["original_producer_feature_order_verified"])
+        self.assertEqual(r["summary"]["approved_training_feature_rows"],0)
+
+    def test_panel_digest_and_prefix_constraints(self):
+        a=self.panel_inputs()
+        a["panel"]["private_feature_rows"][0]["feature_vector"][0]=.2
+        with self.assertRaises(ValueError):
+            join_monthly_panel(**a)
+        a=self.panel_inputs()
+        rows=a["panel"]["private_feature_rows"]
+        rows[0]["prefix_source_rows"]=239
+        a["panel"]["summary"]["feature_panel_sha256"]=_digest(rows)
+        with self.assertRaises(ValueError):
+            join_monthly_panel(**a)
 
 
 if __name__=="__main__":
