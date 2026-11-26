@@ -85,7 +85,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("receipt",type=Path)
     a=p.parse_args()
-    if a.receipt.stat().st_size>20*1024*1024:
+    if a.receipt.stat().st_size>64*1024*1024:
         raise ValueError("Receipt too large")
     print(json.dumps(audit_receipt(json.loads(a.receipt.read_text(encoding="utf-8-sig"))),
                      ensure_ascii=False,indent=2,allow_nan=False))
