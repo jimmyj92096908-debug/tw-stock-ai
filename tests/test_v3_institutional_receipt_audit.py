@@ -1,7 +1,7 @@
 """Offline summary receipt consistency tests."""
 import copy
 import unittest
-from scripts.v3_institutional_receipt_audit import audit_receipt, audit_private_structure, audit_factor_integrity
+from scripts.v3_institutional_receipt_audit import audit_receipt, audit_private_structure, audit_factor_integrity, screen_research_candidates
 
 
 class InstitutionalReceiptAuditTests(unittest.TestCase):
@@ -120,6 +120,38 @@ class InstitutionalReceiptAuditTests(unittest.TestCase):
         self.assertEqual(r["anomaly_counts"]["missing_source_receipt"],1)
         self.assertEqual(r["anomaly_counts"]["unexpected_training_flag"],1)
         self.assertEqual(r["net_over_turnover_hypothesis_mismatch_rows"],1)
+
+
+    def test_screen_only_excludes_known_codes_and_preserves_source(self):
+        import hashlib,json
+        a=self.integrity_fixture()
+        a["private_candidate_factors"][0]["stock_id"]="1808"
+        a["summary"]["factor_sha256"]=hashlib.sha256(json.dumps(
+            a["private_candidate_factors"],sort_keys=True,separators=(",",":"),
+            ensure_ascii=True,allow_nan=False).encode("utf-8")).hexdigest()
+        before=copy.deepcopy(a)
+        r=screen_research_candidates(a)
+        self.assertEqual(a,before)
+        self.assertEqual(r["summary"]["screened_factor_rows"],134)
+        self.assertEqual(r["summary"]["excluded_stock_reason_counts"],{"1808":1})
+        self.assertFalse(r["summary"]["source_expansion_complete"])
+        self.assertEqual(r["summary"]["approved_training_feature_rows"],0)
+        self.assertEqual(r["summary"]["model_release"],"BLOCKED")
+        self.assertTrue(all(x["historical_reconstruction_only"] and not x["approved_training_feature"]
+                            for x in r["retrospective_research_factors"]))
+        self.assertNotEqual(r["summary"]["screened_factor_sha256"],r["summary"]["source_factor_sha256"])
+
+    def test_screen_blocks_mutated_payload_and_unknown_invalid_code(self):
+        import hashlib,json
+        a=self.integrity_fixture()
+        a["private_candidate_factors"][0]["stock_id"]="INVALID"
+        with self.assertRaises(ValueError):
+            screen_research_candidates(a)
+        a["summary"]["factor_sha256"]=hashlib.sha256(json.dumps(
+            a["private_candidate_factors"],sort_keys=True,separators=(",",":"),
+            ensure_ascii=True,allow_nan=False).encode("utf-8")).hexdigest()
+        with self.assertRaises(ValueError):
+            screen_research_candidates(a)
 
 
 if __name__=="__main__":
