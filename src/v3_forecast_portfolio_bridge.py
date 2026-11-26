@@ -11,6 +11,7 @@ from src.v3_probability_calibration import _day
 from src.v3_capital_risk_research import _num
 from src.v3_market_regime_archive import REGIMES
 from src.v3_tuned_five_ensemble import walkforward_tuned_five_ensemble
+from src.v3_portfolio_performance_acceptance import portfolio_performance_acceptance
 
 
 def replay_forecast_archive(sessions, *, archive, regimes, histories_by_date,
@@ -123,5 +124,6 @@ def run_tuned_portfolio_research(*,sessions,index_rows,histories_by_date,
                regimes=training["regime_archive"],histories_by_date=histories_by_date,
                sector_by_stock=sector_by_stock,**(simulation_parameters or {}))
     replay["walkforward_training_integrated"]=True
-    return {"status":"RETROSPECTIVE_TUNED_PORTFOLIO_RESEARCH","training":training,"replay":replay,
+    performance=portfolio_performance_acceptance(replay)
+    return {"status":"RETROSPECTIVE_TUNED_PORTFOLIO_RESEARCH","training":training,"replay":replay,"performance":performance,
             "model_release":"BLOCKED","trading_approved":False}
