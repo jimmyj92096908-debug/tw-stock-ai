@@ -1,7 +1,7 @@
 """Offline summary receipt consistency tests."""
 import copy
 import unittest
-from scripts.v3_institutional_receipt_audit import audit_receipt, audit_private_structure
+from scripts.v3_institutional_receipt_audit import audit_receipt, audit_private_structure, audit_factor_integrity
 
 
 class InstitutionalReceiptAuditTests(unittest.TestCase):
@@ -72,6 +72,45 @@ class InstitutionalReceiptAuditTests(unittest.TestCase):
         r=audit_receipt(a)
         self.assertFalse(r["source_provenance_verified"])
         self.assertEqual(r["model_release"],"BLOCKED")
+
+
+    def integrity_fixture(self):
+        from datetime import date,timedelta
+        a=self.receipt()
+        days=[(date(2024,1,1)+timedelta(days=i)).isoformat() for i in range(30)]
+        a["source_receipts"]=[dict(date=d,source="TWSE",params={},response_sha256="a"*64,
+                                   captured_at_utc="2026-11-26T00:00:00Z") for d in days]
+        a["private_candidate_factors"]=[
+            dict(signal_date=r["signal_date"],stock_id=str(2300+i),market="TWSE",
+                 historical_reconstruction_only=True,strict_point_in_time_verified=False,
+                 approved_training_feature=False,source_dates=days[-20:],
+                 institutional_net_shares_20=20,institutional_turnover_shares_20=100,
+                 institutional_imbalance_20=.2)
+            for r in a["summary"]["reports"] for i in range(r["complete_factor_candidates"])]
+        return a
+
+    def test_private_integrity_pass_not_training_approval(self):
+        r=audit_factor_integrity(self.integrity_fixture())
+        self.assertEqual(r["private_integrity_status"],"STRUCTURE_CHECKS_PASS")
+        self.assertEqual(r["unique_stock_signal_keys"],135)
+        self.assertEqual(r["post_signal_capture_date_rows"],135)
+        self.assertEqual(r["net_over_turnover_hypothesis_mismatch_rows"],0)
+        self.assertEqual(r["approved_training_feature_rows"],0)
+        self.assertFalse(r["original_producer_digest_recipe_verified"])
+
+    def test_private_integrity_anomalies_visible(self):
+        a=self.integrity_fixture()
+        a["private_candidate_factors"][0]["stock_id"]="1589"
+        a["private_candidate_factors"][1]["source_dates"][-1]="2024-02-01"
+        a["private_candidate_factors"][2]["institutional_imbalance_20"]=.5
+        a["private_candidate_factors"][3]["approved_training_feature"]=True
+        r=audit_factor_integrity(a)
+        self.assertEqual(r["private_integrity_status"],"INTEGRITY_REVIEW_REQUIRED")
+        self.assertEqual(r["anomaly_counts"]["invalid_or_excluded_stock"],1)
+        self.assertEqual(r["anomaly_counts"]["source_not_strictly_before_signal"],1)
+        self.assertEqual(r["anomaly_counts"]["missing_source_receipt"],1)
+        self.assertEqual(r["anomaly_counts"]["unexpected_training_flag"],1)
+        self.assertEqual(r["net_over_turnover_hypothesis_mismatch_rows"],1)
 
 
 if __name__=="__main__":
