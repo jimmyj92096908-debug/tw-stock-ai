@@ -80,6 +80,10 @@ def audit_overlap(joined,actions):
     close_lengths=Counter()
     session_lengths=Counter()
     string_price_paths=0
+    return_checks=Counter()
+    cost_checks={bps:Counter() for bps in (0,10,25)}
+    gross_return_sum=Decimal(0)
+    cost_return_sums={bps:Decimal(0) for bps in cost_checks}
     for p in paths:
         k=key(p)
         if k in seen:
@@ -113,6 +117,29 @@ def audit_overlap(joined,actions):
                 chronology[k[2]]+=1
                 if valid_prices:
                     joint_valid[k[2]]+=1
+                    # Close-to-close proxy only, not executable stop/target labels.
+                    entry,exit_=Decimal(str(closes[0])),Decimal(str(closes[-1]))
+                    gross=exit_/entry-1
+                    try:
+                        value=p.get("raw_gross_return")
+                        if type(value) not in (str,int,float) or len(str(value))>80:
+                            raise ValueError("Invalid reported return")
+                        stated=Decimal(str(value))
+                        if not stated.is_finite():
+                            raise ValueError("Nonfinite return")
+                        if abs(gross-stated)<=Decimal("0.00000001"):
+                            return_checks["recomputed_match"]+=1
+                        else:
+                            return_checks["recomputed_mismatch"]+=1
+                    except (InvalidOperation,ValueError):
+                        return_checks["missing_or_invalid_reported_return"]+=1
+                    gross_return_sum+=gross
+                    for bps,counts in cost_checks.items():
+                        slip=Decimal(bps)/10000
+                        net=exit_*(1-slip)*(1-Decimal("0.001425")-Decimal("0.003"))/(entry*(1+slip)*(1+Decimal("0.001425")))-1
+                        counts["rows"]+=1
+                        counts["positive"]+=int(net>0)
+                        cost_return_sums[bps]+=net
     expected=Counter(k[2] for k in index)
     return dict(status="RAW_PATH_OVERLAP_AUDITED_RESEARCH_ONLY",
                 joined_rows=len(rows),joined_signal_dates=len(expected),
@@ -127,6 +154,18 @@ def audit_overlap(joined,actions):
                 ordered_session_start_relation=dict(date_starts),
                 jointly_valid_post_signal_price_paths=sum(joint_valid.values()),
                 no_raw_path_rows=len(rows)-sum(matched.values()),
+                raw_gross_return_reconciliation=dict(return_checks),
+                close_to_close_proxy_mean_gross=float(gross_return_sum/sum(joint_valid.values())) if joint_valid else None,
+                close_to_close_cost_sensitivity=[
+                    dict(slippage_each_way_bps=bps,rows=counts["rows"],
+                         positive_rows=counts["positive"],
+                         positive_fraction=counts["positive"]/counts["rows"] if counts["rows"] else None,
+                         mean_net_return=float(cost_return_sums[bps]/counts["rows"]) if counts["rows"] else None)
+                    for bps,counts in cost_checks.items()],
+                proxy_cost_assumptions=dict(commission_each_way=.001425,sell_tax=.003,
+                    minimum_commission_applied=False,corporate_actions_applied=False,
+                    liquidity_or_fill_constraints_applied=False),
+                proxy_statistics_not_model_performance=True,
                 coverage_by_signal_date=[dict(signal_date=d,joined_rows=expected[d],
                     overlap_rows=matched[d],vector_parity_rows=parity[d],
                     six_close_rows=close_shapes[d],ordered_post_signal_rows=chronology[d]) for d in sorted(expected)],
