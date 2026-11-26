@@ -1,0 +1,3 @@
+# Optional CPU-only research dependency; install in a separate environment.
+# Do not install alongside the full xgboost distribution.
+xgboost-cpu==2.1.4
