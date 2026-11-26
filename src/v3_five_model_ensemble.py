@@ -38,7 +38,7 @@ def adaptive_five_blend(archives, *, regimes=None):
             or len(set(protocols))!=5
             or any(_day(archives[k]["archive_cutoff"])!=cutoff for k in MODELS)):
         raise ValueError("Invalid component protocols or cutoff")
-    protocol=_hash(dict(recipe="five_model_simplex_brier_v1",models=list(MODELS),
+    protocol=_hash(dict(recipe="five_model_simplex_brier_v2",models=list(MODELS),
                         components=protocols,grid_units=5,min_dates=MIN_DATES,
                         min_rows=MIN_ROWS,tie="rounded12_nearest_uniform_lexicographic",
                         objective="date_equal_brier"))
@@ -98,7 +98,7 @@ def adaptive_five_blend(archives, *, regimes=None):
             states[d]=(trend,volatile)
         if not set(days)<=set(states):
             raise ValueError("Missing forecast-date regime")
-        protocol=_hash(dict(recipe="five_model_regime_simplex_v1",base_protocol=protocol,
+        protocol=_hash(dict(recipe="five_model_regime_simplex_v2",base_protocol=protocol,
                             min_dates=MIN_DATES,min_rows=MIN_ROWS,
                             fallback="global_then_uniform",unknown="uniform_no_new_exposure"))
     mature=[]
@@ -158,10 +158,10 @@ def adaptive_five_blend(archives, *, regimes=None):
         for key in keys:
             probability=min(1.,max(0.,fsum(w*p[key]["probability"] for w,p in zip(weights,preds))))
             row=dict(preds[0][key],probability=probability,protocol_sha256=protocol)
+            # Record the most recent label used by either component or selector.
+            if latest is not None and status!="UNIFORM_FALLBACK":
+                row["training_labels_through"]=max(row["training_labels_through"],latest.isoformat())
             if state is not None:
-                # Meta-estimator also learns from mature forecast cohorts.
-                if latest is not None and status!="UNIFORM_FALLBACK":
-                    row["training_labels_through"]=max(row["training_labels_through"],latest.isoformat())
                 row.update(regime=state[0],volatile_heuristic=state[1])
             forecasts.append(row)
             if key in outs[0]:
