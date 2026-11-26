@@ -6,6 +6,7 @@ This module does not independently authenticate input evidence.
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from statistics import mean
 
 
@@ -38,7 +39,9 @@ def research_weight(*, conservative_probability, net_payoff_ratio, stop_loss_fra
     if p < 0.8 or dd >= 0.10:
         return 0.0
     scale = 0.5 if dd >= 0.05 else 1.0
-    return scale * min(0.25 * kelly, 0.10, 0.005 / s, risk / s, *budgets)
+    return scale * min(0.25 * kelly, 0.10,
+                       float(Decimal('0.005') / Decimal(str(s))),
+                       float(Decimal(str(risk)) / Decimal(str(s))), *budgets)
 
 
 def outcome_diagnostics(net_returns):
