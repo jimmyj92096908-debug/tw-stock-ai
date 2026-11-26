@@ -127,6 +127,8 @@ def audit_factor_integrity(receipt):
     sources=receipt["source_receipts"]
     summary=receipt["summary"]
     problems=Counter()
+    exclusions=Counter()
+    excluded_by_date=Counter()
     dates=set()
     capture_days={}
     def day(value):
@@ -170,6 +172,9 @@ def audit_factor_integrity(receipt):
         if (not isinstance(stock,str) or not re.fullmatch("[0-9]{4,6}",stock)
                 or stock in ("1589","1808")):
             problems["invalid_or_excluded_stock"]+=1
+            reason=stock if isinstance(stock,str) and stock in ("1589","1808") else "invalid_stock_format"
+            exclusions[reason]+=1
+            excluded_by_date[d.isoformat()]+=1
         key=(d,market.upper() if isinstance(market,str) else str(market),str(stock))
         if key in keys:
             problems["duplicate_stock_signal_key"]+=1
@@ -208,14 +213,24 @@ def audit_factor_integrity(receipt):
     if dict(per_date)!=expected:
         problems["per_signal_count_mismatch"]+=1
     canonical=json.dumps(factors,sort_keys=True,separators=(",",":"),ensure_ascii=True,allow_nan=False)
+    digest=sha256(canonical.encode("utf-8")).hexdigest()
+    digest_matches=digest==summary["factor_sha256"]
+    if not digest_matches:
+        problems["declared_factor_digest_mismatch"]+=1
     report.update(private_integrity_status="STRUCTURE_CHECKS_PASS" if not problems else "INTEGRITY_REVIEW_REQUIRED",
                   anomaly_counts=dict(sorted(problems.items())),unique_stock_signal_keys=len(keys),
+                  excluded_stock_reason_counts=dict(sorted(exclusions.items())),
+                  excluded_stock_rows_by_signal_date=dict(sorted(excluded_by_date.items())),
+                  stock_format_and_exclusion_screen_rows=len(factors)-sum(exclusions.values()),
+                  historical_listing_eligibility_verified=False,
                   unique_source_dates=len(dates),per_signal_counts_match=dict(per_date)==expected,
                   market_counts=dict(markets),retrospective_flag_rows=retrospective,
                   post_signal_capture_date_rows=late_capture_rows,
                   trailing_20_receipt_window_mismatch_rows=unexpected_windows,
                   net_over_turnover_hypothesis_mismatch_rows=ratio_mismatch,
-                  canonical_factor_array_sha256=sha256(canonical.encode("utf-8")).hexdigest(),
+                  canonical_factor_array_sha256=digest,
+                  declared_factor_digest_matches=digest_matches,
+                  underlying_digest_recomputed=True,
                   original_producer_digest_recipe_verified=False,
                   stock_date_keys_verified=not any(problems[k] for k in
                       ("duplicate_stock_signal_key","invalid_or_excluded_stock","unexpected_market")),
