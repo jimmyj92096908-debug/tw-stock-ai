@@ -12,6 +12,12 @@ on:
       - 'src/v3_frozen_booster_tuning.py'
       - 'tests/test_v3_frozen_booster_tuning.py'
       - 'src/v3_walkforward_probability_archive.py'
+      - 'src/v3_tuned_five_ensemble.py'
+      - 'tests/test_v3_tuned_five_ensemble.py'
+      - 'src/v3_five_model_ensemble.py'
+      - 'src/v3_frozen_logistic_tuning.py'
+      - 'src/v3_frozen_forest_tuning.py'
+      - 'src/v3_numpy_forest.py'
 
 permissions:
   contents: read
@@ -47,10 +53,11 @@ jobs:
               "test_v3_xgboost_adapter.XGBoostTests.test_real_backend_smoke",
               "test_v3_catboost_adapter.CatBoostTests.test_real_backend_smoke",
               "test_v3_frozen_booster_tuning.FrozenBoosterTests.test_real_all_booster_depths",
+              "test_v3_tuned_five_ensemble.TunedFiveTests.test_real_tuned_five_ensemble",
           ]
           suite = unittest.defaultTestLoader.loadTestsFromNames(names)
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           if not result.wasSuccessful() or result.skipped or result.testsRun != len(names):
               raise SystemExit("V3 CPU BACKEND SMOKE FAILED OR SKIPPED")
-          print("V3 CPU BACKEND SMOKE PASS: 4/4 actual fit and tuning tests; model_release=BLOCKED")
+          print("V3 CPU BACKEND SMOKE PASS: 5/5 actual fit and tuning tests; model_release=BLOCKED")
           PY
