@@ -16,7 +16,8 @@ def replay_allocated_portfolio(sessions, *, daily_evidence, protocol_sha256,
                                lot_size=1000, commission=0.001425,
                                sell_tax=0.003, slippage=0.001,
                                stop_fraction=0.05, profit_fraction=0.10,
-                               trailing_fraction=0.05, corporate_action_mode=False):
+                               trailing_fraction=0.05, corporate_action_mode=False,
+                               evidence_provider=None):
     """Run allocation at close, freeze incremental dollar budgets for next open.
 
     No resize or forced sell of existing holdings based on allocation alone.
@@ -26,6 +27,8 @@ def replay_allocated_portfolio(sessions, *, daily_evidence, protocol_sha256,
     """
     if not isinstance(sessions,list) or not isinstance(daily_evidence,dict) or not isinstance(sector_by_stock,dict):
         raise ValueError("Invalid replay input")
+    if evidence_provider is not None and (not callable(evidence_provider) or daily_evidence):
+        raise ValueError("Evidence provider must be callable and exclusive")
     dates=[_day(s["date"]).isoformat() for s in sessions]
     if not set(daily_evidence)<=set(dates):
         raise ValueError("Evidence outside replay dates")
@@ -37,7 +40,7 @@ def replay_allocated_portfolio(sessions, *, daily_evidence, protocol_sha256,
     diagnostics=[]
     def allocate(snapshot):
         day=snapshot["date"]
-        evidence=daily_evidence.get(day)
+        evidence=evidence_provider(day) if evidence_provider is not None else daily_evidence.get(day)
         if evidence is None or any(p["pending_exit"] for p in snapshot["positions"]):
             diagnostics.append({"date":day,"status":"NO_EVIDENCE_OR_PENDING_EXIT"})
             return {}
